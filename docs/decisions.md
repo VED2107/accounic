@@ -371,3 +371,38 @@ which produced a white flash on every cold start of a dark app; the Windows wind
 a null background brush, with the same result. Both now paint `#070A12` — the exact colour
 `SplashBackground` grounds itself with, so the handover from the native launch surface to
 Flutter's first frame is invisible. Those three values must change together.
+
+## 27. Auth errors are safe to relay; collapsing them was not
+
+Every `AuthException` in the Flutter client became one sentence — "That email and password
+combination is not correct." — and on the web every auth error carried no SQLSTATE, so it
+fell straight through `friendlyMessage` to whatever fallback the caller passed. Both were
+written for the sign-in form and then applied to every auth call in the product.
+
+The cost showed up on password change. This project's GoTrue rejects exactly two things for
+`updateUser({password})`, verified against the live API:
+
+```
+422 same_password  New password should be different from the old password.
+422 weak_password  Password should be at least 6 characters.
+```
+
+Both clients enforce ten characters with mixed case and a digit before sending, so
+`weak_password` is unreachable and **`same_password` is the only rejection a real user can
+hit**. They were told "Your password could not be changed." on web and "That email and
+password combination is not correct." on Flutter. Both are true and neither can be acted on;
+the one fact that would have fixed it in seconds — you have typed the password you already
+have — was the one fact being discarded.
+
+So auth codes are now mapped in `app/lib/core/failure.dart` and `web/src/lib/errors.ts`,
+which are kept in step. The reasoning for relaying them is that an auth error describes the
+credential the user has *just typed*, not anything about another account, so there is nothing
+to leak — unlike a database error, which can carry table and constraint names.
+
+`invalid_credentials` is the deliberate exception and stays vague. Distinguishing "no such
+user" from "wrong password" turns the sign-in form into a way to enumerate which email
+addresses have accounts.
+
+Unrecognised codes still fall back rather than inventing a reason, and the raw GoTrue text
+stays on `Failure.detail` for debug builds. `app/test/auth_errors_test.dart` pins all of it,
+including the deliberate vagueness.

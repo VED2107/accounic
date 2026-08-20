@@ -39,8 +39,60 @@ function looksLikeOurMessage(message: string): boolean {
   return /[.!?]$/.test(trimmed);
 }
 
+/**
+ * GoTrue's error codes, translated.
+ *
+ * Auth errors never reached this function's mapping at all: they carry no
+ * SQLSTATE, so every one of them fell through to the caller's fallback. A
+ * password change refused because the new password matched the old one was
+ * reported as "Your password could not be changed." — true, useless, and
+ * unactionable.
+ *
+ * Unlike a database error, an auth error is safe to relay: it describes the
+ * credential the user has just typed, not anything about another account. The
+ * one deliberate exception is `invalid_credentials`, which stays vague on
+ * purpose so the sign-in form cannot be used to discover which addresses exist.
+ *
+ * Kept in step with `app/lib/core/failure.dart`.
+ */
+const AUTH_MESSAGES: Record<string, string> = {
+  invalid_credentials: 'That email and password combination is not correct.',
+  invalid_grant: 'That email and password combination is not correct.',
+  same_password: 'Your new password must be different from your current one.',
+  weak_password:
+    'That password is too weak. Use at least 10 characters, with an uppercase letter, a lowercase letter and a number.',
+  over_request_rate_limit: 'Too many attempts. Wait a minute and try again.',
+  over_email_send_rate_limit: 'Too many attempts. Wait a minute and try again.',
+  session_not_found: 'Your session has expired. Sign in again and retry.',
+  session_expired: 'Your session has expired. Sign in again and retry.',
+  refresh_token_not_found: 'Your session has expired. Sign in again and retry.',
+  refresh_token_already_used: 'Your session has expired. Sign in again and retry.',
+  user_banned: 'This account is disabled. Contact your administrator.',
+  email_not_confirmed: 'This email address has not been confirmed yet.',
+  reauthentication_needed: 'Sign in again before changing your password.',
+};
+
+function authMessage(error: unknown): string | null {
+  const auth = error as { code?: unknown; status?: unknown; __isAuthError?: unknown };
+  // Only supabase-js auth errors, never a Postgres one — both carry a `code`,
+  // and the two namespaces must not be allowed to collide.
+  if (!auth?.__isAuthError) return null;
+  if (typeof auth.code === 'string') {
+    const known = AUTH_MESSAGES[auth.code];
+    if (known) return known;
+  }
+  // An expired or missing token arrives as a bare 401 with no code.
+  if (auth.status === 401 || auth.status === 403) {
+    return 'Your session has expired. Sign in again and retry.';
+  }
+  return null;
+}
+
 export function friendlyMessage(error: PostgrestError | Error | unknown, fallback: string): string {
   if (!error) return fallback;
+
+  const auth = authMessage(error);
+  if (auth) return auth;
 
   const pgError = error as Partial<PostgrestError>;
   const code = pgError.code;

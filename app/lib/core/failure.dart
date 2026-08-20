@@ -33,6 +33,60 @@ bool _looksLikeOurMessage(String message) {
   return RegExp(r'[.!?]$').hasMatch(trimmed);
 }
 
+/// GoTrue's error codes, translated.
+///
+/// These were all collapsed into "That email and password combination is not
+/// correct." — which is right for a failed sign-in and actively misleading
+/// everywhere else. A user changing their password and being told their email
+/// and password are wrong has been given a reason that cannot be acted on.
+///
+/// Unlike a database error, an auth error is safe to relay: it describes the
+/// credential the user has just typed, not anything about another account. The
+/// one deliberate exception is [invalid_credentials], which stays vague on
+/// purpose so the form cannot be used to discover which addresses exist.
+String _authMessage(AuthException error, String fallback) {
+  switch (error.code) {
+    case 'invalid_credentials':
+    case 'invalid_grant':
+      return 'That email and password combination is not correct.';
+
+    // The single most common reason a password change is refused, and the one
+    // the user could fix instantly if anyone told them.
+    case 'same_password':
+      return 'Your new password must be different from your current one.';
+
+    case 'weak_password':
+      return 'That password is too weak. Use at least 10 characters, with an '
+          'uppercase letter, a lowercase letter and a number.';
+
+    case 'over_request_rate_limit':
+    case 'over_email_send_rate_limit':
+      return 'Too many attempts. Wait a minute and try again.';
+
+    case 'session_not_found':
+    case 'session_expired':
+    case 'refresh_token_not_found':
+    case 'refresh_token_already_used':
+      return 'Your session has expired. Sign in again and retry.';
+
+    case 'user_banned':
+      return 'This account is disabled. Contact your administrator.';
+
+    case 'email_not_confirmed':
+      return 'This email address has not been confirmed yet.';
+
+    case 'reauthentication_needed':
+      return 'Sign in again before changing your password.';
+  }
+
+  // An expired or missing token arrives as a bare 401 with no code.
+  if (error.statusCode == '401' || error.statusCode == '403') {
+    return 'Your session has expired. Sign in again and retry.';
+  }
+
+  return fallback;
+}
+
 /// A message that is safe to put in front of a user.
 ///
 /// The user-facing [message] is deliberately vague about the machinery. The
@@ -93,8 +147,8 @@ class Failure implements Exception {
       return Failure(fallback, cause: error, stackTrace: stackTrace);
     }
 
-    if (error is AuthApiException || error is AuthException) {
-      return Failure('That email and password combination is not correct.',
+    if (error is AuthException) {
+      return Failure(_authMessage(error, fallback),
           cause: error, stackTrace: stackTrace);
     }
 
