@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/dates.dart';
 import '../../core/icons.dart';
@@ -123,6 +124,21 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
       title: 'Administration',
       subtitle: 'Accounting data stays private to each user. '
           'Administrators manage accounts, not ledgers.',
+      // Reached from the rail on a desktop, where there is nothing to go back
+      // to, and pushed from the profile on a phone, where there is.
+      // `Navigator.of(context).canPop()`, not go_router's `context.canPop()`:
+      // the latter asserts when there is no GoRouter above it, which makes the
+      // screen impossible to pump in a widget test. The Navigator answers the
+      // same question — is there something under this route — without the
+      // dependency, and the pop itself still goes through go_router, which only
+      // runs when this branch decided there was something to pop.
+      leading: Navigator.of(context).canPop()
+          ? AppIconAction(
+              icon: AppIcons.back,
+              tooltip: 'Back',
+              onPressed: () => context.pop(),
+            )
+          : null,
       width: ContentWidth.standard,
       onRefresh: () async {
         ref.invalidate(adminUsersProvider);

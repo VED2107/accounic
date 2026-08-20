@@ -162,7 +162,8 @@ class _BackButton extends StatelessWidget {
     return AppIconAction(
       icon: AppIcons.back,
       tooltip: 'Back',
-      onPressed: () => context.canPop() ? context.pop() : context.go('/people'),
+      onPressed: () =>
+          Navigator.of(context).canPop() ? context.pop() : context.go('/people'),
     );
   }
 }

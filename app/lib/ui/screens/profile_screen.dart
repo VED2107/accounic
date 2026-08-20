@@ -342,7 +342,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       icon: AppIcons.admin,
                       title: 'Accounts & access',
                       subtitle: 'Manage who can sign in — not what they can see',
-                      onTap: () => context.go('/admin'),
+                      // Pushed, not `go`: on a phone the bottom bar has no
+                      // Administration destination, so a `go` left the user on a
+                      // screen with nothing to press to get back and the
+                      // Dashboard tab lit underneath it. A push gives the screen
+                      // a back button and the platform gesture something to undo.
+                      onTap: () => context.push('/admin'),
                     ),
                   ],
                 ),
