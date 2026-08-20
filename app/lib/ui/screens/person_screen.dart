@@ -3,17 +3,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/dates.dart';
-import '../../core/failure.dart';
 import '../../core/direction.dart';
+import '../../core/failure.dart';
+import '../../core/icons.dart';
+import '../../core/layout.dart';
 import '../../core/money.dart';
 import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../providers.dart';
+import '../motion.dart';
 import '../sheets/person_sheet.dart';
 import '../sheets/settle_sheet.dart';
 import '../sheets/sheet_scaffold.dart';
 import '../sheets/transaction_sheet.dart';
-import '../motion.dart';
+import '../widgets/app_page.dart';
 import '../widgets/common.dart';
 
 /// Person / business account — the screen the product is really about
@@ -21,7 +24,7 @@ import '../widgets/common.dart';
 ///
 /// Credit and debit appear together, never in separate modules, and the net
 /// position is the largest thing on the page so "where do we stand?" needs no
-/// arithmetic from the reader.
+/// arithmetic from the reader. The account is a statement, not a set of tabs.
 class PersonScreen extends ConsumerWidget {
   const PersonScreen({super.key, required this.personId});
 
@@ -31,224 +34,274 @@ class PersonScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(personPageProvider(personId));
     final currency = ref.watch(currencyProvider);
+    final page = async.valueOrNull;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(async.valueOrNull?.person.name ?? 'Account'),
-        actions: [
-          if (async.hasValue)
-            _OverflowMenu(page: async.value!, personId: personId),
-          const SizedBox(width: 4),
-        ],
-      ),
-      body: async.when(
-        loading: () => const _PersonSkeleton(),
-        error: (error, _) => ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            ErrorNote.forError(error, onRetry: () => ref.invalidate(personPageProvider(personId))),
+    return AppPage(
+      title: page?.person.name ?? 'Account',
+      subtitle: page == null ? null : _subtitle(page.person),
+      width: ContentWidth.standard,
+      bottomPadding: context.isCompact ? 48 : 48,
+      leading: _BackButton(),
+      actions: [
+        if (page != null) PersonMenu(page: page),
+      ],
+      onRefresh: () async => ref.refresh(personPageProvider(personId).future),
+      children: switch (async) {
+        AsyncError(:final error) => [
+            ErrorNote.forError(
+              error,
+              onRetry: () => ref.invalidate(personPageProvider(personId)),
+            ),
           ],
-        ),
-        data: (page) => RefreshIndicator(
-          onRefresh: () async => ref.refresh(personPageProvider(personId).future),
-          child: _PersonBody(page: page, currency: currency),
-        ),
+        AsyncData(:final value) => _body(context, value, currency),
+        _ => const [_PersonSkeleton()],
+      },
+    );
+  }
+
+  static String _subtitle(Person person) => [
+        person.type.label,
+        if (person.phone != null) person.phone!,
+        if (person.isArchived) 'Archived',
+      ].join(' · ');
+
+  List<Widget> _body(BuildContext context, PersonPage page, String currency) {
+    final groups = groupByDate(page.timeline, (entry) => entry.entryDate);
+
+    return [
+      // On a phone the app bar has only room for the name, so the identity row
+      // is repeated here where the avatar and the metadata actually fit.
+      if (context.isCompact) ...[
+        Reveal(child: _Identity(person: page.person)),
+        const SizedBox(height: AppSpacing.lg),
+      ],
+
+      Reveal(
+        delay: const Duration(milliseconds: 30),
+        child: _PositionCard(page: page, currency: currency),
       ),
+
+      if (page.person.notes != null) ...[
+        const SizedBox(height: AppSpacing.md),
+        Reveal(
+          delay: const Duration(milliseconds: 70),
+          child: Card(
+            child: Padding(
+              padding: context.cardPadding,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(AppIcons.note, size: AppIconSize.sm, color: context.money.inkFaint),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Text(
+                      page.person.notes!,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        height: 1.55,
+                        color: context.money.inkMuted,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+
+      const SizedBox(height: AppSpacing.xxl),
+
+      if (page.timeline.isEmpty)
+        const Card(
+          child: EmptyState(
+            icon: AppIcons.quiet,
+            title: 'Nothing recorded yet',
+            description: 'Your activity with this account will appear here.',
+          ),
+        )
+      else
+        for (final (index, group) in groups.indexed) ...[
+          if (index > 0) const SizedBox(height: AppSpacing.xl),
+          Reveal(
+            delay: Motion.stagger(index),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SectionHeader(
+                  group.label,
+                  trailing: '${group.items.length} '
+                      '${group.items.length == 1 ? 'entry' : 'entries'}',
+                ),
+                Card(
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(
+                    children: [
+                      for (final (row, entry) in group.items.indexed)
+                        TimelineTile(
+                          entry: entry,
+                          page: page,
+                          currency: currency,
+                          divider: row < group.items.length - 1,
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+    ];
+  }
+}
+
+/// A back affordance that matches the header's other controls.
+class _BackButton extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return AppIconAction(
+      icon: AppIcons.back,
+      tooltip: 'Back',
+      onPressed: () => context.canPop() ? context.pop() : context.go('/people'),
     );
   }
 }
 
-class _PersonBody extends ConsumerWidget {
-  const _PersonBody({required this.page, required this.currency});
+class _Identity extends StatelessWidget {
+  const _Identity({required this.person});
+
+  final Person person;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Opacity(
+          opacity: person.isArchived ? 0.6 : 1,
+          child: Avatar(person.name, size: 48),
+        ),
+        const SizedBox(width: AppSpacing.md + 2),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                person.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: context.display(20),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                PersonScreen._subtitle(person),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 13, color: context.money.inkMuted),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Where we stand, what to do about it, and the four figures it is made of.
+class _PositionCard extends StatelessWidget {
+  const _PositionCard({required this.page, required this.currency});
 
   final PersonPage page;
   final String currency;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final person = page.person;
+  Widget build(BuildContext context) {
+    final palette = context.money;
     final balance = page.balance;
     final tone = balanceTone(balance.netBalance);
-    final groups = groupByDate(page.timeline, (entry) => entry.entryDate);
+    final first = page.person.name.split(' ').first;
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
-      children: [
-        PageBody(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // ---- identity -------------------------------------------------
-              Row(
-                children: [
-                  Avatar(person.name, size: 48),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          person.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 20, fontWeight: FontWeight.w600, letterSpacing: -0.3),
-                        ),
-                        Text(
-                          [
-                            person.type.label,
-                            if (person.phone != null) person.phone!,
-                            if (person.isArchived) 'Archived',
-                          ].join(' · '),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 13, color: context.money.inkMuted),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
+    final color = switch (tone) {
+      BalanceTone.receivable => palette.receivable,
+      BalanceTone.payable => palette.payable,
+      BalanceTone.settled => context.colors.onSurface,
+    };
 
-              // ---- position: the balance is the hero (context.md §6) --------
-              //
-              // Where we stand, what to do about it, then the four figures that
-              // add up to it. Credit, debit and settlement all stay on this one
-              // page — the account is a statement, not a set of tabs.
-              SectionCard(
-                raised: true,
-                brandRule: true,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+    return SectionCard(
+      raised: true,
+      brandRule: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: EdgeInsets.all(context.isCompact ? AppSpacing.lg : AppSpacing.xl),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Current position',
-                              style: TextStyle(fontSize: 13, color: context.money.inkMuted)),
-                          const SizedBox(height: 8),
-                          FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerLeft,
-                            // Animates when it changes — which is exactly when a
-                            // settlement has just been recorded on this screen.
-                            child: AnimatedMoney(
-                              balance.netBalance.abs(),
-                              currency: currency,
-                              color: switch (tone) {
-                                BalanceTone.receivable => context.money.receivable,
-                                BalanceTone.payable => context.money.payable,
-                                BalanceTone.settled => context.colors.onSurface,
-                              },
-                              style: context.display(38),
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            switch (tone) {
-                              BalanceTone.receivable =>
-                                '${person.name.split(' ').first} owes you',
-                              BalanceTone.payable =>
-                                'You owe ${person.name.split(' ').first}',
-                              BalanceTone.settled => 'Everything is settled',
-                            },
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: switch (tone) {
-                                BalanceTone.receivable => context.money.receivable,
-                                BalanceTone.payable => context.money.payable,
-                                BalanceTone.settled => context.money.inkFaint,
-                              },
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          _ActionRow(page: page),
-                        ],
+                    Icon(AppIcons.net, size: AppIconSize.xs, color: palette.inkFaint),
+                    const SizedBox(width: AppSpacing.xs + 2),
+                    Text(
+                      'CURRENT POSITION',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.7,
+                        color: palette.inkFaint,
                       ),
                     ),
-                    Divider(height: 1, color: context.money.line),
-                    _Figures(balance: balance, currency: currency, tone: tone),
                   ],
                 ),
-              ),
-
-              if (person.notes != null) ...[
-                const SizedBox(height: 12),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('NOTES',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.6,
-                              color: context.money.inkFaint,
-                            )),
-                        const SizedBox(height: 6),
-                        Text(person.notes!,
-                            style: TextStyle(
-                                fontSize: 13.5, height: 1.5, color: context.money.inkMuted)),
-                      ],
-                    ),
+                const SizedBox(height: AppSpacing.sm + 2),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  // Animates when it changes — which is exactly when a
+                  // settlement has just been recorded on this screen.
+                  child: AnimatedMoney(
+                    balance.netBalance.abs(),
+                    currency: currency,
+                    color: color,
+                    style: context.display(context.isCompact ? 34 : 40),
                   ),
                 ),
-              ],
-
-              const SizedBox(height: 24),
-
-              // ---- timeline (context.md §16) --------------------------------
-              const Text('Timeline',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 10),
-
-              if (page.timeline.isEmpty)
-                const Card(
-                  child: EmptyState(
-                    icon: Icons.receipt_long_outlined,
-                    title: 'No transactions yet',
-                    description: 'Your activity with this account will appear here.',
-                  ),
-                )
-              else
-                for (final group in groups) ...[
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(4, 6, 4, 8),
-                    child: Text(
-                      group.label.toUpperCase(),
+                const SizedBox(height: AppSpacing.sm - 1),
+                Row(
+                  children: [
+                    Icon(
+                      switch (tone) {
+                        BalanceTone.receivable => AppIcons.receivable,
+                        BalanceTone.payable => AppIcons.payable,
+                        BalanceTone.settled => AppIcons.success,
+                      },
+                      size: AppIconSize.xs,
+                      color: tone == BalanceTone.settled ? palette.inkFaint : color,
+                    ),
+                    const SizedBox(width: AppSpacing.xs + 2),
+                    Text(
+                      switch (tone) {
+                        BalanceTone.receivable => '$first owes you',
+                        BalanceTone.payable => 'You owe $first',
+                        BalanceTone.settled => 'Everything is settled',
+                      },
                       style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.6,
-                        color: context.money.inkFaint,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: tone == BalanceTone.settled ? palette.inkFaint : color,
                       ),
                     ),
-                  ),
-                  Card(
-                    clipBehavior: Clip.antiAlias,
-                    child: Column(
-                      children: [
-                        for (final entry in group.items)
-                          _TimelineTile(
-                            entry: entry,
-                            page: page,
-                            currency: currency,
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-            ],
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.lg + 2),
+                _ActionRow(page: page),
+              ],
+            ),
           ),
-        ),
-      ],
+          Divider(height: 1, color: palette.line),
+          _Figures(balance: balance, currency: currency, tone: tone),
+        ],
+      ),
     );
   }
 }
@@ -283,7 +336,10 @@ class _ActionRow extends ConsumerWidget {
       children: [
         if (balance.hasOutstanding) ...[
           Expanded(
-            child: Pressable(
+            child: _Action(
+              label: 'Settle',
+              icon: AppIcons.settlement,
+              filled: true,
               onTap: () async {
                 final saved = await showSettleSheet(
                   context,
@@ -295,47 +351,24 @@ class _ActionRow extends ConsumerWidget {
                   showMessage(context, 'Settlement recorded.');
                 }
               },
-              child: Container(
-                height: 46,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  gradient: AccounicColors.actionGradient,
-                  borderRadius: BorderRadius.circular(AppTheme.radiusField),
-                ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.swap_horiz_rounded, size: 18, color: Colors.white),
-                    SizedBox(width: 7),
-                    Text(
-                      'Settle',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: AppSpacing.sm + 2),
         ],
         Expanded(
-          child: _TypeButton(
+          child: _Action(
             label: 'Credit',
-            icon: Icons.south_west_rounded,
-            color: palette.payable,
+            icon: AppIcons.payable,
+            tint: palette.payable,
             onTap: () => _add(context, ref, MoneyFlow.personToOwner),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: AppSpacing.sm + 2),
         Expanded(
-          child: _TypeButton(
+          child: _Action(
             label: 'Debit',
-            icon: Icons.north_east_rounded,
-            color: palette.receivable,
+            icon: AppIcons.receivable,
+            tint: palette.receivable,
             onTap: () => _add(context, ref, MoneyFlow.ownerToPerson),
           ),
         ),
@@ -344,60 +377,115 @@ class _ActionRow extends ConsumerWidget {
   }
 }
 
-class _TypeButton extends StatelessWidget {
-  const _TypeButton({
+class _Action extends StatelessWidget {
+  const _Action({
     required this.label,
     required this.icon,
-    required this.color,
     required this.onTap,
+    this.tint,
+    this.filled = false,
   });
 
   final String label;
   final IconData icon;
-  final Color color;
   final VoidCallback onTap;
+  final Color? tint;
+  final bool filled;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.money;
-    return Pressable(
-      onTap: onTap,
-      child: Container(
-        height: 46,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: palette.sunken,
-          borderRadius: BorderRadius.circular(AppTheme.radiusField),
-          border: Border.all(color: palette.line),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 17, color: color),
-            const SizedBox(width: 7),
-            Text(
-              label,
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+
+    return Hoverable(
+      builder: (context, hovered) => Pressable(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: Motion.fast,
+          curve: Motion.enter,
+          height: 46,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            gradient: filled ? AccounicColors.actionGradient : null,
+            color: filled
+                ? null
+                : hovered
+                    ? palette.raised
+                    : palette.sunken,
+            borderRadius: AppRadius.fieldAll,
+            border: Border.all(
+              color: filled
+                  ? Colors.transparent
+                  : hovered
+                      ? (tint ?? palette.lineStrong).withValues(alpha: 0.5)
+                      : palette.line,
             ),
-          ],
+            boxShadow: [
+              if (hovered && filled)
+                BoxShadow(
+                  color: const Color(0xFF1D4ED8).withValues(alpha: 0.34),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: AppIconSize.sm,
+                color: filled ? Colors.white : tint,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Text(
+                label,
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                  color: filled ? Colors.white : context.colors.onSurface,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _OverflowMenu extends ConsumerWidget {
-  const _OverflowMenu({required this.page, required this.personId});
+/// Edit, archive, delete. Delete only exists while deleting is possible, so it
+/// is never offered and then refused.
+class PersonMenu extends ConsumerWidget {
+  const PersonMenu({super.key, required this.page});
 
   final PersonPage page;
-  final String personId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final person = page.person;
+    final palette = context.money;
+
+    Widget item(IconData icon, String label, {Color? tone}) => Row(
+          children: [
+            Icon(icon, size: AppIconSize.sm, color: tone ?? palette.inkMuted),
+            const SizedBox(width: AppSpacing.md),
+            Text(
+              label,
+              style: TextStyle(fontSize: 13.5, color: tone ?? context.colors.onSurface),
+            ),
+          ],
+        );
 
     return PopupMenuButton<String>(
       tooltip: 'More',
+      position: PopupMenuPosition.under,
+      color: palette.raised,
+      elevation: 8,
+      shape: RoundedRectangleBorder(
+        borderRadius: AppRadius.fieldAll,
+        side: BorderSide(color: palette.lineStrong),
+      ),
+      icon: Icon(AppIcons.more, size: AppIconSize.md, color: palette.inkMuted),
       onSelected: (value) async {
         final repository = ref.read(ledgerRepositoryProvider);
 
@@ -411,6 +499,7 @@ class _OverflowMenu extends ConsumerWidget {
             final ok = await confirm(
               context,
               destructive: false,
+              icon: AppIcons.archive,
               title: archiving ? 'Archive ${person.name}?' : 'Restore ${person.name}?',
               confirmLabel: archiving ? 'Archive' : 'Restore',
               body: archiving
@@ -430,6 +519,7 @@ class _OverflowMenu extends ConsumerWidget {
           case 'delete':
             final ok = await confirm(
               context,
+              icon: AppIcons.delete,
               title: 'Delete ${person.name}?',
               confirmLabel: 'Delete',
               body: 'This cannot be undone. It is only possible because there are no '
@@ -446,39 +536,46 @@ class _OverflowMenu extends ConsumerWidget {
         }
       },
       itemBuilder: (context) => [
-        const PopupMenuItem(value: 'edit', child: Text('Edit details')),
+        PopupMenuItem(value: 'edit', child: item(AppIcons.edit, 'Edit details')),
         PopupMenuItem(
           value: person.isArchived ? 'restore' : 'archive',
-          child: Text(person.isArchived ? 'Restore' : 'Archive'),
+          child: item(AppIcons.archive, person.isArchived ? 'Restore' : 'Archive'),
         ),
         if (page.balance.transactionCount == 0)
           PopupMenuItem(
             value: 'delete',
-            child: Text('Delete', style: TextStyle(color: context.money.payable)),
+            child: item(AppIcons.delete, 'Delete', tone: palette.payable),
           ),
       ],
     );
   }
 }
 
-/// One timeline row. Tapping expands the actions for that row only — a toolbar
-/// on every line makes a dense ledger unreadable (context.md §16).
-class _TimelineTile extends ConsumerStatefulWidget {
-  const _TimelineTile({
+/// One timeline row.
+///
+/// Tapping expands the actions for that row only — a toolbar on every line makes
+/// a dense ledger unreadable (context.md §16). The expansion is animated so the
+/// rows below it move rather than jump, which is what tells the eye the panel
+/// belongs to the row it came out of.
+class TimelineTile extends ConsumerStatefulWidget {
+  const TimelineTile({
+    super.key,
     required this.entry,
     required this.page,
     required this.currency,
+    this.divider = true,
   });
 
   final TimelineEntry entry;
   final PersonPage page;
   final String currency;
+  final bool divider;
 
   @override
-  ConsumerState<_TimelineTile> createState() => _TimelineTileState();
+  ConsumerState<TimelineTile> createState() => _TimelineTileState();
 }
 
-class _TimelineTileState extends ConsumerState<_TimelineTile> {
+class _TimelineTileState extends ConsumerState<TimelineTile> {
   bool _open = false;
   bool _busy = false;
 
@@ -488,6 +585,7 @@ class _TimelineTileState extends ConsumerState<_TimelineTile> {
 
     final ok = await confirm(
       context,
+      icon: isTransaction ? AppIcons.delete : AppIcons.settlement,
       title: isTransaction ? 'Void this transaction?' : 'Reverse this settlement?',
       confirmLabel: isTransaction ? 'Void' : 'Reverse',
       body: isTransaction
@@ -507,6 +605,7 @@ class _TimelineTileState extends ConsumerState<_TimelineTile> {
       } else {
         await repository.voidSettlement(entry.id);
       }
+      Haptics.success();
       ref.refreshLedger(personId: widget.page.person.id);
     } on Failure catch (failure) {
       if (mounted) showMessage(context, failure.message, error: true);
@@ -519,202 +618,305 @@ class _TimelineTileState extends ConsumerState<_TimelineTile> {
   Widget build(BuildContext context) {
     final entry = widget.entry;
     final palette = context.money;
-    final (background, foreground) = entry.isSettlement
-        ? (palette.sunken, palette.inkMuted)
+
+    final (background, foreground, border) = entry.isSettlement
+        ? (palette.sunken, palette.inkMuted, palette.line)
         : entry.isReceivable
-            ? (palette.receivableSoft, palette.receivable)
-            : (palette.payableSoft, palette.payable);
+            ? (palette.receivableSoft, palette.receivable, palette.receivableLine)
+            : (palette.payableSoft, palette.payable, palette.payableLine);
+
+    final icon = entry.isSettlement
+        ? AppIcons.settlement
+        : entry.isReceivable
+            ? AppIcons.receivable
+            : AppIcons.payable;
 
     return Opacity(
       opacity: entry.isVoid ? 0.55 : 1,
       child: Column(
         children: [
-          ListTile(
-            onTap: () => setState(() => _open = !_open),
-            leading: Container(
-              width: 38,
-              height: 38,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: background,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                entry.isSettlement
-                    ? Icons.swap_horiz
-                    : entry.isReceivable
-                        ? Icons.south_west
-                        : Icons.north_east,
-                size: 18,
-                color: foreground,
-              ),
-            ),
-            title: Row(
-              children: [
-                Flexible(
-                  child: Text(
-                    entry.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          Hoverable(
+            builder: (context, hovered) => AnimatedContainer(
+              duration: Motion.fast,
+              color: _open
+                  ? palette.sunken
+                  : hovered
+                      ? palette.sunken
+                      : Colors.transparent,
+              child: InkWell(
+                onTap: () => setState(() => _open = !_open),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.lg,
+                    vertical: AppSpacing.md,
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: background,
+                          borderRadius: BorderRadius.circular(11),
+                          border: Border.all(color: border),
+                        ),
+                        child: Icon(icon, size: AppIconSize.sm, color: foreground),
+                      ),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    entry.label,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: AppSpacing.sm),
+                                if (entry.isVoid)
+                                  const StatusChip('Voided', tone: StatusTone.muted)
+                                else if (entry.status == SettlementStatus.settled)
+                                  const StatusChip('Settled', tone: StatusTone.done)
+                                else if (entry.status == SettlementStatus.partial)
+                                  StatusChip(
+                                    '${formatMinor(entry.remainingMinor ?? 0, currency: widget.currency)} left',
+                                    tone: StatusTone.partial,
+                                  ),
+                              ],
+                            ),
+                            if (entry.note != null) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                entry.note!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 12, color: palette.inkFaint),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.md),
+                      MoneyText(
+                        entry.amountMinor,
+                        currency: widget.currency,
+                        strikethrough: entry.isVoid,
+                        tone: entry.isSettlement
+                            ? MoneyTone.neutral
+                            : entry.isReceivable
+                                ? MoneyTone.receivable
+                                : MoneyTone.payable,
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      AnimatedRotation(
+                        duration: Motion.fast,
+                        curve: Motion.enter,
+                        turns: _open ? 0.5 : 0,
+                        child: Icon(
+                          AppIcons.expand,
+                          size: AppIconSize.sm,
+                          color: palette.inkFaint,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                if (entry.isVoid)
-                  const StatusChip('Voided', tone: StatusTone.muted)
-                else if (entry.status == SettlementStatus.settled)
-                  const StatusChip('Settled', tone: StatusTone.done)
-                else if (entry.status == SettlementStatus.partial)
-                  StatusChip(
-                    '${formatMinor(entry.remainingMinor ?? 0, currency: widget.currency)} left',
-                    tone: StatusTone.partial,
-                  ),
-              ],
-            ),
-            subtitle: entry.note == null
-                ? null
-                : Text(entry.note!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12)),
-            trailing: MoneyText(
-              entry.amountMinor,
-              currency: widget.currency,
-              strikethrough: entry.isVoid,
-              tone: entry.isSettlement
-                  ? MoneyTone.neutral
-                  : entry.isReceivable
-                      ? MoneyTone.receivable
-                      : MoneyTone.payable,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
             ),
           ),
 
-          if (_open)
-            Container(
-              width: double.infinity,
-              color: palette.sunken,
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-              child: entry.isVoid
-                  ? Text(
-                      'This entry was voided. It stays here as history and does not '
-                      'affect any balance.',
-                      style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
-                    )
-                  : Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        if (!entry.isSettlement && (entry.remainingMinor ?? 0) > 0)
-                          OutlinedButton(
-                            onPressed: _busy
-                                ? null
-                                : () async {
-                                    final saved = await showSettleSheet(
-                                      context,
-                                      ref,
-                                      balance: widget.page.balance,
-                                      openTransactions: widget.page.openTransactions,
-                                      presetTransactionId: entry.id,
-                                    );
-                                    if (saved && context.mounted) {
-                                      showMessage(context, 'Settlement recorded.');
-                                    }
-                                  },
-                            style: OutlinedButton.styleFrom(minimumSize: const Size(0, 38)),
-                            child: const Text('Settle this'),
-                          ),
-                        if (!entry.isSettlement)
-                          OutlinedButton(
-                            onPressed: _busy
-                                ? null
-                                : () async {
-                                    final saved = await showTransactionSheet(
-                                      context,
-                                      ref,
-                                      person: PersonRef(
-                                          widget.page.person.id, widget.page.person.name),
-                                      transaction: EditableTransaction(
-                                        id: entry.id,
-                                        type: entry.txnType ?? TxnType.credit,
-                                        amountMinor: entry.amountMinor,
-                                        date: entry.entryDate,
-                                        description: entry.note,
-                                      ),
-                                    );
-                                    if (saved && context.mounted) {
-                                      showMessage(context, 'Transaction updated.');
-                                    }
-                                  },
-                            style: OutlinedButton.styleFrom(minimumSize: const Size(0, 38)),
-                            child: const Text('Edit'),
-                          ),
-                        OutlinedButton(
-                          onPressed: _busy ? null : _void,
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size(0, 38),
-                            foregroundColor: palette.payable,
-                          ),
-                          child: Text(entry.isSettlement ? 'Reverse' : 'Void'),
-                        ),
-                      ],
-                    ),
-            ),
+          AnimatedSize(
+            duration: Motion.normal,
+            curve: Motion.enter,
+            alignment: Alignment.topCenter,
+            child: !_open
+                ? const SizedBox(width: double.infinity)
+                : _RowActions(
+                    entry: entry,
+                    page: widget.page,
+                    currency: widget.currency,
+                    busy: _busy,
+                    onVoid: _void,
+                  ),
+          ),
 
-          Divider(height: 1, color: palette.line, indent: 16, endIndent: 16),
+          if (widget.divider)
+            Divider(height: 1, color: palette.line, indent: AppSpacing.lg),
         ],
       ),
     );
   }
 }
 
-class _PersonSkeleton extends StatelessWidget {
-  const _PersonSkeleton();
+/// What can be done to one entry, revealed under it.
+class _RowActions extends ConsumerWidget {
+  const _RowActions({
+    required this.entry,
+    required this.page,
+    required this.currency,
+    required this.busy,
+    required this.onVoid,
+  });
+
+  final TimelineEntry entry;
+  final PersonPage page;
+  final String currency;
+  final bool busy;
+  final VoidCallback onVoid;
 
   @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-      children: [
-        Row(
-          children: const [
-            Skeleton(width: 48, height: 48, radius: 15),
-            SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Skeleton(width: 180, height: 20),
-                  SizedBox(height: 8),
-                  Skeleton(width: 120, height: 12),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 18),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
-                Skeleton(width: 120, height: 13),
-                SizedBox(height: 10),
-                Skeleton(width: 190, height: 30),
-                SizedBox(height: 22),
-                Skeleton(width: double.infinity, height: 42, radius: 10),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final palette = context.money;
+
+    return Container(
+      width: double.infinity,
+      color: palette.sunken,
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        0,
+        AppSpacing.lg,
+        AppSpacing.md + 2,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            [
+              fullDate(entry.entryDate),
+              if (!entry.isSettlement && (entry.remainingMinor ?? 0) > 0)
+                '${formatMinor(entry.remainingMinor!, currency: currency)} still outstanding',
+            ].join('  ·  '),
+            style: TextStyle(fontSize: 12, color: palette.inkFaint),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          if (entry.isVoid)
+            Text(
+              'This entry was voided. It stays here as history and does not '
+              'affect any balance.',
+              style: TextStyle(fontSize: 12.5, height: 1.5, color: palette.inkFaint),
+            )
+          else
+            Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              children: [
+                if (!entry.isSettlement && (entry.remainingMinor ?? 0) > 0)
+                  _RowAction(
+                    label: 'Settle this',
+                    icon: AppIcons.settlement,
+                    onTap: busy
+                        ? null
+                        : () async {
+                            final saved = await showSettleSheet(
+                              context,
+                              ref,
+                              balance: page.balance,
+                              openTransactions: page.openTransactions,
+                              presetTransactionId: entry.id,
+                            );
+                            if (saved && context.mounted) {
+                              showMessage(context, 'Settlement recorded.');
+                            }
+                          },
+                  ),
+                if (!entry.isSettlement)
+                  _RowAction(
+                    label: 'Edit',
+                    icon: AppIcons.edit,
+                    onTap: busy
+                        ? null
+                        : () async {
+                            final saved = await showTransactionSheet(
+                              context,
+                              ref,
+                              person: PersonRef(page.person.id, page.person.name),
+                              transaction: EditableTransaction(
+                                id: entry.id,
+                                type: entry.txnType ?? TxnType.credit,
+                                amountMinor: entry.amountMinor,
+                                date: entry.entryDate,
+                                description: entry.note,
+                              ),
+                            );
+                            if (saved && context.mounted) {
+                              showMessage(context, 'Transaction updated.');
+                            }
+                          },
+                  ),
+                _RowAction(
+                  label: entry.isSettlement ? 'Reverse' : 'Void',
+                  icon: AppIcons.delete,
+                  tone: palette.payable,
+                  onTap: busy ? null : onVoid,
+                ),
               ],
             ),
-          ),
-        ),
-        const SizedBox(height: 22),
-        const Card(child: SkeletonList(rows: 4)),
-      ],
+        ],
+      ),
     );
   }
 }
 
+class _RowAction extends StatelessWidget {
+  const _RowAction({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    this.tone,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback? onTap;
+  final Color? tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.money;
+    final color = tone ?? context.colors.onSurface;
+
+    return Hoverable(
+      builder: (context, hovered) => Pressable(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: Motion.fast,
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md + 2),
+          decoration: BoxDecoration(
+            color: hovered ? palette.raised : Colors.transparent,
+            borderRadius: AppRadius.fieldAll,
+            border: Border.all(color: hovered ? palette.lineStrong : palette.line),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: AppIconSize.xs, color: color),
+              const SizedBox(width: AppSpacing.sm - 2),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// Credited, debited, settled, remaining — the four figures the position is made
 /// of, laid out two by two so they fit a phone without shrinking.
@@ -729,17 +931,33 @@ class _Figures extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.money;
 
-    Widget cell(String label, int minor, MoneyTone moneyTone) => Expanded(
+    Widget cell(String label, IconData? icon, int minor, MoneyTone moneyTone, Color? color) =>
+        Expanded(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.lg,
+              vertical: AppSpacing.md + 2,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 11.5, color: palette.inkMuted)),
-                const SizedBox(height: 3),
+                Row(
+                  children: [
+                    if (icon != null) ...[
+                      Icon(icon, size: AppIconSize.xs, color: color ?? palette.inkFaint),
+                      const SizedBox(width: AppSpacing.xs + 2),
+                    ],
+                    Flexible(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 11.5, color: palette.inkMuted),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.xs),
                 FittedBox(
                   fit: BoxFit.scaleDown,
                   alignment: Alignment.centerLeft,
@@ -763,11 +981,21 @@ class _Figures extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              cell('Credited to you', balance.totalDebit,
-                  balance.totalDebit > 0 ? MoneyTone.payable : MoneyTone.neutral),
+              cell(
+                'Credited to you',
+                AppIcons.payable,
+                balance.totalDebit,
+                balance.totalDebit > 0 ? MoneyTone.payable : MoneyTone.neutral,
+                balance.totalDebit > 0 ? palette.payable : null,
+              ),
               VerticalDivider(width: 1, color: palette.line),
-              cell('Debited to them', balance.totalCredit,
-                  balance.totalCredit > 0 ? MoneyTone.receivable : MoneyTone.neutral),
+              cell(
+                'Debited to them',
+                AppIcons.receivable,
+                balance.totalCredit,
+                balance.totalCredit > 0 ? MoneyTone.receivable : MoneyTone.neutral,
+                balance.totalCredit > 0 ? palette.receivable : null,
+              ),
             ],
           ),
         ),
@@ -776,10 +1004,17 @@ class _Figures extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              cell('Settled', balance.totalSettled, MoneyTone.neutral),
+              cell(
+                'Settled',
+                AppIcons.settlement,
+                balance.totalSettled,
+                MoneyTone.neutral,
+                null,
+              ),
               VerticalDivider(width: 1, color: palette.line),
               cell(
                 tone == BalanceTone.payable ? 'You will pay' : 'You will receive',
+                AppIcons.net,
                 tone == BalanceTone.payable
                     ? balance.outstandingPayable
                     : balance.outstandingReceivable,
@@ -788,10 +1023,59 @@ class _Figures extends StatelessWidget {
                   BalanceTone.receivable => MoneyTone.receivable,
                   BalanceTone.settled => MoneyTone.neutral,
                 },
+                null,
               ),
             ],
           ),
         ),
+      ],
+    );
+  }
+}
+
+class _PersonSkeleton extends StatelessWidget {
+  const _PersonSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Card(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: context.cardPadding,
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Skeleton(width: 130, height: 11),
+                    SizedBox(height: AppSpacing.md),
+                    Skeleton(width: 190, height: 38),
+                    SizedBox(height: AppSpacing.md),
+                    Skeleton(width: 120, height: 13),
+                    SizedBox(height: AppSpacing.xl),
+                    Skeleton(height: 46, radius: AppRadius.field),
+                  ],
+                ),
+              ),
+              Divider(height: 1, color: context.money.line),
+              const Padding(
+                padding: EdgeInsets.all(AppSpacing.lg),
+                child: Row(
+                  children: [
+                    Expanded(child: Skeleton(width: 100, height: 34)),
+                    SizedBox(width: AppSpacing.xxl),
+                    Expanded(child: Skeleton(width: 100, height: 34)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xxl),
+        const Card(child: SkeletonList(rows: 5)),
       ],
     );
   }

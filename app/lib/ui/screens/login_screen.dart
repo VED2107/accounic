@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/failure.dart';
+import '../../core/icons.dart';
 import '../../core/theme.dart';
 import '../../providers.dart';
 import '../widgets/brand.dart';
@@ -139,8 +140,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 tooltip: _obscure ? 'Show password' : 'Hide password',
                                 icon: Icon(
                                   _obscure
-                                      ? Icons.visibility_outlined
-                                      : Icons.visibility_off_outlined,
+                                      ? AppIcons.reveal
+                                      : AppIcons.conceal,
                                   size: 19,
                                 ),
                               ),

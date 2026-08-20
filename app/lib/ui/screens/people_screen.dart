@@ -4,21 +4,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/dates.dart';
+import '../../core/icons.dart';
+import '../../core/layout.dart';
+import '../../core/money.dart';
 import '../../core/theme.dart';
 import '../../data/ledger_repository.dart';
 import '../../data/models.dart';
 import '../../providers.dart';
-import '../../core/dates.dart';
-import '../../core/money.dart';
 import '../motion.dart';
 import '../sheets/person_sheet.dart';
+import '../widgets/app_page.dart';
 import '../widgets/common.dart';
 
 /// People — the account directory (context.md §5).
 ///
-/// Scannable in one pass: who, how much, which way. The totals strip above the
-/// list is the same figure the dashboard shows, so arriving here from there is
-/// continuous rather than a context switch.
+/// A relationship manager rather than a table: who, how much, which way, and
+/// when it last moved. The totals strip above the list is the same figure the
+/// dashboard shows, so arriving here from there is continuous rather than a
+/// context switch.
 class PeopleScreen extends ConsumerStatefulWidget {
   const PeopleScreen({super.key});
 
@@ -50,7 +54,9 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
     });
   }
 
-  /// The direction filter applied over the rows the query already returned.
+  /// The direction filter, applied over the rows the query already returned.
+  /// A view rather than a second request: switching it costs no round trip, and
+  /// the totals above still describe the whole workspace.
   List<PersonBalance> _apply(List<PersonBalance> people) =>
       people.where((person) => _side.matches(person.netBalance)).toList();
 
@@ -70,248 +76,489 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
       (query: _query, includeArchived: _includeArchived, sort: _sort),
     ));
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        title: const Text('People'),
-        actions: [
-          IconButton(
-            onPressed: _addPerson,
-            icon: const Icon(Icons.person_add_alt),
-            tooltip: 'Add person',
-          ),
-          const SizedBox(width: 4),
-        ],
+    final all = async.valueOrNull ?? const <PersonBalance>[];
+    final shown = _apply(all);
+
+    return AppPage(
+      title: 'People',
+      subtitle: async.hasValue
+          ? '${all.length} ${all.length == 1 ? 'account' : 'accounts'} on your ledger'
+          : null,
+      width: ContentWidth.standard,
+      bottomPadding: context.isCompact ? 120 : 48,
+      actions: [
+        AppIconAction(
+          icon: AppIcons.addPerson,
+          tooltip: 'Add person',
+          onPressed: _addPerson,
+          emphasised: true,
+        ),
+      ],
+      toolbar: _Toolbar(
+        controller: _search,
+        onChanged: _onSearchChanged,
+        onClear: () {
+          _search.clear();
+          setState(() => _query = '');
+        },
+        side: _side,
+        onSide: (side) => setState(() => _side = side),
+        sort: _sort,
+        onSort: (sort) => setState(() => _sort = sort),
+        includeArchived: _includeArchived,
+        onArchived: () => setState(() => _includeArchived = !_includeArchived),
       ),
-      body: Column(
+      onRefresh: () async => ref.invalidate(peopleProvider),
+      children: switch (async) {
+        AsyncError(:final error) => [
+            ErrorNote.forError(error, onRetry: () => ref.invalidate(peopleProvider)),
+          ],
+        AsyncData() when shown.isEmpty => [_emptyState()],
+        AsyncData() => [
+            if (_side == _Side.all) ...[
+              Reveal(child: _Totals(people: all, currency: currency)),
+              const SizedBox(height: AppSpacing.lg),
+            ],
+            Reveal(
+              delay: const Duration(milliseconds: 40),
+              child: Card(
+                clipBehavior: Clip.antiAlias,
+                child: Stagger(
+                  children: [
+                    for (final (index, person) in shown.indexed)
+                      _PersonTile(
+                        person: person,
+                        currency: currency,
+                        divider: index < shown.length - 1,
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        _ => const [
+            Card(child: SkeletonList(rows: 8)),
+          ],
+      },
+    );
+  }
+
+  Widget _emptyState() {
+    if (_query.isNotEmpty) {
+      return Card(
+        child: EmptyState(
+          icon: AppIcons.noResults,
+          title: 'Nothing matches “$_query”',
+          description: 'Try a different name or phone number.',
+        ),
+      );
+    }
+
+    if (_side != _Side.all) {
+      return Card(
+        child: EmptyState(
+          icon: AppIcons.noFilterMatch,
+          title: 'Nothing in this filter',
+          description: switch (_side) {
+            _Side.receivable => 'No one currently owes you.',
+            _Side.payable => 'You do not currently owe anyone.',
+            _ => 'No accounts are fully settled.',
+          },
+          action: TextButton(
+            onPressed: () => setState(() => _side = _Side.all),
+            child: const Text('Show everyone'),
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      child: EmptyState(
+        icon: AppIcons.noPeople,
+        title: 'No one is on your ledger yet',
+        description: 'Add your first person or business to start tracking money.',
+        action: FilledButton.icon(
+          onPressed: _addPerson,
+          icon: const Icon(AppIcons.addPerson, size: AppIconSize.sm),
+          label: const Text('Add person'),
+        ),
+      ),
+    );
+  }
+}
+
+/// Search, direction, sort, archived — on one line where there is room for it
+/// and on two where there is not.
+class _Toolbar extends StatelessWidget {
+  const _Toolbar({
+    required this.controller,
+    required this.onChanged,
+    required this.onClear,
+    required this.side,
+    required this.onSide,
+    required this.sort,
+    required this.onSort,
+    required this.includeArchived,
+    required this.onArchived,
+  });
+
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onClear;
+  final _Side side;
+  final ValueChanged<_Side> onSide;
+  final PeopleSort sort;
+  final ValueChanged<PeopleSort> onSort;
+  final bool includeArchived;
+  final VoidCallback onArchived;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.money;
+
+    final search = TextField(
+      controller: controller,
+      onChanged: onChanged,
+      style: const TextStyle(fontSize: 14),
+      decoration: InputDecoration(
+        hintText: 'Search name or phone',
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(vertical: 13),
+        prefixIcon: Padding(
+          padding: const EdgeInsets.only(left: AppSpacing.md, right: AppSpacing.sm),
+          child: Icon(AppIcons.search, size: AppIconSize.sm, color: palette.inkFaint),
+        ),
+        prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+        suffixIcon: controller.text.isEmpty
+            ? null
+            : IconButton(
+                icon: Icon(AppIcons.close, size: AppIconSize.sm, color: palette.inkFaint),
+                onPressed: onClear,
+                splashRadius: 18,
+              ),
+      ),
+    );
+
+    final filters = Row(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final value in _Side.values) ...[
+                  _Chip(
+                    label: value.label,
+                    selected: side == value,
+                    onTap: () => onSide(value),
+                  ),
+                  const SizedBox(width: AppSpacing.sm - 2),
+                ],
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        _SortMenu(sort: sort, onSort: onSort),
+        const SizedBox(width: AppSpacing.sm - 2),
+        _ArchivedToggle(on: includeArchived, onTap: onArchived),
+      ],
+    );
+
+    if (context.isCompact) {
+      return Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: PageBody(
-              child: Column(
+          search,
+          const SizedBox(height: AppSpacing.md - 2),
+          filters,
+        ],
+      );
+    }
+
+    return Row(
+      children: [
+        SizedBox(width: 300, child: search),
+        const SizedBox(width: AppSpacing.lg),
+        Expanded(child: filters),
+      ],
+    );
+  }
+}
+
+/// The direction filter chip.
+class _Chip extends StatelessWidget {
+  const _Chip({required this.label, required this.selected, required this.onTap});
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.money;
+
+    return Hoverable(
+      builder: (context, hovered) => AnimatedContainer(
+        duration: Motion.fast,
+        curve: Motion.enter,
+        height: 34,
+        decoration: BoxDecoration(
+          color: selected
+              ? palette.accentSoft
+              : hovered
+                  ? palette.raised
+                  : palette.sunken,
+          borderRadius: BorderRadius.circular(AppRadius.chip),
+          border: Border.all(
+            color: selected
+                ? palette.accentLine
+                : hovered
+                    ? palette.lineStrong
+                    : palette.line,
+          ),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(AppRadius.chip),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(AppRadius.chip),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg - 2),
+              child: Center(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: selected ? context.colors.primary : palette.inkMuted,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SortMenu extends StatelessWidget {
+  const _SortMenu({required this.sort, required this.onSort});
+
+  final PeopleSort sort;
+  final ValueChanged<PeopleSort> onSort;
+
+  static const _labels = {
+    PeopleSort.name: 'Name',
+    PeopleSort.balance: 'Balance',
+    PeopleSort.recent: 'Recent',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.money;
+
+    return Hoverable(
+      builder: (context, hovered) => PopupMenuButton<PeopleSort>(
+        tooltip: 'Sort',
+        position: PopupMenuPosition.under,
+        color: palette.raised,
+        elevation: 8,
+        shape: RoundedRectangleBorder(
+          borderRadius: AppRadius.fieldAll,
+          side: BorderSide(color: palette.lineStrong),
+        ),
+        onSelected: onSort,
+        itemBuilder: (context) => [
+          for (final entry in _labels.entries)
+            PopupMenuItem(
+              value: entry.key,
+              child: Row(
                 children: [
-                  TextField(
-                    controller: _search,
-                    onChanged: _onSearchChanged,
-                    decoration: InputDecoration(
-                      hintText: 'Search name or phone',
-                      prefixIcon: const Icon(Icons.search, size: 19),
-                      suffixIcon: _search.text.isEmpty
-                          ? null
-                          : IconButton(
-                              icon: const Icon(Icons.close, size: 18),
-                              onPressed: () {
-                                _search.clear();
-                                setState(() => _query = '');
-                              },
-                            ),
-                    ),
+                  Icon(
+                    AppIcons.check,
+                    size: AppIconSize.sm,
+                    color: sort == entry.key ? context.colors.primary : Colors.transparent,
                   ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    height: 34,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      children: [
-                        for (final side in _Side.values) ...[
-                          _SideChip(
-                            label: side.label,
-                            selected: _side == side,
-                            onTap: () => setState(() => _side = side),
-                          ),
-                          const SizedBox(width: 6),
-                        ],
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: SegmentedButton<PeopleSort>(
-                          segments: const [
-                            ButtonSegment(value: PeopleSort.name, label: Text('Name')),
-                            ButtonSegment(value: PeopleSort.balance, label: Text('Balance')),
-                            ButtonSegment(value: PeopleSort.recent, label: Text('Recent')),
-                          ],
-                          selected: {_sort},
-                          showSelectedIcon: false,
-                          onSelectionChanged: (values) =>
-                              setState(() => _sort = values.first),
-                          style: ButtonStyle(
-                            visualDensity: VisualDensity.compact,
-                            textStyle: WidgetStatePropertyAll(
-                              TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton.outlined(
-                        onPressed: () =>
-                            setState(() => _includeArchived = !_includeArchived),
-                        isSelected: _includeArchived,
-                        tooltip: _includeArchived ? 'Hide archived' : 'Show archived',
-                        icon: const Icon(Icons.inventory_2_outlined, size: 18),
-                      ),
-                    ],
-                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Text(entry.value, style: const TextStyle(fontSize: 13.5)),
                 ],
               ),
             ),
+        ],
+        child: AnimatedContainer(
+          duration: Motion.fast,
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+          decoration: BoxDecoration(
+            color: hovered ? palette.raised : palette.sunken,
+            borderRadius: BorderRadius.circular(AppRadius.chip),
+            border: Border.all(color: hovered ? palette.lineStrong : palette.line),
           ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _labels[sort]!,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: palette.inkMuted,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs + 1),
+              Icon(AppIcons.expand, size: AppIconSize.xs, color: palette.inkFaint),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: () async => ref.invalidate(peopleProvider),
-              child: async.when(
-                loading: () => const SingleChildScrollView(
-                  padding: EdgeInsets.symmetric(horizontal: 16),
-                  child: PageBody(child: Card(child: SkeletonList(rows: 7))),
-                ),
-                error: (error, _) => ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    ErrorNote.forError(error, onRetry: () => ref.invalidate(peopleProvider)),
-                  ],
-                ),
-                data: (all) => _apply(all).isEmpty
-                    ? ListView(
-                        padding: const EdgeInsets.all(16),
-                        children: [
-                          PageBody(
-                            child: Card(
-                              child: _query.isNotEmpty
-                                  ? EmptyState(
-                                      icon: Icons.search_off,
-                                      title: 'Nothing matches “$_query”',
-                                      description: 'Try a different name or phone number.',
-                                    )
-                                  : _side != _Side.all
-                                      ? EmptyState(
-                                          icon: Icons.filter_list_off,
-                                          title: 'Nothing in this filter',
-                                          description: switch (_side) {
-                                            _Side.receivable => 'No one currently owes you.',
-                                            _Side.payable =>
-                                              'You do not currently owe anyone.',
-                                            _ => 'No accounts are fully settled.',
-                                          },
-                                        )
-                                  : EmptyState(
-                                      icon: Icons.people_outline,
-                                      title: 'No people yet',
-                                      description:
-                                          'Add your first person or business to start tracking money.',
-                                      action: FilledButton.icon(
-                                        onPressed: _addPerson,
-                                        icon: const Icon(Icons.add, size: 18),
-                                        label: const Text('Add person'),
-                                      ),
-                                    ),
-                            ),
-                          ),
-                        ],
-                      )
-                    : ListView(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 110),
-                        children: [
-                          PageBody(
-                            child: Column(
-                              children: [
-                                _Totals(people: all, currency: currency),
-                                const SizedBox(height: 12),
-                                Card(
-                                  clipBehavior: Clip.antiAlias,
-                                  child: Stagger(
-                                    children: [
-                                      for (final person in _apply(all))
-                                        _PersonTile(person: person, currency: currency),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
+class _ArchivedToggle extends StatelessWidget {
+  const _ArchivedToggle({required this.on, required this.onTap});
+
+  final bool on;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.money;
+
+    return Tooltip(
+      message: on ? 'Hide archived accounts' : 'Show archived accounts',
+      child: Hoverable(
+        builder: (context, hovered) => Pressable(
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: Motion.fast,
+            width: 34,
+            height: 34,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: on
+                  ? palette.accentSoft
+                  : hovered
+                      ? palette.raised
+                      : palette.sunken,
+              borderRadius: BorderRadius.circular(AppRadius.chip),
+              border: Border.all(
+                color: on
+                    ? palette.accentLine
+                    : hovered
+                        ? palette.lineStrong
+                        : palette.line,
               ),
             ),
+            child: Icon(
+              AppIcons.archive,
+              size: AppIconSize.sm,
+              color: on ? context.colors.primary : palette.inkMuted,
+            ),
           ),
-        ],
+        ),
       ),
     );
   }
 }
 
 class _PersonTile extends StatelessWidget {
-  const _PersonTile({required this.person, required this.currency});
+  const _PersonTile({
+    required this.person,
+    required this.currency,
+    required this.divider,
+  });
 
   final PersonBalance person;
   final String currency;
+  final bool divider;
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.money;
+
     return Column(
       children: [
-        InkWell(
-          onTap: () => context.push('/people/${person.personId}'),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-            child: Row(
-              children: [
-                Avatar(person.name, size: 42),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+        Hoverable(
+          builder: (context, hovered) => AnimatedContainer(
+            duration: Motion.fast,
+            color: hovered ? palette.sunken : Colors.transparent,
+            child: InkWell(
+              onTap: () => context.push('/people/${person.personId}'),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.lg,
+                  vertical: AppSpacing.md,
+                ),
+                child: Row(
+                  children: [
+                    Opacity(
+                      opacity: person.isArchived ? 0.55 : 1,
+                      child: Avatar(person.name, size: 42),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Flexible(
-                            child: Text(
-                              person.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 14.5,
-                                fontWeight: FontWeight.w600,
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  person.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 14.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                               ),
-                            ),
+                              if (person.isArchived) ...[
+                                const SizedBox(width: AppSpacing.sm),
+                                const StatusChip('Archived', tone: StatusTone.muted),
+                              ],
+                            ],
                           ),
-                          if (person.isArchived) ...[
-                            const SizedBox(width: 8),
-                            const StatusChip('Archived', tone: StatusTone.muted),
-                          ],
+                          const SizedBox(height: 2),
+                          Text(
+                            _meta(person),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 12, color: palette.inkFaint),
+                          ),
                         ],
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        _meta(person),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12, color: context.money.inkFaint),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    NetBadge(netMinor: person.netBalance, currency: currency),
+                    const SizedBox(width: AppSpacing.xs),
+                    AnimatedSlide(
+                      duration: Motion.fast,
+                      curve: Motion.enter,
+                      offset: Offset(hovered ? 0.2 : 0, 0),
+                      child: Icon(
+                        AppIcons.forward,
+                        size: AppIconSize.sm,
+                        color: hovered ? palette.inkMuted : palette.inkFaint,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 10),
-                NetBadge(netMinor: person.netBalance, currency: currency),
-                const SizedBox(width: 4),
-                Icon(Icons.chevron_right_rounded, size: 18, color: context.money.inkFaint),
-              ],
+              ),
             ),
           ),
         ),
-        Divider(height: 1, color: context.money.line, indent: 16, endIndent: 16),
+        if (divider)
+          Divider(height: 1, color: palette.line, indent: AppSpacing.lg, endIndent: AppSpacing.lg),
       ],
     );
   }
 }
 
-
-/// The direction filter. A view over the rows already fetched, so switching it
-/// costs no round trip and the totals above still describe the whole workspace.
+/// The direction filter.
 enum _Side {
   all,
   receivable,
@@ -333,49 +580,6 @@ enum _Side {
       };
 }
 
-class _SideChip extends StatelessWidget {
-  const _SideChip({required this.label, required this.selected, required this.onTap});
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.money;
-    return AnimatedContainer(
-      duration: Motion.micro,
-      curve: Motion.enter,
-      decoration: BoxDecoration(
-        color: selected ? palette.accentSoft : palette.sunken,
-        borderRadius: BorderRadius.circular(100),
-        border: Border.all(color: selected ? palette.accentLine : palette.line),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(100),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(100),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            child: Center(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                  color: selected ? context.colors.primary : palette.inkMuted,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// What the whole workspace adds up to, above the list it describes.
 class _Totals extends StatelessWidget {
   const _Totals({required this.people, required this.currency});
@@ -395,32 +599,59 @@ class _Totals extends StatelessWidget {
 
     final palette = context.money;
 
-    Widget figure(String label, int minor, Color color) => Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(label, style: TextStyle(fontSize: 11.5, color: palette.inkMuted)),
-            const SizedBox(height: 3),
-            Text(
-              formatMinor(minor, currency: currency),
-              style: context.display(17).copyWith(color: color),
-            ),
-          ],
+    Widget figure(String label, IconData icon, int minor, Color color) => Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, size: AppIconSize.xs, color: color),
+                  const SizedBox(width: AppSpacing.xs + 2),
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: color,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.xs + 2),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: AnimatedMoney(
+                  minor,
+                  currency: currency,
+                  style: context.display(20),
+                ),
+              ),
+            ],
+          ),
         );
 
     return SectionCard(
-      padding: const EdgeInsets.fromLTRB(16, 13, 16, 14),
+      padding: EdgeInsets.symmetric(
+        horizontal: context.isCompact ? AppSpacing.lg : AppSpacing.xl,
+        vertical: AppSpacing.lg,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              figure('Owed to you', receivable, palette.receivable),
-              const SizedBox(width: 26),
-              figure('You owe', payable, palette.payable),
+              figure('Owed to you', AppIcons.receivable, receivable, palette.receivable),
+              const SizedBox(width: AppSpacing.xxl),
+              figure('You owe', AppIcons.payable, payable, palette.payable),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.md + 2),
           SplitBar(receivable: receivable, payable: payable),
         ],
       ),

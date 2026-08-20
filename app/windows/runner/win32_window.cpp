@@ -97,7 +97,12 @@ const wchar_t* WindowClassRegistrar::GetWindowClass() {
     window_class.hInstance = GetModuleHandle(nullptr);
     window_class.hIcon =
         LoadIcon(window_class.hInstance, MAKEINTRESOURCE(IDI_APP_ICON));
-    window_class.hbrBackground = 0;
+    // The colour Windows paints the window with before Flutter's first frame,
+    // and behind it during a resize. A null brush leaves the desktop showing
+    // through as white on the first paint, which is a white flash on every cold
+    // start of a dark application. This must match SplashBackground.ground in
+    // lib/ui/splash/splash_background.dart — 0x070A12, in COLORREF's BGR order.
+    window_class.hbrBackground = CreateSolidBrush(RGB(0x07, 0x0A, 0x12));
     window_class.lpszMenuName = nullptr;
     window_class.lpfnWndProc = Win32Window::WndProc;
     RegisterClass(&window_class);

@@ -1,4 +1,4 @@
-package com.ledger.ledger
+package com.accounic.app
 
 import io.flutter.embedding.android.FlutterActivity
 

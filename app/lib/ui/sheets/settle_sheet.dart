@@ -32,11 +32,9 @@ Future<bool> showSettleSheet(
   required List<OpenTransaction> openTransactions,
   String? presetTransactionId,
 }) async {
-  final result = await showModalBottomSheet<bool>(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    builder: (context) => _SettleSheet(
+  final result = await showAppSheet<bool>(
+    context,
+    (context) => _SettleSheet(
       balance: balance,
       openTransactions: openTransactions,
       presetTransactionId: presetTransactionId,

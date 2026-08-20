@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/config.dart';
 import 'core/theme.dart';
 import 'ui/app_router.dart';
+import 'ui/splash/splash_gate.dart';
 
 /// Entry point for both Android and Windows (context.md §20).
 ///
@@ -66,6 +67,11 @@ class AccounicApp extends StatelessWidget {
       // system asks for it (docs/decisions.md).
       themeMode: ThemeMode.system,
       routerConfig: appRouter,
+      // The splash is an overlay on the router, not a route in it. The router
+      // resolves the auth redirect and the first screen paints underneath while
+      // the sequence plays, so the handover has nothing left to load — and no
+      // navigation the user performs later can ever land back on a splash.
+      builder: (context, child) => SplashGate(child: child ?? const SizedBox.shrink()),
     );
   }
 }

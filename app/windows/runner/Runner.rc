@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.ledger" "\0"
-            VALUE "FileDescription", "ledger" "\0"
+            VALUE "CompanyName", "Accounic" "\0"
+            VALUE "FileDescription", "Accounic" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "ledger" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.ledger. All rights reserved." "\0"
-            VALUE "OriginalFilename", "ledger.exe" "\0"
-            VALUE "ProductName", "ledger" "\0"
+            VALUE "InternalName", "Accounic" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Accounic. All rights reserved." "\0"
+            VALUE "OriginalFilename", "accounic.exe" "\0"
+            VALUE "ProductName", "Accounic" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

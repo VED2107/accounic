@@ -23,6 +23,12 @@ import 'package:flutter_test/flutter_test.dart';
 /// These tests pump the real screen at both a desktop and a phone width and
 /// fail on any framework exception, which is exactly what the old suite could
 /// not see: it only ever exercised the models.
+///
+/// They assert on the *structure* the screen promises — the net position, both
+/// sides, the person, the figures — rather than on a headline string, so a copy
+/// change does not read as a regression. The one thing they do pin verbatim is
+/// each empty state, because an empty state that stops appearing is precisely
+/// the failure this suite exists to catch.
 void main() {
   const person = PersonBalance(
     personId: 'p1',
@@ -102,7 +108,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
-      expect(find.text('Your money at a glance'), findsOneWidget);
+      // The greeting varies with the hour; the name in it does not.
+      expect(find.textContaining('Vedu'), findsWidgets);
+      expect(find.text('NET POSITION'), findsOneWidget);
       expect(find.text('Receivable'), findsOneWidget);
       expect(find.text('Payable'), findsOneWidget);
       expect(find.text('Priya Nair'), findsWidgets);
@@ -119,7 +127,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
-      expect(find.text('Your money at a glance'), findsOneWidget);
+      expect(find.textContaining('Vedu'), findsWidgets);
+      expect(find.text('NET POSITION'), findsOneWidget);
     });
 
     testWidgets('shows the skeleton while loading, never a blank body', (tester) async {
@@ -135,7 +144,7 @@ void main() {
 
       completer.complete(dashboard());
       await tester.pumpAndSettle();
-      expect(find.text('Your money at a glance'), findsOneWidget);
+      expect(find.text('NET POSITION'), findsOneWidget);
     });
 
     testWidgets('shows the empty state when nothing has been recorded', (tester) async {
@@ -158,8 +167,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
-      expect(find.text('No people yet'), findsOneWidget);
-      expect(find.text('No transactions yet'), findsOneWidget);
+      expect(find.text('No one is on your ledger yet'), findsOneWidget);
+      expect(find.text('Your ledger is quiet'), findsOneWidget);
     });
 
     testWidgets('shows a retryable error, and the cause in a debug build', (tester) async {

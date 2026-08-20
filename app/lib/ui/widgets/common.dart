@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/avatar_color.dart';
 import '../../core/failure.dart';
+import '../../core/icons.dart';
+import '../../core/layout.dart';
 import '../../core/money.dart';
 import '../../core/theme.dart';
 import '../motion.dart';
@@ -323,18 +325,35 @@ class SplitBar extends StatelessWidget {
     final total = receivable + payable;
     if (total <= 0 || receivable == 0 || payable == 0) return const SizedBox.shrink();
 
+    // Two dark tones meeting edge to edge at 4px read as one smudge. Six
+    // pixels, each half rounded, with a gap between them: the proportion is
+    // legible at a glance and the two sides are unmistakably two things.
     return Semantics(
       label: '${(receivable / total * 100).round()} percent receivable',
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(3),
-        child: SizedBox(
-          height: 4,
-          child: Row(
-            children: [
-              Expanded(flex: receivable, child: ColoredBox(color: context.money.receivable)),
-              Expanded(flex: payable, child: ColoredBox(color: context.money.payable)),
-            ],
-          ),
+      child: SizedBox(
+        height: 6,
+        child: Row(
+          children: [
+            Expanded(
+              flex: receivable,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: context.money.receivable,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+            ),
+            const SizedBox(width: 3),
+            Expanded(
+              flex: payable,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: context.money.payable,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -625,7 +644,7 @@ void showMessage(BuildContext context, String message, {bool error = false}) {
         content: Row(
           children: [
             Icon(
-              error ? Icons.error_outline : Icons.check_circle_outline,
+              error ? AppIcons.warning : AppIcons.success,
               size: 18,
               color: error ? palette.payable : palette.receivable,
             ),
@@ -636,4 +655,103 @@ void showMessage(BuildContext context, String message, {bool error = false}) {
         duration: Duration(seconds: error ? 5 : 3),
       ),
     );
+}
+
+/// A segmented control whose selection *moves* between segments.
+///
+/// Material's own `SegmentedButton` re-tints two boxes, which reads as two
+/// separate state changes happening at once. A single pill that slides carries
+/// the same information as one continuous thing, and it tells the eye which
+/// direction the selection travelled — which matters when the segments are
+/// filters over the same list.
+class Segmented<T> extends StatelessWidget {
+  const Segmented({
+    super.key,
+    required this.value,
+    required this.segments,
+    required this.onChanged,
+  });
+
+  final T value;
+  final List<({T value, String label})> segments;
+  final ValueChanged<T> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.money;
+    final index = segments.indexWhere((segment) => segment.value == value);
+    final selected = index < 0 ? 0 : index;
+
+    return Container(
+      height: 38,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: palette.sunken,
+        borderRadius: BorderRadius.circular(AppRadius.chip),
+        border: Border.all(color: palette.line),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth / segments.length;
+
+          return Stack(
+            children: [
+              AnimatedPositioned(
+                duration: Motion.normal,
+                curve: Motion.move,
+                left: width * selected,
+                top: 0,
+                bottom: 0,
+                width: width,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: palette.raised,
+                    borderRadius: BorderRadius.circular(AppRadius.chip),
+                    border: Border.all(color: palette.lineStrong),
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  for (final (position, segment) in segments.indexed)
+                    Expanded(
+                      child: Semantics(
+                        selected: position == selected,
+                        button: true,
+                        child: Hoverable(
+                          builder: (context, hovered) => GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => onChanged(segment.value),
+                            child: Center(
+                              child: AnimatedDefaultTextStyle(
+                                duration: Motion.fast,
+                                curve: Motion.enter,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: position == selected
+                                      ? context.colors.onSurface
+                                      : hovered
+                                          ? palette.inkMuted
+                                          : palette.inkFaint,
+                                ),
+                                child: Text(
+                                  segment.label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
 }

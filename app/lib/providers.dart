@@ -104,6 +104,25 @@ final searchProvider =
   return ref.watch(ledgerRepositoryProvider).search(query);
 });
 
+/// Administration. Guarded by `me.isAdmin` in the UI and by `is_admin()` in
+/// every RPC these call, so a forced navigation shows an error, not data.
+final adminUsersProvider =
+    FutureProvider.autoDispose.family<AdminUserPage, String>((ref, query) async {
+  // Same debounce shape as [searchProvider]: while the admin is still typing,
+  // each keystroke disposes the previous provider before the delay elapses.
+  if (query.isNotEmpty) {
+    var cancelled = false;
+    ref.onDispose(() => cancelled = true);
+    await Future<void>.delayed(const Duration(milliseconds: 180));
+    if (cancelled) return const AdminUserPage(users: [], total: 0);
+  }
+  return ref.watch(ledgerRepositoryProvider).adminUsers(query: query);
+});
+
+final systemInfoProvider = FutureProvider.autoDispose<SystemInfo>((ref) {
+  return ref.watch(ledgerRepositoryProvider).systemInfo();
+});
+
 /// Called after any write. One place decides what a mutation invalidates, so no
 /// screen can forget to refresh the dashboard.
 void invalidateLedger(Ref ref, {String? personId}) {

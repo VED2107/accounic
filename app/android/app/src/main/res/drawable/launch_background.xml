@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Modify this file to customize your launch splash screen -->
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="@android:color/white" />
+<!--
+  The Android launch surface. This is the very first thing drawn, before the
+  Flutter engine exists, and it must be the exact colour the Flutter splash
+  paints its ground with (SplashBackground.ground) — otherwise the handover
+  between the two shows as a flash.
 
-    <!-- You can insert your own image assets here -->
-    <!-- <item>
-        <bitmap
-            android:gravity="center"
-            android:src="@mipmap/launch_image" />
-    </item> -->
+  It was white, in both the light and the dark resource sets, which is what
+  produced a white flash on every cold start of a dark app.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/launch_ground" />
 </layer-list>

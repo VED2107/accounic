@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'screens/activity_screen.dart';
+import 'screens/admin_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/people_screen.dart';
@@ -47,14 +48,6 @@ final appRouter = GoRouter(
       builder: (context, state) => const LoginScreen(),
     ),
 
-    // Person detail sits above the shell: on a phone it is a pushed page with a
-    // back button, which is what a drill-down should feel like.
-    GoRoute(
-      parentNavigatorKey: _rootKey,
-      path: '/people/:id',
-      builder: (context, state) => PersonScreen(personId: state.pathParameters['id']!),
-    ),
-
     ShellRoute(
       navigatorKey: _shellKey,
       builder: (context, state, child) => AppShell(
@@ -62,6 +55,26 @@ final appRouter = GoRouter(
         child: child,
       ),
       routes: [
+        // Person detail is a child of the shell, not a sibling of it: the web
+        // client keeps its sidebar on `/people/[id]` and so does this. Pushing
+        // it above the shell instead cost the rail on every drill-down, which
+        // left a desktop window with a column of content and half a screen of
+        // nothing beside it — and took the user's navigation away at the exact
+        // moment they were most likely to want it.
+        //
+        // It is still a *push*, so Android's back gesture and Alt+Left return
+        // to the list rather than cross-fading to a sibling tab.
+        GoRoute(
+          path: '/people/:id',
+          parentNavigatorKey: _shellKey,
+          pageBuilder: (context, state) => CustomTransitionPage(
+            key: state.pageKey,
+            transitionDuration: Motion.component,
+            reverseTransitionDuration: Motion.micro,
+            transitionsBuilder: drillIn,
+            child: PersonScreen(personId: state.pathParameters['id']!),
+          ),
+        ),
         GoRoute(
           path: '/',
           pageBuilder: (context, state) => CustomTransitionPage(
@@ -90,6 +103,16 @@ final appRouter = GoRouter(
             reverseTransitionDuration: Motion.micro,
             transitionsBuilder: fadeThrough,
             child: const ActivityScreen(),
+          ),
+        ),
+        GoRoute(
+          path: '/admin',
+          pageBuilder: (context, state) => CustomTransitionPage(
+            key: state.pageKey,
+            transitionDuration: Motion.component,
+            reverseTransitionDuration: Motion.micro,
+            transitionsBuilder: fadeThrough,
+            child: const AdminScreen(),
           ),
         ),
         GoRoute(

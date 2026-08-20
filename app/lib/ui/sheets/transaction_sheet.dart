@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/dates.dart';
 import '../../core/direction.dart';
+import '../../core/icons.dart';
 import '../../core/failure.dart';
 import '../../core/theme.dart';
 import '../../data/ledger_repository.dart';
@@ -27,11 +28,9 @@ Future<bool> showTransactionSheet(
   EditableTransaction? transaction,
   TxnType? defaultType,
 }) async {
-  final result = await showModalBottomSheet<bool>(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    builder: (context) => _TransactionSheet(
+  final result = await showAppSheet<bool>(
+    context,
+    (context) => _TransactionSheet(
       person: person,
       transaction: transaction,
       defaultType: defaultType,
@@ -224,7 +223,7 @@ class _TypeToggle extends StatelessWidget {
               child: _TypeOption(
                 selected: value.flow == MoneyFlow.personToOwner,
                 onTap: () => onChanged(TxnType.forFlow(MoneyFlow.personToOwner)),
-                icon: Icons.south_west_rounded,
+                icon: AppIcons.payable,
                 flow: MoneyFlow.personToOwner,
                 color: context.money.payable,
                 background: context.money.payableSoft,
@@ -235,7 +234,7 @@ class _TypeToggle extends StatelessWidget {
               child: _TypeOption(
                 selected: value.flow == MoneyFlow.ownerToPerson,
                 onTap: () => onChanged(TxnType.forFlow(MoneyFlow.ownerToPerson)),
-                icon: Icons.north_east_rounded,
+                icon: AppIcons.receivable,
                 flow: MoneyFlow.ownerToPerson,
                 color: context.money.receivable,
                 background: context.money.receivableSoft,
@@ -361,7 +360,7 @@ class _DateField extends StatelessWidget {
             child: Row(
               children: [
                 Expanded(child: Text(friendlyDate(value))),
-                Icon(Icons.calendar_today_outlined,
+                Icon(AppIcons.date,
                     size: 16, color: context.money.inkFaint),
               ],
             ),
@@ -479,7 +478,7 @@ class _PersonPickerFieldState extends ConsumerState<PersonPickerField> {
           onChanged: (value) => setState(() => _query = value),
           decoration: const InputDecoration(
             hintText: 'Search or type a new name',
-            prefixIcon: Icon(Icons.search, size: 18),
+            prefixIcon: Icon(AppIcons.search, size: AppIconSize.sm),
           ),
         ),
         const SizedBox(height: 8),
@@ -531,7 +530,7 @@ class _PersonPickerFieldState extends ConsumerState<PersonPickerField> {
                             color: context.colors.primaryContainer,
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: Icon(Icons.add,
+                          child: Icon(AppIcons.add,
                               size: 17, color: context.colors.primary),
                         ),
                   title: Text('Add “${_query.trim()}” as a new person',

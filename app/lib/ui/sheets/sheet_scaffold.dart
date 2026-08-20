@@ -1,12 +1,101 @@
 import 'package:flutter/material.dart';
 
+import '../../core/icons.dart';
+import '../../core/layout.dart';
 import '../../core/theme.dart';
+import '../motion.dart';
+import '../widgets/app_page.dart';
 import '../widgets/common.dart';
 
-/// Shared chrome for every bottom sheet (context.md §18, §27).
+/// Sheets and dialogs (context.md §18, §27).
 ///
-/// Handles the keyboard inset, scrolling, the error line and the busy state in
-/// one place, so each sheet is only its own fields.
+/// Every transactional interaction in the product is presented through here, and
+/// how it is presented depends on the width rather than on the platform:
+///
+/// * **Compact** — a bottom sheet. It arrives from the edge the thumb is
+///   nearest, and the keyboard pushes it rather than covering it.
+/// * **Wide** — a centred panel. A bottom sheet on a 2000px monitor is a phone
+///   pattern wearing a desktop's clothes: it strands the content at the bottom
+///   of the screen, a long way from where the user was looking.
+///
+/// Both are the same widget with the same chrome. Only the entrance differs.
+
+/// Presents [builder] as a sheet or a centred panel, whichever the width calls
+/// for. Returns whatever the content pops with.
+Future<T?> showAppSheet<T>(
+  BuildContext context,
+  WidgetBuilder builder, {
+  bool dismissible = true,
+}) {
+  final compact = context.isCompact;
+
+  if (compact) {
+    return showModalBottomSheet<T>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      isDismissible: dismissible,
+      enableDrag: dismissible,
+      builder: builder,
+    );
+  }
+
+  return showGeneralDialog<T>(
+    context: context,
+    barrierDismissible: dismissible,
+    barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+    barrierColor: Colors.black.withValues(alpha: 0.55),
+    transitionDuration: Motion.normal,
+    pageBuilder: (context, _, __) => _CentredPanel(child: Builder(builder: builder)),
+    transitionBuilder: (context, animation, _, child) {
+      if (Motion.of(context)) return child;
+      final curved = CurvedAnimation(parent: animation, curve: Motion.enter);
+      return FadeTransition(
+        opacity: curved,
+        // Scale rather than slide: a panel that grows into place reads as
+        // opening, where one that slides reads as arriving from off-screen —
+        // and there is no off-screen direction that means anything here.
+        child: ScaleTransition(
+          scale: Tween(begin: 0.97, end: 1.0).animate(curved),
+          child: child,
+        ),
+      );
+    },
+  );
+}
+
+/// The desktop presentation: a bordered panel in the middle of the window.
+class _CentredPanel extends StatelessWidget {
+  const _CentredPanel({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.xxl),
+        child: Material(
+          color: context.money.raised,
+          borderRadius: AppRadius.panelAll,
+          clipBehavior: Clip.antiAlias,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: AppRadius.panelAll,
+              border: Border.all(color: context.money.lineStrong),
+            ),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Shared chrome for every sheet.
+///
+/// Handles the keyboard inset, scrolling, the header, the error line and the
+/// busy state in one place, so each sheet is only its own fields.
 class SheetScaffold extends StatelessWidget {
   const SheetScaffold({
     super.key,
@@ -15,14 +104,21 @@ class SheetScaffold extends StatelessWidget {
     required this.primaryLabel,
     required this.onPrimary,
     this.subtitle,
+    this.icon,
     this.error,
     this.busy = false,
     this.primaryColor,
-    this.maxWidth = 520,
+    this.maxWidth = 480,
+    this.cancelLabel = 'Cancel',
   });
 
   final String title;
   final String? subtitle;
+
+  /// A glyph in a tinted square beside the title. Says what kind of thing this
+  /// is before the title has been read.
+  final IconData? icon;
+
   final List<Widget> children;
   final String primaryLabel;
   final VoidCallback? onPrimary;
@@ -30,80 +126,332 @@ class SheetScaffold extends StatelessWidget {
   final bool busy;
   final Color? primaryColor;
   final double maxWidth;
+  final String cancelLabel;
 
   @override
   Widget build(BuildContext context) {
+    final compact = context.isCompact;
+    final palette = context.money;
     final insets = MediaQuery.viewInsetsOf(context).bottom;
+
+    final body = ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: maxWidth,
+        maxHeight: MediaQuery.sizeOf(context).height * (compact ? 0.92 : 0.86),
+      ),
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(
+          AppSpacing.xl,
+          compact ? AppSpacing.xs : AppSpacing.xl,
+          AppSpacing.xl,
+          AppSpacing.xxl,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (icon != null) ...[
+                  Container(
+                    width: 36,
+                    height: 36,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: palette.sunken,
+                      borderRadius: BorderRadius.circular(11),
+                      border: Border.all(color: palette.line),
+                    ),
+                    child: Icon(icon, size: AppIconSize.md, color: palette.inkMuted),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(title, style: context.display(18)),
+                      if (subtitle != null) ...[
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(
+                          subtitle!,
+                          style: TextStyle(
+                            fontSize: 13,
+                            height: 1.45,
+                            color: palette.inkMuted,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (!compact)
+                  AppIconAction(
+                    icon: AppIcons.close,
+                    tooltip: 'Close',
+                    onPressed: busy ? null : () => Navigator.of(context).pop(),
+                  ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.xl),
+
+            // The error slot animates open rather than appearing, so a failed
+            // submit does not make the whole sheet jump.
+            AnimatedSize(
+              duration: Motion.fast,
+              curve: Motion.enter,
+              alignment: Alignment.topCenter,
+              child: error == null
+                  ? const SizedBox(width: double.infinity)
+                  : Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+                      child: ErrorNote(error!),
+                    ),
+            ),
+
+            ...children,
+
+            const SizedBox(height: AppSpacing.xxl),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    // Pops *nothing*, never `false`. This chrome is shared by
+                    // sheets whose routes carry different result types — the
+                    // person sheet's is a `Route<Person>` — and popping a bool
+                    // into one of those throws a type error instead of closing,
+                    // which is exactly how Cancel came to do nothing at all.
+                    // Every caller already reads a null result as "cancelled".
+                    onPressed: busy ? null : () => Navigator.of(context).pop(),
+                    child: Text(cancelLabel),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  flex: 2,
+                  child: _PrimaryButton(
+                    label: primaryLabel,
+                    busy: busy,
+                    color: primaryColor,
+                    onPressed: onPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (!compact) return body;
 
     return Padding(
       padding: EdgeInsets.only(bottom: insets),
-      child: Align(
-        alignment: Alignment.bottomCenter,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: maxWidth,
-            maxHeight: MediaQuery.sizeOf(context).height * 0.92,
+      child: Align(alignment: Alignment.bottomCenter, child: body),
+    );
+  }
+}
+
+/// The filled action at the foot of a sheet.
+class _PrimaryButton extends StatelessWidget {
+  const _PrimaryButton({
+    required this.label,
+    required this.busy,
+    required this.color,
+    required this.onPressed,
+  });
+
+  final String label;
+  final bool busy;
+  final Color? color;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = !busy && onPressed != null;
+
+    return Hoverable(
+      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      builder: (context, hovered) => Pressable(
+        onTap: enabled ? onPressed : null,
+        scale: 0.985,
+        child: AnimatedContainer(
+          duration: Motion.fast,
+          curve: Motion.enter,
+          height: 48,
+          decoration: BoxDecoration(
+            gradient: color == null && enabled ? AccounicColors.actionGradient : null,
+            color: color != null
+                ? (enabled ? color : color!.withValues(alpha: 0.45))
+                : (enabled ? null : context.money.sunken),
+            borderRadius: AppRadius.fieldAll,
+            border: Border.all(
+              color: enabled ? Colors.transparent : context.money.line,
+            ),
+            boxShadow: [
+              if (hovered && enabled)
+                BoxShadow(
+                  color: (color ?? const Color(0xFF1D4ED8)).withValues(alpha: 0.34),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                ),
+            ],
           ),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+          child: Center(
+            child: AnimatedSwitcher(
+              duration: Motion.fast,
+              child: busy
+                  ? const SizedBox(
+                      key: ValueKey('busy'),
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : Text(
+                      label,
+                      key: const ValueKey('label'),
+                      style: TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w600,
+                        color: enabled ? Colors.white : context.money.inkFaint,
+                      ),
+                    ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Confirmation (context.md §17).
+///
+/// A destructive confirmation is the one dialog in the product allowed to be
+/// slow to accept: the glyph is tinted with the consequence, the body says what
+/// actually happens rather than "are you sure?", and the confirming button
+/// carries the verb rather than the word OK.
+Future<bool> confirm(
+  BuildContext context, {
+  required String title,
+  required String body,
+  String confirmLabel = 'Confirm',
+  String cancelLabel = 'Cancel',
+  bool destructive = true,
+  IconData? icon,
+}) async {
+  final result = await showGeneralDialog<bool>(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+    barrierColor: Colors.black.withValues(alpha: 0.6),
+    transitionDuration: Motion.normal,
+    pageBuilder: (dialogContext, _, __) => _ConfirmDialog(
+      title: title,
+      body: body,
+      confirmLabel: confirmLabel,
+      cancelLabel: cancelLabel,
+      destructive: destructive,
+      icon: icon,
+    ),
+    transitionBuilder: (context, animation, _, child) {
+      if (Motion.of(context)) return child;
+      final curved = CurvedAnimation(parent: animation, curve: Motion.enter);
+      return FadeTransition(
+        opacity: curved,
+        child: ScaleTransition(
+          scale: Tween(begin: 0.96, end: 1.0).animate(curved),
+          child: child,
+        ),
+      );
+    },
+  );
+  return result ?? false;
+}
+
+class _ConfirmDialog extends StatelessWidget {
+  const _ConfirmDialog({
+    required this.title,
+    required this.body,
+    required this.confirmLabel,
+    required this.cancelLabel,
+    required this.destructive,
+    required this.icon,
+  });
+
+  final String title;
+  final String body;
+  final String confirmLabel;
+  final String cancelLabel;
+  final bool destructive;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.money;
+    final accent = destructive ? palette.payable : context.colors.primary;
+    final soft = destructive ? palette.payableSoft : palette.accentSoft;
+    final line = destructive ? palette.payableLine : palette.accentLine;
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.xxl),
+        child: Material(
+          color: palette.raised,
+          borderRadius: AppRadius.panelAll,
+          child: Container(
+            width: 400,
+            padding: const EdgeInsets.all(AppSpacing.xl + 2),
+            decoration: BoxDecoration(
+              borderRadius: AppRadius.panelAll,
+              border: Border.all(color: palette.lineStrong),
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
-                ),
-                if (subtitle != null) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle!,
-                    style: TextStyle(
-                      fontSize: 13.5,
-                      height: 1.45,
-                      color: context.money.inkMuted,
-                    ),
+                Container(
+                  width: 40,
+                  height: 40,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: soft,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: line),
                   ),
-                ],
-                const SizedBox(height: 20),
-
-                if (error != null) ...[
-                  ErrorNote(error!),
-                  const SizedBox(height: 16),
-                ],
-
-                ...children,
-
-                const SizedBox(height: 24),
+                  child: Icon(
+                    icon ?? (destructive ? AppIcons.warning : AppIcons.success),
+                    size: AppIconSize.lg,
+                    color: accent,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                Text(title, style: context.display(18)),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  body,
+                  style: TextStyle(fontSize: 13.5, height: 1.55, color: palette.inkMuted),
+                ),
+                const SizedBox(height: AppSpacing.xl + 2),
                 Row(
                   children: [
                     Expanded(
                       child: OutlinedButton(
-                        onPressed: busy ? null : () => Navigator.of(context).pop(false),
-                        child: const Text('Cancel'),
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: Text(cancelLabel),
                       ),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: AppSpacing.md),
                     Expanded(
-                      flex: 2,
-                      child: FilledButton(
-                        onPressed: busy ? null : onPrimary,
-                        style: primaryColor == null
-                            ? null
-                            : FilledButton.styleFrom(
-                                backgroundColor: primaryColor,
-                                foregroundColor: Colors.white,
-                              ),
-                        child: busy
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : Text(primaryLabel),
+                      child: _PrimaryButton(
+                        label: confirmLabel,
+                        busy: false,
+                        color: destructive ? palette.payable : null,
+                        onPressed: () {
+                          Haptics.selection();
+                          Navigator.of(context).pop(true);
+                        },
                       ),
                     ),
                   ],
@@ -115,38 +463,4 @@ class SheetScaffold extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Destructive confirmation (context.md §17).
-Future<bool> confirm(
-  BuildContext context, {
-  required String title,
-  required String body,
-  String confirmLabel = 'Confirm',
-  bool destructive = true,
-}) async {
-  final result = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
-      content: Text(body, style: const TextStyle(height: 1.5, fontSize: 14)),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(true),
-          style: destructive
-              ? FilledButton.styleFrom(
-                  backgroundColor: context.money.payable,
-                  foregroundColor: Colors.white,
-                )
-              : null,
-          child: Text(confirmLabel),
-        ),
-      ],
-    ),
-  );
-  return result ?? false;
 }

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/icons.dart';
+import '../core/layout.dart';
 import '../core/theme.dart';
 import '../providers.dart';
 import 'motion.dart';
@@ -23,21 +25,32 @@ class AppShell extends ConsumerWidget {
   final String location;
   final Widget child;
 
+  // Lucide has one weight, not an outline/filled pair, so a selected
+  // destination is marked by colour and by the plate behind it rather than by
+  // swapping the glyph. That is the more honest signal anyway: a filled icon
+  // says "a different thing", where a tinted one says "you are here".
   static const _destinations = [
-    (path: '/', label: 'Dashboard', icon: Icons.dashboard_outlined, active: Icons.dashboard),
-    (path: '/people', label: 'People', icon: Icons.people_outline, active: Icons.people),
-    (path: '/activity', label: 'Activity', icon: Icons.timeline_outlined, active: Icons.timeline),
-    (path: '/profile', label: 'Profile', icon: Icons.person_outline, active: Icons.person),
+    (path: '/', label: 'Dashboard', icon: AppIcons.dashboard),
+    (path: '/people', label: 'People', icon: AppIcons.people),
+    (path: '/activity', label: 'Activity', icon: AppIcons.activity),
+    (path: '/profile', label: 'Profile', icon: AppIcons.profile),
   ];
 
-  int get _index {
-    final match = _destinations.indexWhere(
+  /// Administration is a rail destination, never a bottom-bar one: four thumb
+  /// targets plus the primary action is already the width of a phone, and an
+  /// admin reaches it from the profile screen there instead.
+  static const _adminDestination = (
+    path: '/admin',
+    label: 'Administration',
+    icon: AppIcons.admin,
+  );
+
+  int _indexIn(List<({String path, String label, IconData icon})> list) {
+    final match = list.indexWhere(
       (d) => d.path == '/' ? location == '/' : location.startsWith(d.path),
     );
     return match < 0 ? 0 : match;
   }
-
-  void _go(BuildContext context, int index) => context.go(_destinations[index].path);
 
   Future<void> _addTransaction(BuildContext context, WidgetRef ref) async {
     final saved = await showTransactionSheet(context, ref);
@@ -46,17 +59,24 @@ class AppShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final wide = MediaQuery.sizeOf(context).width >= kWideBreakpoint;
+    // The same threshold the layout system uses, so the rail and the in-page
+    // header appear together rather than one width apart.
+    final wide = context.isWide;
     final me = ref.watch(meProvider).valueOrNull;
+
+    final railDestinations = [
+      ..._destinations,
+      if (me?.isAdmin ?? false) _adminDestination,
+    ];
 
     if (wide) {
       return Scaffold(
         body: Row(
           children: [
             _Rail(
-              index: _index,
-              destinations: _destinations,
-              onSelect: (index) => _go(context, index),
+              index: _indexIn(railDestinations),
+              destinations: railDestinations,
+              onSelect: (index) => context.go(railDestinations[index].path),
               onSearch: () => showSearchSheet(context, ref),
               onAdd: () => _addTransaction(context, ref),
               name: me?.name ?? '',
@@ -73,9 +93,9 @@ class AppShell extends ConsumerWidget {
       body: child,
       extendBody: true,
       bottomNavigationBar: _BottomBar(
-        index: _index,
+        index: _indexIn(_destinations),
         destinations: _destinations,
-        onSelect: (index) => _go(context, index),
+        onSelect: (index) => context.go(_destinations[index].path),
       ),
       // Docked into the gap the bar leaves for it, overlapping its top edge:
       // the strongest element on the screen, in the same place on every screen.
@@ -101,7 +121,7 @@ class _BottomBar extends StatelessWidget {
   });
 
   final int index;
-  final List<({String path, String label, IconData icon, IconData active})> destinations;
+  final List<({String path, String label, IconData icon})> destinations;
   final ValueChanged<int> onSelect;
 
   @override
@@ -178,7 +198,7 @@ class AddTransactionButton extends StatelessWidget {
               ),
             ],
           ),
-          child: const Icon(Icons.add_rounded, size: 26, color: Colors.white),
+          child: const Icon(AppIcons.add, size: 24, color: Colors.white),
         ),
       ),
     );
@@ -192,7 +212,7 @@ class _NavItem extends StatelessWidget {
     required this.onTap,
   });
 
-  final ({String path, String label, IconData icon, IconData active}) destination;
+  final ({String path, String label, IconData icon}) destination;
   final bool selected;
   final VoidCallback onTap;
 
@@ -210,19 +230,22 @@ class _NavItem extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // The glyph swaps between outline and filled; the cross-fade is
-              // what keeps that from reading as a flicker.
-              AnimatedSwitcher(
-                duration: Motion.micro,
-                switchInCurve: Motion.enter,
-                child: Icon(
-                  selected ? destination.active : destination.icon,
-                  key: ValueKey(selected),
-                  size: 22,
-                  color: color,
+              // The selected destination gets a tinted plate behind its glyph
+              // rather than a heavier glyph. It reads at a glance without the
+              // icon changing shape under the thumb.
+              AnimatedContainer(
+                duration: Motion.fast,
+                curve: Motion.enter,
+                width: 44,
+                height: 26,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: selected ? context.money.accentSoft : Colors.transparent,
+                  borderRadius: BorderRadius.circular(AppRadius.chip),
                 ),
+                child: Icon(destination.icon, size: AppIconSize.md + 1, color: color),
               ),
-              const SizedBox(height: 3),
+              const SizedBox(height: 4),
               AnimatedDefaultTextStyle(
                 duration: Motion.micro,
                 curve: Motion.enter,
@@ -253,7 +276,7 @@ class _Rail extends StatelessWidget {
   });
 
   final int index;
-  final List<({String path, String label, IconData icon, IconData active})> destinations;
+  final List<({String path, String label, IconData icon})> destinations;
   final ValueChanged<int> onSelect;
   final VoidCallback onSearch;
   final VoidCallback onAdd;
@@ -277,7 +300,7 @@ class _Rail extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: OutlinedButton.icon(
                 onPressed: onSearch,
-                icon: const Icon(Icons.search, size: 18),
+                icon: const Icon(AppIcons.search, size: AppIconSize.sm),
                 label: const Align(
                   alignment: Alignment.centerLeft,
                   child: Text('Search'),
@@ -297,7 +320,7 @@ class _Rail extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
                 child: _RailItem(
                   label: destination.label,
-                  icon: i == index ? destination.active : destination.icon,
+                  icon: destination.icon,
                   selected: i == index,
                   onTap: () => onSelect(i),
                 ),
@@ -317,7 +340,7 @@ class _Rail extends StatelessWidget {
                   child: const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.add_rounded, size: 19, color: Colors.white),
+                      Icon(AppIcons.add, size: AppIconSize.md, color: Colors.white),
                       SizedBox(width: 8),
                       Text(
                         'Add transaction',
@@ -390,39 +413,66 @@ class _RailItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? context.colors.primary : context.money.inkMuted;
+    final palette = context.money;
 
-    return AnimatedContainer(
-      duration: Motion.micro,
-      curve: Motion.enter,
-      decoration: BoxDecoration(
-        color: selected ? context.money.accentSoft : Colors.transparent,
-        borderRadius: BorderRadius.circular(AppTheme.radiusField),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(AppTheme.radiusField),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            child: Row(
-              children: [
-                Icon(icon, size: 19, color: color),
-                const SizedBox(width: 11),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                    color: color,
-                  ),
-                ),
-              ],
+    return Hoverable(
+      builder: (context, hovered) {
+        // Three states, not two: resting, pointed at, and current. Hover on an
+        // unselected item borrows the selected item's surface but not its ink,
+        // so it can never be mistaken for where you already are.
+        final color = selected
+            ? context.colors.primary
+            : hovered
+                ? context.colors.onSurface
+                : palette.inkMuted;
+
+        return AnimatedContainer(
+          duration: Motion.fast,
+          curve: Motion.enter,
+          decoration: BoxDecoration(
+            color: selected
+                ? palette.accentSoft
+                : hovered
+                    ? palette.sunken
+                    : Colors.transparent,
+            borderRadius: AppRadius.fieldAll,
+            border: Border.all(
+              color: selected ? palette.accentLine : Colors.transparent,
             ),
           ),
-        ),
-      ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: AppRadius.fieldAll,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.md,
+                  vertical: AppSpacing.md - 2,
+                ),
+                child: Row(
+                  children: [
+                    Icon(icon, size: AppIconSize.md, color: color),
+                    const SizedBox(width: AppSpacing.md - 1),
+                    Expanded(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                          color: color,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

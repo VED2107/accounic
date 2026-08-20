@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
+import '../motion.dart';
 
 /// A sparkline (context.md §30 — reporting stays out of v1; this is context,
 /// not a report).
@@ -19,6 +20,7 @@ class Sparkline extends StatelessWidget {
     required this.color,
     this.height = 34,
     this.fill = true,
+    this.animate = true,
   });
 
   final List<int> points;
@@ -26,25 +28,43 @@ class Sparkline extends StatelessWidget {
   final double height;
   final bool fill;
 
+  /// Draws the line on once, left to right, when it first appears. The stroke
+  /// arriving in the direction time runs is the one animation on the dashboard
+  /// that carries meaning rather than decorating: it says which end is now.
+  final bool animate;
+
   @override
   Widget build(BuildContext context) {
     if (points.length < 2) return SizedBox(height: height);
+
+    Widget paint(double progress) => SizedBox(
+          height: height,
+          width: double.infinity,
+          child: CustomPaint(painter: _SparklinePainter(points, color, fill, progress)),
+        );
+
     return ExcludeSemantics(
-      child: SizedBox(
-        height: height,
-        width: double.infinity,
-        child: CustomPaint(painter: _SparklinePainter(points, color, fill)),
-      ),
+      child: !animate || Motion.of(context)
+          ? paint(1)
+          : TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: 1),
+              duration: Motion.emphasized,
+              curve: Motion.enter,
+              builder: (context, value, _) => paint(value),
+            ),
     );
   }
 }
 
 class _SparklinePainter extends CustomPainter {
-  const _SparklinePainter(this.points, this.color, this.fill);
+  const _SparklinePainter(this.points, this.color, this.fill, this.progress);
 
   final List<int> points;
   final Color color;
   final bool fill;
+
+  /// 0 to 1 — how much of the line has been drawn.
+  final double progress;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -77,9 +97,16 @@ class _SparklinePainter extends CustomPainter {
     final last = at(points.length - 1);
     path.lineTo(last.dx, last.dy);
 
+    if (progress <= 0) return;
+
+    // The partial path is taken by arc length rather than by dropping points,
+    // so the line grows smoothly instead of stepping between samples.
+    final drawn = progress >= 1 ? path : _upTo(path, progress);
+    final head = progress >= 1 ? last : _endOf(drawn) ?? last;
+
     if (fill) {
-      final area = Path.from(path)
-        ..lineTo(size.width, size.height)
+      final area = Path.from(drawn)
+        ..lineTo(head.dx, size.height)
         ..lineTo(0, size.height)
         ..close();
       canvas.drawPath(
@@ -94,7 +121,7 @@ class _SparklinePainter extends CustomPainter {
     }
 
     canvas.drawPath(
-      path,
+      drawn,
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.8
@@ -103,12 +130,31 @@ class _SparklinePainter extends CustomPainter {
         ..color = color,
     );
 
-    canvas.drawCircle(last, 2.2, Paint()..color = color);
+    canvas.drawCircle(head, 2.2, Paint()..color = color);
+  }
+
+  static Path _upTo(Path path, double fraction) {
+    final result = Path();
+    for (final metric in path.computeMetrics()) {
+      result.addPath(metric.extractPath(0, metric.length * fraction), Offset.zero);
+    }
+    return result;
+  }
+
+  static Offset? _endOf(Path path) {
+    for (final metric in path.computeMetrics().toList().reversed) {
+      final tangent = metric.getTangentForOffset(metric.length);
+      if (tangent != null) return tangent.position;
+    }
+    return null;
   }
 
   @override
   bool shouldRepaint(_SparklinePainter old) =>
-      old.color != color || old.fill != fill || !identical(old.points, points);
+      old.color != color ||
+      old.fill != fill ||
+      old.progress != progress ||
+      !identical(old.points, points);
 }
 
 /// "↑ 12.5% vs prior 15 days" — the direction coloured by whether it is good

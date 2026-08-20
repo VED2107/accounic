@@ -555,3 +555,101 @@ class ActivityBucket {
         entries: _int(json['entries']),
       );
 }
+
+/// public.admin_list_users() — one row per user in the workspace directory.
+///
+/// Everything here comes from the SECURITY DEFINER admin RPC, which checks
+/// `is_admin()` itself; the client never sees a row it was not entitled to.
+class AdminUser {
+  const AdminUser({
+    required this.id,
+    required this.name,
+    required this.email,
+    required this.currency,
+    required this.isActive,
+    required this.isAdmin,
+    required this.createdAt,
+    required this.peopleCount,
+    required this.transactionCount,
+    this.phone,
+    this.businessName,
+    this.lastSignInAt,
+  });
+
+  final String id;
+  final String name;
+  final String email;
+  final String? phone;
+  final String? businessName;
+  final String currency;
+  final bool isActive;
+  final bool isAdmin;
+  final String createdAt;
+  final String? lastSignInAt;
+  final int peopleCount;
+  final int transactionCount;
+
+  factory AdminUser.fromJson(Map<String, dynamic> json) => AdminUser(
+        id: json['id'] as String,
+        name: (json['name'] as String?) ?? '',
+        email: (json['email'] as String?) ?? '',
+        phone: _str(json['phone']),
+        businessName: _str(json['business_name']),
+        currency: (json['currency'] as String?) ?? 'INR',
+        isActive: json['is_active'] as bool? ?? true,
+        isAdmin: json['is_admin'] as bool? ?? false,
+        createdAt: (json['created_at'] as String?) ?? '',
+        lastSignInAt: _str(json['last_sign_in_at']),
+        peopleCount: _int(json['people_count']),
+        transactionCount: _int(json['transaction_count']),
+      );
+}
+
+class AdminUserPage {
+  const AdminUserPage({required this.users, required this.total});
+
+  final List<AdminUser> users;
+  final int total;
+
+  factory AdminUserPage.fromJson(Map<String, dynamic> json) => AdminUserPage(
+        total: _int(json['total']),
+        users: [
+          for (final row in (json['users'] as List? ?? []))
+            AdminUser.fromJson(Map<String, dynamic>.from(row as Map)),
+        ],
+      );
+}
+
+/// public.admin_system_info()
+class SystemInfo {
+  const SystemInfo({
+    required this.usersTotal,
+    required this.usersActive,
+    required this.admins,
+    required this.peopleTotal,
+    required this.transactionsTotal,
+    required this.settlementsTotal,
+    required this.databaseSize,
+    required this.serverTime,
+  });
+
+  final int usersTotal;
+  final int usersActive;
+  final int admins;
+  final int peopleTotal;
+  final int transactionsTotal;
+  final int settlementsTotal;
+  final String databaseSize;
+  final String serverTime;
+
+  factory SystemInfo.fromJson(Map<String, dynamic> json) => SystemInfo(
+        usersTotal: _int(json['users_total']),
+        usersActive: _int(json['users_active']),
+        admins: _int(json['admins']),
+        peopleTotal: _int(json['people_total']),
+        transactionsTotal: _int(json['transactions_total']),
+        settlementsTotal: _int(json['settlements_total']),
+        databaseSize: (json['database_size'] as String?) ?? '',
+        serverTime: (json['server_time'] as String?) ?? '',
+      );
+}

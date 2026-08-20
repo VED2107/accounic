@@ -28,6 +28,7 @@ dependencies:
   # AnimationController, but the hand-rolled version is a StatefulWidget per
   # animation; this keeps the motion declarative and the widgets const.
   flutter_animate: ^4.5.0
+  lucide_icons_flutter: ^3.1.15
 
 dev_dependencies:
   flutter_test:

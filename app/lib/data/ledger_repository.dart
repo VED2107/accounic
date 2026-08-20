@@ -310,6 +310,65 @@ class LedgerRepository {
     }
   }
 
+  /* ---------------------------------------------------------------------- */
+  /* Administration                                                          */
+  /* ---------------------------------------------------------------------- */
+  //
+  // Only the four SECURITY DEFINER RPCs are reachable from a client binary.
+  // Creating a user and resetting a password need the service-role key, which
+  // no distributable binary may hold, so those two stay in the web app — see
+  // docs/decisions.md §21. Each RPC re-checks is_admin() server-side, so a user
+  // who forces the screen open still sees nothing.
+
+  Future<AdminUserPage> adminUsers({String query = '', int limit = 50, int offset = 0}) async {
+    try {
+      final data = await _client.rpc('admin_list_users', params: {
+        'p_query': query.trim().isEmpty ? null : query.trim(),
+        'p_limit': limit,
+        'p_offset': offset,
+      });
+      return AdminUserPage.fromJson(Map<String, dynamic>.from(data as Map));
+    } catch (error, stack) {
+      throw Failure.from(error, 'The user directory could not be loaded.', stack);
+    }
+  }
+
+  Future<SystemInfo> systemInfo() async {
+    try {
+      final data = await _client.rpc('admin_system_info');
+      return SystemInfo.fromJson(Map<String, dynamic>.from(data as Map));
+    } catch (error, stack) {
+      throw Failure.from(error, 'System information could not be loaded.', stack);
+    }
+  }
+
+  Future<void> setUserActive(String userId, bool active) async {
+    try {
+      await _client.rpc('admin_set_user_active',
+          params: {'p_user_id': userId, 'p_active': active});
+    } catch (error, stack) {
+      throw Failure.from(
+        error,
+        active ? 'That user could not be enabled.' : 'That user could not be disabled.',
+        stack,
+      );
+    }
+  }
+
+  Future<void> setAdmin(String email, bool isAdmin) async {
+    try {
+      await _client.rpc(isAdmin ? 'grant_admin' : 'revoke_admin', params: {'p_email': email});
+    } catch (error, stack) {
+      throw Failure.from(
+        error,
+        isAdmin
+            ? 'That user could not be made an administrator.'
+            : 'That administrator could not be stepped down.',
+        stack,
+      );
+    }
+  }
+
   Future<void> updateProfile({
     required String name,
     String? phone,

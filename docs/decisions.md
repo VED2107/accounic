@@ -224,3 +224,150 @@ The web pairs it with Inter, self-hosted by `next/font`. Flutter bundles Poppins
 but leaves body text to the platform face — Roboto on Android, Segoe UI on Windows. Shipping
 a second megabyte of font to a phone to fill a role the system already fills well is a poor
 trade, and `google_fonts` at runtime would mean a network request for text.
+
+## 20. A layout-phase failure is invisible; a build-phase one is loud
+
+The Flutter dashboard rendered an entirely blank body — no cards, no skeleton, no empty
+state, no error note — while `flutter analyze` and all 32 tests passed. The cause was one
+line: the two side cards sat in a `Row` with `CrossAxisAlignment.stretch` inside a vertical
+scroll view.
+
+Stretch hands each child the parent's cross-axis extent. Inside a scroll view that extent is
+infinity, so `BoxConstraints forces an infinite height` was thrown from `performLayout`.
+
+That distinction is the lesson worth keeping. An exception thrown while **building** a widget
+is replaced by Flutter's red `ErrorWidget`, which is impossible to miss. An exception thrown
+while **laying out** a render object leaves that subtree without a size, and an unsized
+subtree is silently skipped at paint time. The screen looks empty and nothing announces the
+fault — which is why every static check stayed green and why the fault survived a session.
+
+Three things changed as a result:
+
+1. The Row is wrapped in `IntrinsicHeight`, which is how the app's four other stretch Rows
+   were already written. Equal-height cards, finite constraints.
+2. `Failure` now carries its `cause` and stack trace; `ErrorNote.forError` prints the safe
+   sentence for the user and the cause underneath it in debug builds only; every repository
+   catch passes its stack through; and `main()` installs `FlutterError.onError` and
+   `PlatformDispatcher.onError`, so a detached binary can no longer swallow what it throws.
+3. `app/test/dashboard_screen_test.dart` pumps the real screen at desktop and phone widths
+   across loading, data, empty and error, and fails on any framework exception. Reverting the
+   `IntrinsicHeight` makes it fail with the original message, so the test genuinely covers
+   the bug rather than the fix.
+
+Unit tests over models could never have caught this. Only pumping the widget could.
+
+## 21. Flutter's admin screen is deliberately smaller than the web's
+
+The web `/admin` can create a user and reset a password. Both call Supabase's admin API,
+which requires the **service-role key** — a credential that bypasses RLS entirely. That key
+is safe in a server-rendered route, where it never leaves the machine, and unsafe in anything
+installed on a laptop or a phone, where anyone can read it out of the binary.
+
+So the Flutter admin screen carries only what the four `SECURITY DEFINER` RPCs allow with
+the anon key: the account directory (`admin_list_users`), enable/disable
+(`admin_set_user_active`), grant/revoke administrator (`grant_admin` / `revoke_admin`) and
+the system counters (`admin_system_info`). Each of those re-checks `is_admin()` server-side,
+so forcing the screen open buys nothing. Creating an account and resetting a password stay on
+the web, and the screen says so rather than hiding a missing feature.
+
+This is parity of *authority*, not parity of *buttons*: the Flutter app can do everything an
+administrator can safely do from a client binary, and nothing that would require shipping a
+key that defeats the security model.
+
+## 22. One page chrome, one content measure
+
+Every screen used to build its own `Scaffold`, its own app bar and its own centred column,
+and the widths had drifted: the profile capped its content at 620px, the dashboard and the
+admin screen at 1000px, everything else at 760px. Because those columns were *centred*,
+moving between two pages slid the whole layout sideways. Two screens also carried an app-bar
+title **and** an in-body headline, which read as two competing page titles.
+
+`ui/widgets/app_page.dart` now owns all of it. One title per page, placed by width — a short
+app bar on a phone, an editorial header inside the page on a desktop — one gutter scale, and
+one content measure (`ContentWidth.standard`, 1040px) used by every screen.
+
+Centring and a single measure depend on each other. Left-aligning instead was tried and
+rejected: with the rail on the left it looked deliberate on the dashboard and lopsided on
+every page whose content was narrower. Centred plus identical widths is the only combination
+where changing route moves nothing but the content.
+
+Where a page genuinely needs a shorter measure than the column — a form, whose fields must
+not stretch to a thousand pixels — it takes it *inside* the column. `SettingsGroup` puts its
+heading and explanation in a 232px column beside the card on a desktop width, which is why
+the profile fills the screen without a single field growing.
+
+## 23. Lucide, addressed by meaning
+
+The app mixed Material glyphs from three different families — `dashboard_outlined`,
+`timeline`, `swap_horiz_rounded`, `inventory_2_outlined`, `person_search_outlined` — at four
+optical sizes. `core/icons.dart` replaces the lot with Lucide at one stroke weight, and
+screens name the *role* (`AppIcons.receivable`) rather than the picture, so a glyph judged
+wrong is changed in one place.
+
+Lucide has one weight rather than an outline/filled pair, so a selected navigation
+destination is marked by a tinted plate behind its glyph instead of by swapping the glyph.
+That is the more honest signal anyway: a filled icon says "a different thing", a tinted one
+says "you are here".
+
+Direction glyphs — ↗ receivable, ↙ payable, ↔ settlement — follow
+`docs/accounting-direction.md` and never appear without the word and the colour beside them.
+An arrow is an accelerator for a reader who already knows the rule, not a statement of it.
+
+## 24. Cancel pops nothing, never `false`
+
+`SheetScaffold` is shared chrome, and its Cancel button called `Navigator.pop(false)`. That
+is fine on a `Route<bool>` and a **runtime type error** on any other — and the person sheet's
+route is a `Route<Person>`. The error was swallowed by the gesture handler, so the symptom
+was not a crash but a Cancel button that silently did nothing, on exactly the sheets whose
+result was not a bool.
+
+Cancel now pops nothing at all. Every caller already reads a null result as "the user backed
+out", so null is both type-safe on every route and the correct answer on every one of them.
+`app/test/sheet_cancel_test.dart` pins it at both presentations.
+
+The same pass moved the person, transaction and settle sheets onto `showAppSheet`, which
+picks the presentation from the width: a bottom sheet on a phone, a centred panel on a
+desktop. A bottom sheet on a 2000px monitor strands the content at the bottom of the screen,
+a long way from where the user was looking.
+
+## 25. Person detail belongs inside the shell
+
+It was a sibling of the shell, pushed above it, so drilling into an account removed the
+navigation rail. On a desktop that left a column of content and half a screen of nothing
+beside it, and it took the user's navigation away at the exact moment they were most likely
+to want it. The web client keeps its sidebar on `/people/[id]`; the Flutter client now does
+too.
+
+It is still a *push* rather than a sibling tab, so Android's back gesture and Alt+Left return
+to the list. Tab destinations cross-fade (`fadeThrough`) because they have no order; the
+drill-down slides in from the trailing edge (`drillIn`) because it genuinely is below the
+list it came from.
+
+## 26. The splash is a fixed length of time, not a loading screen
+
+`ui/splash/` draws the Accounic mark assembling itself: the ribbon "A" drawn along its own
+arc length, three bars rising 70ms apart, the growth arrow travelling its path with the head
+arriving last, a 150ms settle, then the wordmark. The geometry is `brand/accounic-icon.svg`
+coordinate for coordinate; the only thing added is time.
+
+Three decisions worth keeping:
+
+1. **One controller.** The whole sequence is intervals into a single 1900ms
+   `AnimationController` (`splash_timeline.dart`). Six controllers would mean six tickers,
+   six chances to drift apart on a loaded frame, and no single place to read the timing off.
+2. **One painter.** The mark is one `CustomPainter` inside a `RepaintBoundary`, not a widget
+   per element. Stacked `Transform`s and `ClipRect`s would each force layout and a
+   `saveLayer` every frame; this draws the whole mark in a handful of path operations with
+   no layout at all.
+3. **It never awaits anything.** Not the network, not Supabase, not a session refresh.
+   Accounic must open offline, so the splash runs for a fixed time and the router comes up
+   *behind* it — `SplashGate` is an overlay on `MaterialApp.builder`, not a route. The moment
+   a splash starts awaiting a future it has stopped being a brand moment and become a loading
+   screen that lies about being one. `SplashTimeline.failsafe` lifts it after five seconds
+   even if the ticker never completes.
+
+The Android launch drawable was **white**, in both the light and the dark resource sets,
+which produced a white flash on every cold start of a dark app; the Windows window class had
+a null background brush, with the same result. Both now paint `#070A12` — the exact colour
+`SplashBackground` grounds itself with, so the handover from the native launch surface to
+Flutter's first frame is invisible. Those three values must change together.

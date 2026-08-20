@@ -3,7 +3,7 @@
 Status of the Accounic build against `context.md`. This is the file to read first when
 picking the work back up.
 
-**Last updated:** 2026-08-20 (second session)
+**Last updated:** 2026-08-20 (third session)
 **Overall:** Phases 1–4 complete and verified against the live database. Phase 5
 (performance) measured but not tuned. Phase 6 (hardening) partly done.
 
@@ -243,7 +243,43 @@ and nowhere else; four Dart tests pin it, including the deliberate inversion.
      revalidation had already moved the balance by the time the effect read it. It now
      snapshots the figures at submit.
 
-### 9.3 Flutter — code written, **not working yet**
+### 9.3 Flutter — third session: rebuilt, verified on screen, released
+
+The blank body was fixed at the end of the second session (a stretch `Row` in a scroll view
+— `docs/decisions.md` §20). This session was the quality pass, and unlike the last one it was
+**verified by looking at it**: the Windows binary was driven route by route and screenshotted,
+and every figure on screen was reconciled against `person_balances` and `owner_summary` in
+the live database.
+
+**Design system.** `core/layout.dart` (breakpoints, spacing, radii, one content measure),
+`core/icons.dart` (Lucide, addressed by meaning), `ui/widgets/app_page.dart` (one page
+chrome), `ui/widgets/forms.dart` (`AppTextField`, `AppDropdown`, `SaveButton`,
+`SettingsGroup`, `SettingsRow`), `Hoverable` and `Haptics` in `ui/motion.dart`, `Segmented`
+in `ui/widgets/common.dart`. Decisions §22–§25.
+
+**Screens.** Dashboard rebuilt around one position card (net headline, two paired sides, a
+30-day trend line) rather than three equal cards; People given a real toolbar, hover states
+and semantic totals; Activity given an animated segmented filter and day groups; Person
+detail restyled and moved *inside* the shell so the rail survives a drill-down; Profile
+rebuilt as a settings page with grouped sections, a two-column desktop layout and a save bar
+that only exists while something is unsaved; Administration given a responsive stats row,
+hover rows and contextual menus.
+
+**Splash.** `ui/splash/` — the mark assembling itself over 1900ms, on one controller and one
+painter, never awaiting anything. Decision §26. The Android launch drawable and the Windows
+window brush were both painting white before Flutter's first frame; both now match the
+splash ground.
+
+**Bugs found by looking, not by testing.** Cancel did nothing on any sheet whose route result
+was not a bool (§24, now pinned by `test/sheet_cancel_test.dart`); the split bar was drawn at
+4px between two dark tones and was invisible; centred columns of differing widths made the
+whole layout slide sideways on every route change (§22).
+
+**Verified:** `flutter analyze` clean, 40 Dart tests pass, Windows release and installer
+built, dashboard/people/person/activity/profile/admin walked and screenshotted, all figures
+reconciled against the database.
+
+### 9.3.1 Second session — the state this replaced
 
 Applied: Accounic theme and tokens, Poppins, drawn brand mark, motion primitives
 (`ui/motion.dart`), bottom bar with a docked primary action, rebuilt dashboard, people

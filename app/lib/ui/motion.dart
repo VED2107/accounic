@@ -1,6 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
+import '../core/icons.dart';
 import '../core/money.dart';
 import '../core/theme.dart';
 
@@ -25,6 +28,16 @@ class Motion {
   static const micro = Duration(milliseconds: 140);
   static const component = Duration(milliseconds: 240);
   static const major = Duration(milliseconds: 380);
+
+  /// The same three bands under the names the rest of the industry uses, plus
+  /// the emphasised one for a transition that has to be *noticed* — a
+  /// settlement landing, a sheet becoming a success screen. Aliases rather than
+  /// new values, because a fourth duration nobody can distinguish from the
+  /// third is how a motion system stops being a system.
+  static const fast = micro;
+  static const normal = component;
+  static const slow = major;
+  static const emphasized = Duration(milliseconds: 460);
 
   /// A tightened ease-out. Fast to start, settles rather than stops — the curve
   /// physical objects follow, without the overshoot of an elastic curve.
@@ -230,7 +243,7 @@ class SettledMark extends StatelessWidget {
         shape: BoxShape.circle,
         border: Border.all(color: palette.receivableLine),
       ),
-      child: Icon(Icons.check_rounded, size: size * 0.5, color: palette.receivable),
+      child: Icon(AppIcons.check, size: size * 0.46, color: palette.receivable),
     );
 
     if (Motion.of(context)) return mark;
@@ -254,6 +267,98 @@ Widget fadeThrough(BuildContext context, Animation<double> animation,
       position: Tween(begin: const Offset(0, 0.012), end: Offset.zero)
           .animate(CurvedAnimation(parent: animation, curve: Motion.enter)),
       child: child,
+    ),
+  );
+}
+
+/// Rebuilds its child when the pointer enters or leaves it.
+///
+/// Desktop needs to answer "is this thing clickable?" before it is clicked, and
+/// Flutter's ink effects answer it only after. Everything hoverable in the app
+/// goes through this, so the answer is the same everywhere: a step of surface,
+/// a step of ink, nothing that moves layout.
+///
+/// On a touch device `MouseRegion` simply never fires, so the same widget tree
+/// serves both without a platform check.
+class Hoverable extends StatefulWidget {
+  const Hoverable({super.key, required this.builder, this.cursor = SystemMouseCursors.click});
+
+  final Widget Function(BuildContext context, bool hovered) builder;
+  final MouseCursor cursor;
+
+  @override
+  State<Hoverable> createState() => _HoverableState();
+}
+
+class _HoverableState extends State<Hoverable> {
+  bool _hovered = false;
+
+  void _set(bool value) {
+    if (_hovered != value && mounted) setState(() => _hovered = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: widget.cursor,
+      onEnter: (_) => _set(true),
+      onExit: (_) => _set(false),
+      child: widget.builder(context, _hovered),
+    );
+  }
+}
+
+/// Haptics, on the two platforms that have them and for the three events that
+/// earn them (context.md §30).
+///
+/// A phone that buzzes on every tap is a phone the user turns the haptics off
+/// on, and then it cannot tell them anything. So: a transaction recorded, a
+/// settlement landed, a destructive confirmation taken. Nothing else.
+abstract final class Haptics {
+  static bool get _supported =>
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS;
+
+  /// A record was written and the ledger moved.
+  static void success() {
+    if (_supported) HapticFeedback.mediumImpact();
+  }
+
+  /// A choice was committed — a direction picked, a confirmation accepted.
+  static void selection() {
+    if (_supported) HapticFeedback.selectionClick();
+  }
+
+  /// Something was refused.
+  static void warning() {
+    if (_supported) HapticFeedback.heavyImpact();
+  }
+}
+
+/// The drill-down transition: a hierarchy, not a sibling swap.
+///
+/// [fadeThrough] is for the tab destinations, which have no order — sliding
+/// between them would imply one. A person detail *is* below the list it came
+/// from, so it arrives from the trailing edge and leaves the same way, and the
+/// gesture to go back has something to correspond to.
+Widget drillIn(BuildContext context, Animation<double> animation,
+    Animation<double> secondary, Widget child) {
+  if (Motion.of(context)) return child;
+
+  final incoming = CurvedAnimation(parent: animation, curve: Motion.enter);
+
+  return FadeTransition(
+    opacity: incoming,
+    child: SlideTransition(
+      position: Tween(begin: const Offset(0.03, 0), end: Offset.zero).animate(incoming),
+      // The outgoing page recedes a fraction rather than staying put, which is
+      // what makes the new one read as arriving on top of it.
+      child: SlideTransition(
+        position: Tween(begin: Offset.zero, end: const Offset(-0.015, 0)).animate(
+          CurvedAnimation(parent: secondary, curve: Motion.exit),
+        ),
+        child: child,
+      ),
     ),
   );
 }

@@ -15,11 +15,9 @@ Future<Person?> showPersonSheet(
   WidgetRef ref, {
   Person? person,
 }) {
-  return showModalBottomSheet<Person>(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    builder: (context) => _PersonSheet(person: person),
+  return showAppSheet<Person>(
+    context,
+    (context) => _PersonSheet(person: person),
   );
 }
 

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/dates.dart';
+import '../../core/icons.dart';
 import '../../core/money.dart';
 import '../../core/theme.dart';
 import '../../providers.dart';
@@ -67,11 +68,11 @@ class _SearchSheetState extends ConsumerState<_SearchSheet> {
                 onChanged: (value) => setState(() => _query = value),
                 decoration: InputDecoration(
                   hintText: 'Search people, phone numbers or notes…',
-                  prefixIcon: const Icon(Icons.search, size: 19),
+                  prefixIcon: const Icon(AppIcons.search, size: AppIconSize.md),
                   suffixIcon: trimmed.isEmpty
                       ? null
                       : IconButton(
-                          icon: const Icon(Icons.close, size: 18),
+                          icon: const Icon(AppIcons.close, size: AppIconSize.sm),
                           onPressed: () {
                             _controller.clear();
                             setState(() => _query = '');
