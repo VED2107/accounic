@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Accounic">
+  <title>Accounic symbol mark</title>
+  <!--
+    The mark: an "A" formed by a ribbon, with a rising bar chart and a growth
+    arrow inside it. The gradient runs blue to cyan to teal to green, top-left
+    to bottom-right, matching the reference palette.
+  -->
+  <defs>
+    <linearGradient id="accounicGradient" x1="0.08" y1="0.02" x2="0.94" y2="0.98">
+      <stop offset="0" stop-color="#1D4ED8"/>
+      <stop offset="0.22" stop-color="#2563EB"/>
+      <stop offset="0.45" stop-color="#0EA5E9"/>
+      <stop offset="0.58" stop-color="#06B6D4"/>
+      <stop offset="0.78" stop-color="#14B8A6"/>
+      <stop offset="1" stop-color="#22C55E"/>
+    </linearGradient>
+    <linearGradient id="accounicBarA" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#1D4ED8"/>
+      <stop offset="1" stop-color="#2563EB"/>
+    </linearGradient>
+    <linearGradient id="accounicBarB" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#0891B2"/>
+      <stop offset="1" stop-color="#06B6D4"/>
+    </linearGradient>
+    <linearGradient id="accounicBarC" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#16A34A"/>
+      <stop offset="1" stop-color="#34D399"/>
+    </linearGradient>
+  </defs>
+
+  <!-- the A -->
+  <path d="M96 414 L256 104 L416 414"
+        fill="none" stroke="url(#accounicGradient)" stroke-width="58"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- ascending bars -->
+  <rect x="178" y="362" width="36" height="52" rx="9" fill="url(#accounicBarA)"/>
+  <rect x="228" y="322" width="36" height="92" rx="9" fill="url(#accounicBarB)"/>
+  <rect x="278" y="278" width="36" height="136" rx="9" fill="url(#accounicBarC)"/>
+
+  <!-- growth arrow -->
+  <path d="M172 356 Q 250 350 300 268"
+        fill="none" stroke="#0F2A5B" stroke-width="15" stroke-linecap="round"/>
+  <path d="M325 244 L309 279 L290 254 Z" fill="#0F2A5B"/>
+</svg>

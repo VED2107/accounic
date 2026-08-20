@@ -1,0 +1,452 @@
+@import 'tailwindcss';
+
+/* ===========================================================================
+   Accounic design tokens (context.md §18, docs/decisions.md)
+
+   Dark-first. The product's default look is a near-black ground with clean
+   white type and one restrained brand blue for action. A light scheme is kept
+   for anyone whose system asks for it, tuned to the same rules rather than
+   inverted mechanically.
+
+   Three colour jobs, and only three:
+     brand blue  → interaction, links, primary action, focus
+     green/teal  → money coming in / receivable
+     red         → money going out / payable
+   Everything else is a neutral surface or ink at some strength. The blue → cyan
+   → teal → green gradient belongs to the brand — the mark, a hairline, a glow —
+   and never to a large field of UI.
+
+   Token names live on :root so the scheme can swap them wholesale; @theme maps
+   them into Tailwind's namespace (bg-paper, text-ink, border-line, …), so every
+   utility follows the scheme for free.
+   =========================================================================== */
+
+:root,
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* Brand ramp — the logo gradient's stops, available for accents. */
+  --brand-1: #1d4ed8;
+  --brand-2: #2563eb;
+  --brand-3: #0ea5e9;
+  --brand-4: #06b6d4;
+  --brand-5: #14b8a6;
+  --brand-6: #22c55e;
+
+  --grad-brand: linear-gradient(
+    135deg,
+    var(--brand-1) 0%,
+    var(--brand-2) 22%,
+    var(--brand-3) 46%,
+    var(--brand-4) 60%,
+    var(--brand-5) 80%,
+    var(--brand-6) 100%
+  );
+  --grad-action: linear-gradient(180deg, #2f6bef 0%, #1d4ed8 100%);
+
+  /* Surfaces — near-black, four steps apart so depth reads without borders. */
+  --paper: #08090c;
+  --surface: #0e1015;
+  --surface-raised: #14171e;
+  --surface-sunken: #13161c;
+  --line: #1d212a;
+  --line-strong: #2b313d;
+
+  /* Ink */
+  --ink: #f2f5f9;
+  --ink-muted: #98a2b3;
+  --ink-faint: #6a7382;
+
+  /* Accent — brand blue. `accent` is for type and icons, `accent-solid` for
+     filled controls, which need a darker field to keep white legible. */
+  --accent: #4d90f8;
+  --accent-hover: #7aabfb;
+  --accent-solid: #2563eb;
+  --accent-solid-hover: #1d4ed8;
+  --accent-soft: rgb(77 144 248 / 0.14);
+  --accent-line: rgb(77 144 248 / 0.34);
+  --accent-ink: #ffffff;
+
+  /* Money — the only colour that ever carries meaning (context.md §8). */
+  --receivable: #34d399;
+  --receivable-soft: rgb(52 211 153 / 0.13);
+  --receivable-line: rgb(52 211 153 / 0.3);
+  /* Text that sits *on* a filled money button. The dark scheme's greens and
+     reds are bright, so they take dark ink; the light scheme's are deep, so
+     they take white. Either way the pair clears 4.5:1. */
+  --receivable-ink: #04140e;
+  --payable: #fb7185;
+  --payable-soft: rgb(251 113 133 / 0.13);
+  --payable-line: rgb(251 113 133 / 0.3);
+  --payable-ink: #2a0a10;
+  --money-neutral: #a1a9b8;
+
+  /* Elevation. Dark surfaces get almost nothing from a drop shadow, so depth
+     comes from an inset top highlight plus a soft ambient pool. */
+  --shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.03) inset, 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-raised: 0 1px 0 0 rgb(255 255 255 / 0.04) inset, 0 8px 24px -12px rgb(0 0 0 / 0.7);
+  --shadow-pop: 0 1px 0 0 rgb(255 255 255 / 0.05) inset, 0 24px 60px -20px rgb(0 0 0 / 0.85);
+  --glow-brand: 0 0 0 1px var(--accent-line), 0 12px 40px -18px rgb(37 99 235 / 0.55);
+
+  /* Motion — 120–220ms, one easing curve. */
+  --dur-fast: 120ms;
+  --dur: 170ms;
+  --dur-slow: 220ms;
+  --ease: cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+/* The light scheme applies when the system asks for it and the user has not
+   overridden the choice, or when they explicitly picked light. The two blocks
+   carry identical values — one cannot be nested inside the other in CSS. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    color-scheme: light;
+    --paper: #f6f7f9;
+    --surface: #ffffff;
+    --surface-raised: #ffffff;
+    --surface-sunken: #f1f3f7;
+    --line: #e5e8ee;
+    --line-strong: #d2d7e0;
+
+    --ink: #0b0f17;
+    --ink-muted: #596373;
+    --ink-faint: #8891a1;
+
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --accent-solid: #2563eb;
+    --accent-solid-hover: #1d4ed8;
+    --accent-soft: rgb(37 99 235 / 0.08);
+    --accent-line: rgb(37 99 235 / 0.24);
+    --accent-ink: #ffffff;
+
+    --receivable: #047857;
+    --receivable-soft: rgb(4 120 87 / 0.08);
+    --receivable-line: rgb(4 120 87 / 0.22);
+    --receivable-ink: #ffffff;
+    --payable: #be123c;
+    --payable-soft: rgb(190 18 60 / 0.07);
+    --payable-line: rgb(190 18 60 / 0.22);
+    --payable-ink: #ffffff;
+    --money-neutral: #5b6472;
+
+    --shadow-card: 0 1px 2px rgb(11 15 23 / 0.05), 0 1px 3px rgb(11 15 23 / 0.05);
+    --shadow-raised: 0 2px 4px rgb(11 15 23 / 0.04), 0 12px 28px -16px rgb(11 15 23 / 0.28);
+    --shadow-pop: 0 24px 60px -24px rgb(11 15 23 / 0.35), 0 2px 8px rgb(11 15 23 / 0.06);
+    --glow-brand: 0 0 0 1px var(--accent-line), 0 12px 32px -20px rgb(37 99 235 / 0.5);
+  }
+}
+
+:root[data-theme='light'] {
+    color-scheme: light;
+    --paper: #f6f7f9;
+    --surface: #ffffff;
+    --surface-raised: #ffffff;
+    --surface-sunken: #f1f3f7;
+    --line: #e5e8ee;
+    --line-strong: #d2d7e0;
+
+    --ink: #0b0f17;
+    --ink-muted: #596373;
+    --ink-faint: #8891a1;
+
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --accent-solid: #2563eb;
+    --accent-solid-hover: #1d4ed8;
+    --accent-soft: rgb(37 99 235 / 0.08);
+    --accent-line: rgb(37 99 235 / 0.24);
+    --accent-ink: #ffffff;
+
+    --receivable: #047857;
+    --receivable-soft: rgb(4 120 87 / 0.08);
+    --receivable-line: rgb(4 120 87 / 0.22);
+    --receivable-ink: #ffffff;
+    --payable: #be123c;
+    --payable-soft: rgb(190 18 60 / 0.07);
+    --payable-line: rgb(190 18 60 / 0.22);
+    --payable-ink: #ffffff;
+    --money-neutral: #5b6472;
+
+    --shadow-card: 0 1px 2px rgb(11 15 23 / 0.05), 0 1px 3px rgb(11 15 23 / 0.05);
+    --shadow-raised: 0 2px 4px rgb(11 15 23 / 0.04), 0 12px 28px -16px rgb(11 15 23 / 0.28);
+    --shadow-pop: 0 24px 60px -24px rgb(11 15 23 / 0.35), 0 2px 8px rgb(11 15 23 / 0.06);
+    --glow-brand: 0 0 0 1px var(--accent-line), 0 12px 32px -20px rgb(37 99 235 / 0.5);
+}
+
+@theme inline {
+  /* Poppins carries the brand and the headings; the UI font carries everything
+     that has to be read at 13–15px. Both are injected by next/font. */
+  --font-sans: var(--font-ui), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-display: var(--font-display-face), var(--font-ui), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Segoe UI Mono', Menlo, monospace;
+
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-raised: var(--surface-raised);
+  --color-sunken: var(--surface-sunken);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-solid: var(--accent-solid);
+  --color-accent-solid-hover: var(--accent-solid-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-line: var(--accent-line);
+  --color-accent-ink: var(--accent-ink);
+
+  --color-receivable: var(--receivable);
+  --color-receivable-soft: var(--receivable-soft);
+  --color-receivable-line: var(--receivable-line);
+  --color-receivable-ink: var(--receivable-ink);
+  --color-payable: var(--payable);
+  --color-payable-soft: var(--payable-soft);
+  --color-payable-line: var(--payable-line);
+  --color-payable-ink: var(--payable-ink);
+  --color-money-neutral: var(--money-neutral);
+
+  --color-brand-1: var(--brand-1);
+  --color-brand-2: var(--brand-2);
+  --color-brand-3: var(--brand-3);
+  --color-brand-4: var(--brand-4);
+  --color-brand-5: var(--brand-5);
+  --color-brand-6: var(--brand-6);
+
+  --radius-field: 0.625rem;
+  --radius-card: 1rem;
+  --radius-panel: 1.25rem;
+
+  --shadow-card: var(--shadow-card);
+  --shadow-raised: var(--shadow-raised);
+  --shadow-pop: var(--shadow-pop);
+
+  --animate-rise: rise var(--dur-slow) var(--ease) both;
+  --animate-fade: fade var(--dur) ease-out both;
+  --animate-pop: pop var(--dur-slow) var(--ease) both;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.96) translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Bottom sheet on touch, centred dialog on a pointer. Different geometry, one
+   curve, both inside the component-transition band. */
+@keyframes sheet-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+
+/* The settlement tick draws itself in — 260ms, once, and never again. */
+@keyframes draw-check {
+  from {
+    stroke-dashoffset: 32;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes ring-out {
+  0% {
+    opacity: 0.5;
+    transform: scale(0.7);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Base
+   -------------------------------------------------------------------------- */
+
+@layer base {
+  * {
+    border-color: var(--line);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.018em;
+  }
+
+  /* One consistent focus treatment everywhere, keyboard-first (context.md §18). */
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 0.5rem;
+  }
+
+  ::selection {
+    background: var(--accent-soft);
+    color: var(--ink);
+  }
+
+  /* A dark app with a bright scrollbar looks unfinished. */
+  * {
+    scrollbar-color: var(--line-strong) transparent;
+  }
+}
+
+@layer utilities {
+  /* Money and dates only line up in columns if the digits are tabular. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  .font-display {
+    font-family: var(--font-display);
+  }
+
+  /* Brand gradient as ink — the wordmark and the odd emphasised numeral. */
+  .brand-text {
+    background: var(--grad-brand);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .brand-fill {
+    background: var(--grad-brand);
+  }
+
+  /* A 1px gradient rule. Used sparingly, at the top of the hero panel and the
+     sidebar, as the one place the full brand ramp appears in the chrome. */
+  .brand-rule {
+    position: relative;
+  }
+  .brand-rule::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 1px;
+    background: var(--grad-brand);
+    opacity: 0.75;
+    border-radius: inherit;
+    pointer-events: none;
+  }
+
+  /* Entrance. One class, one curve, an optional per-item delay. Lists set the
+     delay inline so a stagger costs no JavaScript at all. */
+  .reveal {
+    animation: rise var(--dur-slow) var(--ease) both;
+    animation-delay: var(--reveal-delay, 0ms);
+  }
+
+  /* Rows in a list: the same idea, shorter and shallower, so a long ledger
+     does not appear to swim into place. */
+  .reveal-row {
+    animation: fade var(--dur) ease-out both;
+    animation-delay: var(--reveal-delay, 0ms);
+  }
+
+  /* Cards lift a little on hover. 170ms, 1px, no scaling. */
+  .lift {
+    transition:
+      border-color var(--dur) var(--ease),
+      box-shadow var(--dur) var(--ease),
+      transform var(--dur) var(--ease),
+      background-color var(--dur) var(--ease);
+  }
+  .lift:hover {
+    border-color: var(--line-strong);
+    box-shadow: var(--shadow-raised);
+    transform: translateY(-1px);
+  }
+
+  /* Skeleton shimmer used by every loading state (context.md §27). */
+  .skeleton {
+    background-image: linear-gradient(
+      90deg,
+      var(--surface-sunken) 0%,
+      color-mix(in oklab, var(--surface-sunken) 55%, var(--line-strong)) 50%,
+      var(--surface-sunken) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.4s linear infinite;
+    border-radius: 0.5rem;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

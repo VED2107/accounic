@@ -1,0 +1,20 @@
+node_modules/
+.env
+.env.local
+.env*.local
+
+# Web
+web/.next/
+web/out/
+*.tsbuildinfo
+
+# Flutter
+app/.dart_tool/
+app/build/
+app/.flutter-plugins*
+app/android/.gradle/
+app/android/local.properties
+app/windows/flutter/ephemeral/
+
+# Generated brand rasters are reproducible: node brand/build-assets.mjs
+brand/png/

@@ -1,0 +1,172 @@
+'use client';
+
+import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
+import { Button, ErrorNote } from '@/components/ui/primitives';
+import { ConfirmDialog } from '@/components/ui/modal';
+import { ArchiveIcon, ArrowDownIcon, ArrowUpIcon, EditIcon, SettleIcon } from '@/components/icons';
+import { TransactionSheet } from '@/components/ledger/transaction-sheet';
+import { SettleSheet } from '@/components/ledger/settle-sheet';
+import { PersonForm } from '@/components/ledger/person-form';
+import { deletePerson, setPersonArchived } from '@/lib/actions';
+import type { OpenTransaction, Person, PersonBalance, TxnType } from '@/lib/types';
+import { TYPE_FOR_FLOW } from '@/lib/direction';
+
+/**
+ * Actions on a person account (context.md §9, §17).
+ *
+ * Settle is the prominent one whenever anything is outstanding — that is the
+ * spec's headline interaction. Archiving is offered before deletion, and
+ * deletion is only possible while there is no history to corrupt.
+ */
+export function PersonActionBar({
+  person,
+  balance,
+  openTransactions,
+  currency,
+}: {
+  person: Person;
+  balance: PersonBalance;
+  openTransactions: OpenTransaction[];
+  currency: string;
+}) {
+  const router = useRouter();
+  const [addType, setAddType] = useState<TxnType | null>(null);
+  const [settleOpen, setSettleOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [confirm, setConfirm] = useState<'archive' | 'restore' | 'delete' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  const hasOutstanding =
+    balance.outstanding_receivable > 0 || balance.outstanding_payable > 0;
+
+  function run(operation: () => Promise<{ ok: boolean; error?: string }>, after?: () => void) {
+    setError(null);
+    startTransition(async () => {
+      const result = await operation();
+      if (!result.ok) {
+        setError(result.error ?? 'That did not work. Please try again.');
+        return;
+      }
+      setConfirm(null);
+      after?.();
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="flex flex-col items-stretch gap-2">
+      {error ? <ErrorNote>{error}</ErrorNote> : null}
+
+      <div className="flex flex-wrap gap-2">
+        {hasOutstanding ? (
+          <Button onClick={() => setSettleOpen(true)}>
+            <SettleIcon className="size-4" />
+            Settle
+          </Button>
+        ) : null}
+
+        {/* Credit and debit are separate buttons rather than one "add" that
+            asks which — the type is the decision, so it is the click. */}
+        <Button
+          variant="secondary"
+          onClick={() => setAddType(TYPE_FOR_FLOW.person_to_owner)}
+        >
+          <ArrowDownIcon className="size-4 text-payable" />
+          Add credit
+        </Button>
+
+        <Button
+          variant="secondary"
+          onClick={() => setAddType(TYPE_FOR_FLOW.owner_to_person)}
+        >
+          <ArrowUpIcon className="size-4 text-receivable" />
+          Add debit
+        </Button>
+
+        {/* The two icon-only controls stay together when the row wraps on a
+            narrow screen — split across lines they read as orphans. */}
+        <div className="flex gap-1">
+          <Button variant="ghost" onClick={() => setEditOpen(true)} aria-label="Edit details">
+            <EditIcon className="size-4" />
+          </Button>
+
+          <Button
+            variant="ghost"
+            onClick={() => setConfirm(person.is_archived ? 'restore' : 'archive')}
+            aria-label={person.is_archived ? 'Restore' : 'Archive'}
+          >
+            <ArchiveIcon className="size-4" />
+          </Button>
+        </div>
+      </div>
+
+      {balance.transaction_count === 0 ? (
+        <button
+          type="button"
+          onClick={() => setConfirm('delete')}
+          className="text-[0.75rem] text-ink-faint transition-colors duration-[var(--dur)] hover:text-payable"
+        >
+          Delete this person
+        </button>
+      ) : null}
+
+      <TransactionSheet
+        open={addType !== null}
+        onClose={() => setAddType(null)}
+        currency={currency}
+        mode="create"
+        defaultType={addType ?? TYPE_FOR_FLOW.person_to_owner}
+        person={{ id: person.id, name: person.name }}
+      />
+
+      <SettleSheet
+        open={settleOpen}
+        onClose={() => setSettleOpen(false)}
+        balance={balance}
+        openTransactions={openTransactions}
+        currency={currency}
+      />
+
+      <PersonForm open={editOpen} onClose={() => setEditOpen(false)} person={person} />
+
+      <ConfirmDialog
+        open={confirm === 'archive'}
+        onClose={() => setConfirm(null)}
+        onConfirm={() => run(() => setPersonArchived(person.id, true))}
+        pending={pending}
+        tone="primary"
+        title={`Archive ${person.name}?`}
+        confirmLabel="Archive"
+        body={
+          <>
+            They are hidden from the people list and from your totals. Every transaction and
+            settlement is kept, and you can restore them at any time.
+          </>
+        }
+      />
+
+      <ConfirmDialog
+        open={confirm === 'restore'}
+        onClose={() => setConfirm(null)}
+        onConfirm={() => run(() => setPersonArchived(person.id, false))}
+        pending={pending}
+        tone="primary"
+        title={`Restore ${person.name}?`}
+        confirmLabel="Restore"
+        body="They will appear in your people list and totals again."
+      />
+
+      <ConfirmDialog
+        open={confirm === 'delete'}
+        onClose={() => setConfirm(null)}
+        onConfirm={() => run(() => deletePerson(person.id), () => router.push('/people'))}
+        pending={pending}
+        title={`Delete ${person.name}?`}
+        confirmLabel="Delete"
+        body="This cannot be undone. It is only possible because there are no transactions on this account."
+      />
+    </div>
+  );
+}

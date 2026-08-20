@@ -1,0 +1,8 @@
+{
+  "name": "@accounic/brand",
+  "private": true,
+  "type": "module",
+  "description": "Logo masters and the script that rasterises them for every client.",
+  "scripts": { "build": "node build-assets.mjs" },
+  "dependencies": { "sharp": "^0.34.4" }
+}

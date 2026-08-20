@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Accounic">
+  <title>Accounic favicon</title>
+  <!--
+    Simplified for 16px: heavier stroke, two bars instead of three, no arrow.
+    The full mark turns to mush at favicon size; this keeps the A and the idea
+    of a rising chart, which is all that survives at that scale anyway.
+  -->
+  <defs>
+    <linearGradient id="favGradient" x1="0.05" y1="0" x2="0.95" y2="1">
+      <stop offset="0" stop-color="#1D4ED8"/>
+      <stop offset="0.5" stop-color="#06B6D4"/>
+      <stop offset="1" stop-color="#22C55E"/>
+    </linearGradient>
+  </defs>
+  <path d="M11 53 L32 9 L53 53" fill="none" stroke="url(#favGradient)"
+        stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="24.5" y="40" width="7" height="13" rx="2.5" fill="#0EA5E9"/>
+  <rect x="35.5" y="32" width="7" height="21" rx="2.5" fill="#22C55E"/>
+</svg>

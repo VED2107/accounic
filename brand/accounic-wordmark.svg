@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 180" role="img" aria-label="Accounic">
+  <title>Accounic wordmark</title>
+  <!--
+    Poppins SemiBold with an Inter fallback, matching the reference typography.
+    "Accoun" in ink navy, "ic" in the brand gradient, and the dot of the i in
+    green: the one detail that keeps the wordmark recognisable when small.
+
+    Text is left live rather than converted to outlines so it stays editable and
+    the file stays tiny. A viewer without Poppins falls back to Inter, then to
+    the platform UI face.
+  -->
+  <defs>
+    <linearGradient id="wordGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#06B6D4"/>
+      <stop offset="0.5" stop-color="#14B8A6"/>
+      <stop offset="1" stop-color="#22C55E"/>
+    </linearGradient>
+  </defs>
+  <text x="8" y="128"
+        font-family="Poppins, Inter, Segoe UI, system-ui, sans-serif"
+        font-size="128" font-weight="600" letter-spacing="-2" fill="#111C3A">Accoun</text>
+  <text x="452" y="128"
+        font-family="Poppins, Inter, Segoe UI, system-ui, sans-serif"
+        font-size="128" font-weight="600" letter-spacing="-2" fill="url(#wordGradient)">ic</text>
+</svg>

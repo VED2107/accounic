@@ -1,0 +1,534 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../core/dates.dart';
+import '../../core/failure.dart';
+import '../../core/theme.dart';
+import '../../data/ledger_repository.dart';
+import '../../data/models.dart';
+import '../../providers.dart';
+import '../widgets/amount_field.dart';
+import '../widgets/common.dart';
+import 'sheet_scaffold.dart';
+
+/// Fast transaction entry (context.md §14).
+///
+/// Who → type → amount → date → note → save. The same five steps as the web
+/// client, in the same order, because that is the order a person thinks about a
+/// transaction.
+///
+/// Returns true when something was saved.
+Future<bool> showTransactionSheet(
+  BuildContext context,
+  WidgetRef ref, {
+  PersonRef? person,
+  EditableTransaction? transaction,
+  TxnType? defaultType,
+}) async {
+  final result = await showModalBottomSheet<bool>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (context) => _TransactionSheet(
+      person: person,
+      transaction: transaction,
+      defaultType: defaultType,
+    ),
+  );
+  return result ?? false;
+}
+
+class PersonRef {
+  const PersonRef(this.id, this.name);
+  final String id;
+  final String name;
+}
+
+class EditableTransaction {
+  const EditableTransaction({
+    required this.id,
+    required this.type,
+    required this.amountMinor,
+    required this.date,
+    this.description,
+  });
+
+  final String id;
+  final TxnType type;
+  final int amountMinor;
+  final String date;
+  final String? description;
+}
+
+class _TransactionSheet extends ConsumerStatefulWidget {
+  const _TransactionSheet({this.person, this.transaction, this.defaultType});
+
+  final PersonRef? person;
+  final EditableTransaction? transaction;
+  final TxnType? defaultType;
+
+  @override
+  ConsumerState<_TransactionSheet> createState() => _TransactionSheetState();
+}
+
+class _TransactionSheetState extends ConsumerState<_TransactionSheet> {
+  late PersonRef? _person = widget.person;
+  late TxnType _type = widget.defaultType ?? widget.transaction?.type ?? TxnType.credit;
+  late String _date = widget.transaction?.date ?? todayIso();
+  late final TextEditingController _note =
+      TextEditingController(text: widget.transaction?.description ?? '');
+
+  int? _amount;
+  bool _saving = false;
+  String? _error;
+
+  bool get _isEdit => widget.transaction != null;
+  bool get _canSave => _amount != null && _person != null && !_saving;
+
+  @override
+  void dispose() {
+    _note.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_canSave) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+
+    try {
+      final repository = ref.read(ledgerRepositoryProvider);
+      final note = _note.text.trim().isEmpty ? null : _note.text.trim();
+
+      if (_isEdit) {
+        await repository.updateTransaction(
+          transactionId: widget.transaction!.id,
+          type: _type,
+          amountMinor: _amount!,
+          date: _date,
+          description: note,
+        );
+      } else {
+        await repository.createTransaction(
+          personId: _person!.id,
+          type: _type,
+          amountMinor: _amount!,
+          date: _date,
+          description: note,
+        );
+      }
+
+      ref.refreshLedger(personId: _person!.id);
+      if (mounted) Navigator.of(context).pop(true);
+    } on Failure catch (failure) {
+      setState(() {
+        _saving = false;
+        _error = failure.message;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currency = ref.watch(currencyProvider);
+
+    return SheetScaffold(
+      title: _isEdit ? 'Edit transaction' : 'Add transaction',
+      subtitle: _isEdit ? 'Changes are checked against anything already settled.' : null,
+      error: _error,
+      primaryLabel: _isEdit ? 'Save changes' : 'Save transaction',
+      onPrimary: _canSave ? _save : null,
+      busy: _saving,
+      children: [
+        if (!_isEdit) ...[
+          PersonPickerField(
+            value: _person,
+            onChanged: (person) => setState(() => _person = person),
+          ),
+          const SizedBox(height: 18),
+        ],
+
+        _TypeToggle(value: _type, onChanged: (type) => setState(() => _type = type)),
+        const SizedBox(height: 18),
+
+        AmountField(
+          currency: currency,
+          autofocus: _person != null,
+          initial: widget.transaction?.amountMinor,
+          onChanged: (minor) => setState(() => _amount = minor),
+        ),
+        const SizedBox(height: 18),
+
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: _DateField(
+                value: _date,
+                onChanged: (value) => setState(() => _date = value),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Note',
+                      style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: _note,
+                    maxLength: 500,
+                    decoration: const InputDecoration(
+                      hintText: 'Invoice #102',
+                      counterText: '',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Credit / Debit stated in the user's language (context.md §8).
+class _TypeToggle extends StatelessWidget {
+  const _TypeToggle({required this.value, required this.onChanged});
+
+  final TxnType value;
+  final ValueChanged<TxnType> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Type', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(
+              child: _TypeOption(
+                selected: value == TxnType.credit,
+                onTap: () => onChanged(TxnType.credit),
+                icon: Icons.south_west,
+                title: 'Credit',
+                subtitle: 'They owe me',
+                color: context.money.receivable,
+                background: context.money.receivableSoft,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _TypeOption(
+                selected: value == TxnType.debit,
+                onTap: () => onChanged(TxnType.debit),
+                icon: Icons.north_east,
+                title: 'Debit',
+                subtitle: 'I owe them',
+                color: context.money.payable,
+                background: context.money.payableSoft,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _TypeOption extends StatelessWidget {
+  const _TypeOption({
+    required this.selected,
+    required this.onTap,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    required this.background,
+  });
+
+  final bool selected;
+  final VoidCallback onTap;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+  final Color background;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? background : context.colors.surface,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? color : context.colors.outline,
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(icon,
+                      size: 16, color: selected ? color : context.colors.onSurface),
+                  const SizedBox(width: 6),
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                      color: selected ? color : context.colors.onSurface,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(subtitle,
+                  style: TextStyle(fontSize: 12, color: context.money.inkMuted)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DateField extends StatelessWidget {
+  const _DateField({required this.value, required this.onChanged});
+
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Date', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 6),
+        InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () async {
+            final picked = await showDatePicker(
+              context: context,
+              initialDate: parseDbDate(value),
+              firstDate: DateTime(2000),
+              // Future-dated entries are rejected by the database, so the
+              // picker will not offer one either.
+              lastDate: DateTime.now(),
+            );
+            if (picked != null) onChanged(isoDate(picked));
+          },
+          child: InputDecorator(
+            decoration: const InputDecoration(),
+            child: Row(
+              children: [
+                Expanded(child: Text(friendlyDate(value))),
+                Icon(Icons.calendar_today_outlined,
+                    size: 16, color: context.money.inkFaint),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// "Who?" — search existing people or create one inline (context.md §14).
+class PersonPickerField extends ConsumerStatefulWidget {
+  const PersonPickerField({super.key, required this.value, required this.onChanged});
+
+  final PersonRef? value;
+  final ValueChanged<PersonRef?> onChanged;
+
+  @override
+  ConsumerState<PersonPickerField> createState() => _PersonPickerFieldState();
+}
+
+class _PersonPickerFieldState extends ConsumerState<PersonPickerField> {
+  final _controller = TextEditingController();
+  String _query = '';
+  bool _creating = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _createInline() async {
+    final name = _query.trim();
+    if (name.isEmpty) return;
+    setState(() => _creating = true);
+
+    try {
+      final person = await ref.read(ledgerRepositoryProvider).createPerson(name: name);
+      ref.refreshLedger();
+      widget.onChanged(PersonRef(person.id, person.name));
+    } on Failure catch (failure) {
+      if (mounted) showMessage(context, failure.message, error: true);
+    } finally {
+      if (mounted) setState(() => _creating = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currency = ref.watch(currencyProvider);
+    final selected = widget.value;
+
+    if (selected != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Who?', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: context.money.sunken,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: context.colors.outline),
+            ),
+            child: Row(
+              children: [
+                Avatar(selected.name, size: 32, accent: true),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    selected.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    _controller.clear();
+                    setState(() => _query = '');
+                    widget.onChanged(null);
+                  },
+                  child: const Text('Change'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    final results = ref.watch(searchProvider(_query));
+    final recent = ref.watch(peopleProvider(
+      (query: '', includeArchived: false, sort: PeopleSort.recent),
+    ));
+
+    final options = _query.trim().isEmpty
+        ? (recent.valueOrNull ?? const <PersonBalance>[]).take(6).toList()
+        : (results.valueOrNull?.people ?? const <PersonBalance>[]);
+
+    final exactMatch = options.any(
+      (option) => option.name.toLowerCase() == _query.trim().toLowerCase(),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Who?', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 6),
+        TextField(
+          controller: _controller,
+          autofocus: true,
+          onChanged: (value) => setState(() => _query = value),
+          decoration: const InputDecoration(
+            hintText: 'Search or type a new name',
+            prefixIcon: Icon(Icons.search, size: 18),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          constraints: const BoxConstraints(maxHeight: 216),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: context.money.line),
+          ),
+          child: ListView(
+            shrinkWrap: true,
+            padding: EdgeInsets.zero,
+            children: [
+              for (final option in options)
+                ListTile(
+                  dense: true,
+                  leading: Avatar(option.name, size: 32),
+                  title: Text(option.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                  subtitle: option.phone == null
+                      ? null
+                      : Text(option.phone!, style: const TextStyle(fontSize: 12)),
+                  trailing: NetBadge(netMinor: option.netBalance, currency: currency),
+                  onTap: () =>
+                      widget.onChanged(PersonRef(option.personId, option.name)),
+                ),
+              if (_query.trim().isNotEmpty && !exactMatch)
+                ListTile(
+                  dense: true,
+                  leading: _creating
+                      ? const SizedBox(
+                          width: 32,
+                          height: 32,
+                          child: Center(
+                            child: SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        )
+                      : Container(
+                          width: 32,
+                          height: 32,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: context.colors.primaryContainer,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(Icons.add,
+                              size: 17, color: context.colors.primary),
+                        ),
+                  title: Text('Add “${_query.trim()}” as a new person',
+                      style: const TextStyle(fontSize: 14)),
+                  onTap: _creating ? null : _createInline,
+                ),
+              if (options.isEmpty && _query.trim().isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Center(
+                    child: Text(
+                      'Type a name to search or create.',
+                      style: TextStyle(fontSize: 13, color: context.money.inkFaint),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
