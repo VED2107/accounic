@@ -26,8 +26,8 @@ class LedgerRepository {
       final data = await _client.rpc('me');
       if (data == null) return null;
       return Me.fromJson(Map<String, dynamic>.from(data as Map));
-    } catch (error) {
-      throw Failure.from(error, 'Your profile could not be loaded.');
+    } catch (error, stack) {
+      throw Failure.from(error, 'Your profile could not be loaded.', stack);
     }
   }
 
@@ -38,8 +38,8 @@ class LedgerRepository {
         params: {'p_activity_limit': 12, 'p_people_limit': 8},
       );
       return Dashboard.fromJson(Map<String, dynamic>.from(data as Map));
-    } catch (error) {
-      throw Failure.from(error, 'Your dashboard could not be loaded.');
+    } catch (error, stack) {
+      throw Failure.from(error, 'Your dashboard could not be loaded.', stack);
     }
   }
 
@@ -74,8 +74,8 @@ class LedgerRepository {
         people.sort((a, b) => b.netBalance.abs().compareTo(a.netBalance.abs()));
       }
       return people;
-    } catch (error) {
-      throw Failure.from(error, 'Your people could not be loaded.');
+    } catch (error, stack) {
+      throw Failure.from(error, 'Your people could not be loaded.', stack);
     }
   }
 
@@ -86,8 +86,8 @@ class LedgerRepository {
         params: {'p_person_id': personId, 'p_limit': limit, 'p_offset': offset},
       );
       return PersonPage.fromJson(Map<String, dynamic>.from(data as Map));
-    } catch (error) {
-      throw Failure.from(error, 'That account could not be loaded.');
+    } catch (error, stack) {
+      throw Failure.from(error, 'That account could not be loaded.', stack);
     }
   }
 
@@ -98,8 +98,8 @@ class LedgerRepository {
         params: {'p_query': query, 'p_limit': 8},
       );
       return SearchResults.fromJson(Map<String, dynamic>.from(data as Map));
-    } catch (error) {
-      throw Failure.from(error, 'Search is unavailable right now.');
+    } catch (error, stack) {
+      throw Failure.from(error, 'Search is unavailable right now.', stack);
     }
   }
 
@@ -118,8 +118,8 @@ class LedgerRepository {
         for (final row in (data as List? ?? const []))
           ActivityBucket.fromJson(Map<String, dynamic>.from(row as Map)),
       ];
-    } catch (error) {
-      throw Failure.from(error, 'Your activity totals could not be loaded.');
+    } catch (error, stack) {
+      throw Failure.from(error, 'Your activity totals could not be loaded.', stack);
     }
   }
 
@@ -134,8 +134,8 @@ class LedgerRepository {
         },
       );
       return ActivityPage.fromJson(Map<String, dynamic>.from(data as Map));
-    } catch (error) {
-      throw Failure.from(error, 'Your activity could not be loaded.');
+    } catch (error, stack) {
+      throw Failure.from(error, 'Your activity could not be loaded.', stack);
     }
   }
 
@@ -161,8 +161,8 @@ class LedgerRepository {
         'p_notes': notes,
       });
       return Person.fromJson(Map<String, dynamic>.from(data as Map));
-    } catch (error) {
-      throw Failure.from(error, Unchanged.person);
+    } catch (error, stack) {
+      throw Failure.from(error, Unchanged.person, stack);
     }
   }
 
@@ -186,8 +186,8 @@ class LedgerRepository {
         'p_notes': notes,
       });
       return Person.fromJson(Map<String, dynamic>.from(data as Map));
-    } catch (error) {
-      throw Failure.from(error, Unchanged.person);
+    } catch (error, stack) {
+      throw Failure.from(error, Unchanged.person, stack);
     }
   }
 
@@ -195,10 +195,11 @@ class LedgerRepository {
     try {
       await _client.rpc('set_person_archived',
           params: {'p_person_id': personId, 'p_archived': archived});
-    } catch (error) {
+    } catch (error, stack) {
       throw Failure.from(
         error,
         archived ? 'This person could not be archived.' : 'This person could not be restored.',
+        stack,
       );
     }
   }
@@ -206,8 +207,8 @@ class LedgerRepository {
   Future<void> deletePerson(String personId) async {
     try {
       await _client.rpc('delete_person', params: {'p_person_id': personId});
-    } catch (error) {
-      throw Failure.from(error, 'This person could not be deleted.');
+    } catch (error, stack) {
+      throw Failure.from(error, 'This person could not be deleted.', stack);
     }
   }
 
@@ -227,8 +228,8 @@ class LedgerRepository {
         'p_description': description,
       });
       return LedgerMutation.fromJson(Map<String, dynamic>.from(data as Map));
-    } catch (error) {
-      throw Failure.from(error, Unchanged.transaction);
+    } catch (error, stack) {
+      throw Failure.from(error, Unchanged.transaction, stack);
     }
   }
 
@@ -248,8 +249,8 @@ class LedgerRepository {
         'p_description': description,
       });
       return LedgerMutation.fromJson(Map<String, dynamic>.from(data as Map));
-    } catch (error) {
-      throw Failure.from(error, Unchanged.transaction);
+    } catch (error, stack) {
+      throw Failure.from(error, Unchanged.transaction, stack);
     }
   }
 
@@ -258,10 +259,11 @@ class LedgerRepository {
       final data = await _client.rpc('void_transaction',
           params: {'p_transaction_id': transactionId, 'p_reason': reason});
       return LedgerMutation.fromJson(Map<String, dynamic>.from(data as Map));
-    } catch (error) {
+    } catch (error, stack) {
       throw Failure.from(
         error,
         'This transaction could not be voided. Your balance has not been changed.',
+        stack,
       );
     }
   }
@@ -289,8 +291,8 @@ class LedgerRepository {
         'p_note': note,
       });
       return LedgerMutation.fromJson(Map<String, dynamic>.from(data as Map));
-    } catch (error) {
-      throw Failure.from(error, Unchanged.settlement);
+    } catch (error, stack) {
+      throw Failure.from(error, Unchanged.settlement, stack);
     }
   }
 
@@ -299,10 +301,11 @@ class LedgerRepository {
       final data = await _client.rpc('void_settlement',
           params: {'p_settlement_id': settlementId, 'p_reason': reason});
       return LedgerMutation.fromJson(Map<String, dynamic>.from(data as Map));
-    } catch (error) {
+    } catch (error, stack) {
       throw Failure.from(
         error,
         'This settlement could not be reversed. Your balance has not been changed.',
+        stack,
       );
     }
   }
@@ -321,8 +324,8 @@ class LedgerRepository {
         'p_currency': currency,
         'p_avatar_url': null,
       });
-    } catch (error) {
-      throw Failure.from(error, Unchanged.profile);
+    } catch (error, stack) {
+      throw Failure.from(error, Unchanged.profile, stack);
     }
   }
 }

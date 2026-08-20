@@ -23,10 +23,10 @@ class AuthRepository {
         email: email.trim(),
         password: password,
       );
-    } catch (error) {
+    } catch (error, stack) {
       // Deliberately one message for both "no such user" and "wrong password",
       // so the form cannot be used to discover which emails have accounts.
-      throw Failure.from(error, 'That email and password combination is not correct.');
+      throw Failure.from(error, 'That email and password combination is not correct.', stack);
     }
 
     // A disabled account can still hold valid credentials; the database is what
@@ -43,25 +43,25 @@ class AuthRepository {
       }
     } on Failure {
       rethrow;
-    } catch (error) {
+    } catch (error, stack) {
       await _client.auth.signOut();
-      throw Failure.from(error, 'Your account could not be verified. Please try again.');
+      throw Failure.from(error, 'Your account could not be verified. Please try again.', stack);
     }
   }
 
   Future<void> signOut() async {
     try {
       await _client.auth.signOut();
-    } catch (error) {
-      throw Failure.from(error, 'You could not be signed out.');
+    } catch (error, stack) {
+      throw Failure.from(error, 'You could not be signed out.', stack);
     }
   }
 
   Future<void> changePassword(String password) async {
     try {
       await _client.auth.updateUser(UserAttributes(password: password));
-    } catch (error) {
-      throw Failure.from(error, 'Your password could not be changed.');
+    } catch (error, stack) {
+      throw Failure.from(error, 'Your password could not be changed.', stack);
     }
   }
 }

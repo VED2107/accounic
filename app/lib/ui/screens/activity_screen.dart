@@ -81,7 +81,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                 error: (error, _) => ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
-                    ErrorNote('$error', onRetry: () => ref.invalidate(activityProvider)),
+                    ErrorNote.forError(error, onRetry: () => ref.invalidate(activityProvider)),
                   ],
                 ),
                 data: (activity) {

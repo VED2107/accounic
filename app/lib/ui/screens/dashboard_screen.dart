@@ -48,12 +48,13 @@ class DashboardScreen extends ConsumerWidget {
         onRefresh: () async => ref.refresh(dashboardProvider.future),
         child: async.when(
           loading: () => const _DashboardSkeleton(),
-          error: (error, _) => ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              ErrorNote('$error', onRetry: () => ref.invalidate(dashboardProvider)),
-            ],
-          ),
+          error:
+              (error, _) => ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  ErrorNote.forError(error, onRetry: () => ref.invalidate(dashboardProvider)),
+                ],
+              ),
           data: (data) => _DashboardBody(data: data),
         ),
       ),
@@ -105,35 +106,41 @@ class _DashboardBody extends StatelessWidget {
               const SizedBox(height: 18),
 
               // ----------------------------------------- the two sides, compact
+              // IntrinsicHeight, not bare stretch: the two cards must match
+              // heights, but `stretch` inside a vertical scroll view hands the
+              // children an infinite height constraint, which fails layout for
+              // the whole body and paints nothing at all (docs/decisions.md §20).
               Reveal(
                 delay: const Duration(milliseconds: 50),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(
-                      child: _SideCard(
-                        label: 'Receivable',
-                        caption: 'Money owed to you',
-                        minor: summary.totalReceivable,
-                        currency: currency,
-                        tone: MoneyTone.receivable,
-                        accounts: owed,
-                        icon: Icons.north_east_rounded,
+                child: IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: _SideCard(
+                          label: 'Receivable',
+                          caption: 'Money owed to you',
+                          minor: summary.totalReceivable,
+                          currency: currency,
+                          tone: MoneyTone.receivable,
+                          accounts: owed,
+                          icon: Icons.north_east_rounded,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _SideCard(
-                        label: 'Payable',
-                        caption: 'Money you owe',
-                        minor: summary.totalPayable,
-                        currency: currency,
-                        tone: MoneyTone.payable,
-                        accounts: owing,
-                        icon: Icons.south_west_rounded,
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _SideCard(
+                          label: 'Payable',
+                          caption: 'Money you owe',
+                          minor: summary.totalPayable,
+                          currency: currency,
+                          tone: MoneyTone.payable,
+                          accounts: owing,
+                          icon: Icons.south_west_rounded,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
 
@@ -156,22 +163,25 @@ class _DashboardBody extends StatelessWidget {
                     onPressed: () => context.go('/people'),
                     child: const Text('View all'),
                   ),
-                  child: data.peopleWithBalance.isEmpty
-                      ? EmptyState(
-                          icon: Icons.people_outline,
-                          title: summary.peopleCount == 0
-                              ? 'No people yet'
-                              : 'Everything is settled',
-                          description: summary.peopleCount == 0
-                              ? 'Add your first person or business to start tracking money.'
-                              : 'No one owes you and you owe no one.',
-                        )
-                      : Stagger(
-                          children: [
-                            for (final person in data.peopleWithBalance)
-                              PersonRow(person: person, currency: currency),
-                          ],
-                        ),
+                  child:
+                      data.peopleWithBalance.isEmpty
+                          ? EmptyState(
+                            icon: Icons.people_outline,
+                            title:
+                                summary.peopleCount == 0
+                                    ? 'No people yet'
+                                    : 'Everything is settled',
+                            description:
+                                summary.peopleCount == 0
+                                    ? 'Add your first person or business to start tracking money.'
+                                    : 'No one owes you and you owe no one.',
+                          )
+                          : Stagger(
+                            children: [
+                              for (final person in data.peopleWithBalance)
+                                PersonRow(person: person, currency: currency),
+                            ],
+                          ),
                 ),
               ),
 
@@ -185,18 +195,19 @@ class _DashboardBody extends StatelessWidget {
                     onPressed: () => context.go('/activity'),
                     child: const Text('View all'),
                   ),
-                  child: data.recentActivity.isEmpty
-                      ? const EmptyState(
-                          icon: Icons.receipt_long_outlined,
-                          title: 'No transactions yet',
-                          description: 'Record one and it will appear here straight away.',
-                        )
-                      : Stagger(
-                          children: [
-                            for (final item in data.recentActivity.take(wide ? 8 : 5))
-                              ActivityRow(item: item, currency: currency),
-                          ],
-                        ),
+                  child:
+                      data.recentActivity.isEmpty
+                          ? const EmptyState(
+                            icon: Icons.receipt_long_outlined,
+                            title: 'No transactions yet',
+                            description: 'Record one and it will appear here straight away.',
+                          )
+                          : Stagger(
+                            children: [
+                              for (final item in data.recentActivity.take(wide ? 8 : 5))
+                                ActivityRow(item: item, currency: currency),
+                            ],
+                          ),
                 ),
               ),
             ],
@@ -255,14 +266,29 @@ class _TodayChips extends StatelessWidget {
         // The engine's `credit` bucket is the owner-to-person direction, which
         // the product calls a debit — see docs/accounting-direction.md.
         if (today.debit > 0)
-          chip(formatMinor(today.debit, currency: currency), 'credited', palette.payable,
-              palette.payableSoft, palette.payableLine),
+          chip(
+            formatMinor(today.debit, currency: currency),
+            'credited',
+            palette.payable,
+            palette.payableSoft,
+            palette.payableLine,
+          ),
         if (today.credit > 0)
-          chip(formatMinor(today.credit, currency: currency), 'debited', palette.receivable,
-              palette.receivableSoft, palette.receivableLine),
+          chip(
+            formatMinor(today.credit, currency: currency),
+            'debited',
+            palette.receivable,
+            palette.receivableSoft,
+            palette.receivableLine,
+          ),
         if (today.settled > 0)
-          chip(formatMinor(today.settled, currency: currency), 'settled', palette.inkMuted,
-              palette.sunken, palette.line),
+          chip(
+            formatMinor(today.settled, currency: currency),
+            'settled',
+            palette.inkMuted,
+            palette.sunken,
+            palette.line,
+          ),
       ],
     );
   }
@@ -394,8 +420,8 @@ class _NetCard extends StatelessWidget {
             net > 0
                 ? "You're ahead"
                 : net < 0
-                    ? 'You are behind'
-                    : 'Everything is settled',
+                ? 'You are behind'
+                : 'Everything is settled',
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
@@ -443,7 +469,8 @@ class PersonRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final meta = subtitle ??
+    final meta =
+        subtitle ??
         (person.lastActivityAt == null ? 'No activity yet' : friendlyDate(person.lastActivityAt!));
 
     return Column(
@@ -509,9 +536,10 @@ class ActivityRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.money;
-    final (background, foreground, border) = item.isSettlement
-        ? (palette.sunken, palette.inkMuted, palette.line)
-        : item.isReceivable
+    final (background, foreground, border) =
+        item.isSettlement
+            ? (palette.sunken, palette.inkMuted, palette.line)
+            : item.isReceivable
             ? (palette.receivableSoft, palette.receivable, palette.receivableLine)
             : (palette.payableSoft, palette.payable, palette.payableLine);
 
@@ -542,8 +570,8 @@ class ActivityRow extends StatelessWidget {
                     item.isSettlement
                         ? Icons.swap_horiz_rounded
                         : item.isReceivable
-                            ? Icons.north_east_rounded
-                            : Icons.south_west_rounded,
+                        ? Icons.north_east_rounded
+                        : Icons.south_west_rounded,
                     size: 18,
                     color: foreground,
                   ),
@@ -573,9 +601,10 @@ class ActivityRow extends StatelessWidget {
                 MoneyText(
                   item.amountMinor,
                   currency: currency,
-                  tone: item.isSettlement
-                      ? MoneyTone.neutral
-                      : item.isReceivable
+                  tone:
+                      item.isSettlement
+                          ? MoneyTone.neutral
+                          : item.isReceivable
                           ? MoneyTone.receivable
                           : MoneyTone.payable,
                   style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),

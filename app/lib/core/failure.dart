@@ -1,5 +1,6 @@
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Error translation (context.md §26).
@@ -33,41 +34,81 @@ bool _looksLikeOurMessage(String message) {
 }
 
 /// A message that is safe to put in front of a user.
+///
+/// The user-facing [message] is deliberately vague about the machinery. The
+/// [cause] is kept alongside it so a developer can see what actually went
+/// wrong: a swallowed cause is how a real RPC failure spent a session looking
+/// like an empty screen (docs/decisions.md §20).
 class Failure implements Exception {
-  const Failure(this.message);
+  const Failure(this.message, {this.cause, this.stackTrace});
+
   final String message;
+
+  /// The original error. Never shown in a release build.
+  final Object? cause;
+  final StackTrace? stackTrace;
 
   @override
   String toString() => message;
 
-  static Failure from(Object error, String fallback) {
+  /// A one-line technical description of [cause], for debug builds and logs.
+  String? get detail {
+    final error = cause;
+    if (error == null) return null;
+    if (error is PostgrestException) {
+      return [
+        if (error.code != null) 'code ${error.code}',
+        error.message,
+        if (error.details != null) '${error.details}',
+        if (error.hint != null) 'hint: ${error.hint}',
+      ].join(' · ');
+    }
+    return '${error.runtimeType}: $error';
+  }
+
+  static Failure from(Object error, String fallback, [StackTrace? stackTrace]) {
     if (error is Failure) return error;
+
+    // Never silent: whatever the user is about to be told, the console gets the
+    // real thing.
+    assert(() {
+      debugPrint('Failure.from: $error');
+      if (stackTrace != null) debugPrintStack(stackTrace: stackTrace);
+      return true;
+    }());
 
     if (error is PostgrestException) {
       final code = error.code;
       if (code != null && _safeSqlStates.contains(code)) {
-        if (_looksLikeOurMessage(error.message)) return Failure(error.message);
-        return Failure(_fallbackBySqlState[code] ?? fallback);
+        if (_looksLikeOurMessage(error.message)) {
+          return Failure(error.message, cause: error, stackTrace: stackTrace);
+        }
+        return Failure(_fallbackBySqlState[code] ?? fallback,
+            cause: error, stackTrace: stackTrace);
       }
       if (code != null && _fallbackBySqlState.containsKey(code)) {
-        return Failure(_fallbackBySqlState[code]!);
+        return Failure(_fallbackBySqlState[code]!,
+            cause: error, stackTrace: stackTrace);
       }
-      return Failure(fallback);
+      return Failure(fallback, cause: error, stackTrace: stackTrace);
     }
 
     if (error is AuthApiException || error is AuthException) {
-      return const Failure('That email and password combination is not correct.');
+      return Failure('That email and password combination is not correct.',
+          cause: error, stackTrace: stackTrace);
     }
 
     if (error.toString().contains('SocketException') ||
         error.toString().contains('Failed host lookup') ||
         error.toString().contains('ClientException')) {
-      return const Failure(
+      return Failure(
         'Could not reach the server. Check your connection and try again.',
+        cause: error,
+        stackTrace: stackTrace,
       );
     }
 
-    return Failure(fallback);
+    return Failure(fallback, cause: error, stackTrace: stackTrace);
   }
 }
 

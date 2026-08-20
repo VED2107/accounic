@@ -97,7 +97,7 @@ class _SearchSheetState extends ConsumerState<_SearchSheet> {
                       ),
                       error: (error, _) => Padding(
                         padding: const EdgeInsets.all(16),
-                        child: ErrorNote('$error'),
+                        child: ErrorNote.forError(error),
                       ),
                       data: (results) {
                         if (results.isEmpty) {

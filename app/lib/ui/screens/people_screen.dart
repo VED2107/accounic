@@ -172,7 +172,7 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
                 error: (error, _) => ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
-                    ErrorNote('$error', onRetry: () => ref.invalidate(peopleProvider)),
+                    ErrorNote.forError(error, onRetry: () => ref.invalidate(peopleProvider)),
                   ],
                 ),
                 data: (all) => _apply(all).isEmpty

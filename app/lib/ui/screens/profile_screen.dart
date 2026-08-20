@@ -107,7 +107,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => Padding(
           padding: const EdgeInsets.all(16),
-          child: ErrorNote('$error', onRetry: () => ref.invalidate(meProvider)),
+          child: ErrorNote.forError(error, onRetry: () => ref.invalidate(meProvider)),
         ),
         data: (me) {
           if (me == null) return const SizedBox.shrink();

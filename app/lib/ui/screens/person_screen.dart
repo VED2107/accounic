@@ -46,7 +46,7 @@ class PersonScreen extends ConsumerWidget {
         error: (error, _) => ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            ErrorNote('$error', onRetry: () => ref.invalidate(personPageProvider(personId))),
+            ErrorNote.forError(error, onRetry: () => ref.invalidate(personPageProvider(personId))),
           ],
         ),
         data: (page) => RefreshIndicator(

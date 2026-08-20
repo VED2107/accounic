@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/avatar_color.dart';
+import '../../core/failure.dart';
 import '../../core/money.dart';
 import '../../core/theme.dart';
 import '../motion.dart';
@@ -492,10 +494,26 @@ class SkeletonList extends StatelessWidget {
 
 /// Inline error with a retry, used by every async screen (context.md §26).
 class ErrorNote extends StatelessWidget {
-  const ErrorNote(this.message, {super.key, this.onRetry});
+  const ErrorNote(this.message, {super.key, this.onRetry, this.detail});
+
+  /// Builds the note straight from a thrown error, so the user gets the safe
+  /// sentence and — in a debug build only — the developer gets the cause.
+  /// Screens use this rather than rendering nothing on failure.
+  factory ErrorNote.forError(Object error, {Key? key, VoidCallback? onRetry}) {
+    final failure = error is Failure ? error : null;
+    return ErrorNote(
+      failure?.message ?? '$error',
+      key: key,
+      onRetry: onRetry,
+      detail: failure?.detail ?? (failure == null ? '${error.runtimeType}: $error' : null),
+    );
+  }
 
   final String message;
   final VoidCallback? onRetry;
+
+  /// The technical cause. Rendered only in a debug build.
+  final String? detail;
 
   @override
   Widget build(BuildContext context) {
@@ -514,6 +532,18 @@ class ErrorNote extends StatelessWidget {
             message,
             style: TextStyle(color: context.money.payable, fontSize: 13, height: 1.45),
           ),
+          if (kDebugMode && detail != null) ...[
+            const SizedBox(height: 8),
+            SelectableText(
+              detail!,
+              style: TextStyle(
+                color: context.money.inkFaint,
+                fontSize: 11,
+                height: 1.4,
+                fontFamily: 'monospace',
+              ),
+            ),
+          ],
           if (onRetry != null) ...[
             const SizedBox(height: 8),
             TextButton(

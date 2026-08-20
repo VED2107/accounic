@@ -1,3 +1,6 @@
+import 'dart:ui';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -14,6 +17,20 @@ import 'ui/app_router.dart';
 /// small desktop window behave sensibly.
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Nothing fails quietly. A framework error used to reach the console only if
+  // the app happened to be run attached; both hooks now log with the stack, and
+  // every async screen renders an ErrorNote rather than nothing (§26).
+  final previousOnError = FlutterError.onError;
+  FlutterError.onError = (details) {
+    previousOnError?.call(details);
+    debugPrint('FlutterError: ${details.exceptionAsString()}');
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('Uncaught: $error');
+    debugPrintStack(stackTrace: stack);
+    return true;
+  };
 
   if (!AppConfig.isConfigured) {
     runApp(const _MisconfiguredApp());
