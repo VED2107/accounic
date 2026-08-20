@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 
+import '../../core/avatar_color.dart';
 import '../../core/money.dart';
 import '../../core/theme.dart';
+import '../motion.dart';
 
-/// Shared presentation pieces (context.md §18, §27, §28).
+/// The Accounic design system, Flutter side (context.md §18, §27, §28).
 ///
-/// Money is coloured only by direction, loading states always mirror the shape
-/// of the real content, and empty states say what to do next rather than just
-/// reporting emptiness.
+/// The same pieces as `web/src/components/ui/primitives.tsx`, with the same
+/// names and the same rules: money is coloured only by direction, loading states
+/// mirror the shape of the real content, and empty states say what to do next
+/// rather than reporting emptiness. No screen styles a card, a row or an avatar
+/// by hand.
 
 /// A money amount. [tone] of `auto` picks receivable/payable from the sign and
 /// renders the magnitude, which is how balances are read aloud.
@@ -31,21 +35,6 @@ class MoneyText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.money;
-    final resolved = tone == MoneyTone.auto
-        ? switch (balanceTone(minor)) {
-            BalanceTone.receivable => MoneyTone.receivable,
-            BalanceTone.payable => MoneyTone.payable,
-            BalanceTone.settled => MoneyTone.neutral,
-          }
-        : tone;
-
-    final color = switch (resolved) {
-      MoneyTone.receivable => palette.receivable,
-      MoneyTone.payable => palette.payable,
-      _ => context.colors.onSurface,
-    };
-
     return Text(
       formatMinor(
         tone == MoneyTone.auto ? minor.abs() : minor,
@@ -53,7 +42,7 @@ class MoneyText extends StatelessWidget {
         compactDecimals: compact,
       ),
       style: (style ?? const TextStyle()).copyWith(
-        color: color,
+        color: tone.color(context, minor),
         fontFeatures: const [FontFeature.tabularFigures()],
         letterSpacing: -0.2,
         decoration: strikethrough ? TextDecoration.lineThrough : null,
@@ -62,7 +51,29 @@ class MoneyText extends StatelessWidget {
   }
 }
 
-enum MoneyTone { receivable, payable, neutral, auto }
+enum MoneyTone {
+  receivable,
+  payable,
+  neutral,
+  auto;
+
+  Color color(BuildContext context, int minor) {
+    final palette = context.money;
+    final resolved = this == MoneyTone.auto
+        ? switch (balanceTone(minor)) {
+            BalanceTone.receivable => MoneyTone.receivable,
+            BalanceTone.payable => MoneyTone.payable,
+            BalanceTone.settled => MoneyTone.neutral,
+          }
+        : this;
+
+    return switch (resolved) {
+      MoneyTone.receivable => palette.receivable,
+      MoneyTone.payable => palette.payable,
+      _ => context.colors.onSurface,
+    };
+  }
+}
 
 /// A headline figure: quiet label, loud number (context.md §13).
 class MoneyStat extends StatelessWidget {
@@ -73,6 +84,7 @@ class MoneyStat extends StatelessWidget {
     required this.currency,
     this.tone = MoneyTone.neutral,
     this.sublabel,
+    this.size = 27,
   });
 
   final String label;
@@ -80,6 +92,7 @@ class MoneyStat extends StatelessWidget {
   final String currency;
   final MoneyTone tone;
   final String? sublabel;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
@@ -87,8 +100,8 @@ class MoneyStat extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(label, style: TextStyle(fontSize: 13.5, color: context.money.inkMuted)),
-        const SizedBox(height: 4),
+        Text(label, style: TextStyle(fontSize: 13, color: context.money.inkMuted)),
+        const SizedBox(height: 6),
         FittedBox(
           fit: BoxFit.scaleDown,
           alignment: Alignment.centerLeft,
@@ -96,11 +109,11 @@ class MoneyStat extends StatelessWidget {
             minor,
             currency: currency,
             tone: tone,
-            style: const TextStyle(fontSize: 27, fontWeight: FontWeight.w600),
+            style: context.display(size),
           ),
         ),
         if (sublabel != null) ...[
-          const SizedBox(height: 2),
+          const SizedBox(height: 5),
           Text(sublabel!, style: TextStyle(fontSize: 12.5, color: context.money.inkFaint)),
         ],
       ],
@@ -108,7 +121,8 @@ class MoneyStat extends StatelessWidget {
   }
 }
 
-/// "₹12,500 receivable" / "Settled up" — the one-line answer for a list row.
+/// The balance at the end of a list row — the visual anchor of that row
+/// (context.md §5). Amount first, then the one word that says which way it runs.
 class NetBadge extends StatelessWidget {
   const NetBadge({super.key, required this.netMinor, required this.currency});
 
@@ -118,32 +132,61 @@ class NetBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.money;
-    final color = switch (balanceTone(netMinor)) {
+    final tone = balanceTone(netMinor);
+    final color = switch (tone) {
       BalanceTone.receivable => palette.receivable,
       BalanceTone.payable => palette.payable,
       BalanceTone.settled => palette.inkFaint,
     };
 
-    return Text(
-      netSummary(netMinor, currency: currency),
-      textAlign: TextAlign.end,
-      style: TextStyle(
-        fontSize: 13.5,
-        fontWeight: FontWeight.w600,
-        color: color,
-        fontFeatures: const [FontFeature.tabularFigures()],
-      ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Text(
+          tone == BalanceTone.settled
+              ? 'Settled'
+              : formatMinor(netMinor.abs(), currency: currency),
+          style: TextStyle(
+            fontFamily: 'Poppins',
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -0.3,
+            color: color,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+        Text(
+          switch (tone) {
+            BalanceTone.receivable => 'receivable',
+            BalanceTone.payable => 'payable',
+            BalanceTone.settled => 'up',
+          },
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            color: tone == BalanceTone.settled ? palette.inkFaint : color.withValues(alpha: 0.75),
+          ),
+        ),
+      ],
     );
   }
 }
 
-/// Circular initials, used wherever a person is listed.
+/// Initials, tinted by identity.
+///
+/// Each person gets a stable colour of their own, so a directory reads as a set
+/// of distinct faces rather than a wall of red and green — and red and green go
+/// back to meaning money and only money, which is the point of reserving them.
+///
+/// The `tone` override stays for the handful of places where the avatar really
+/// is about state rather than identity, such as a disabled account.
 class Avatar extends StatelessWidget {
-  const Avatar(this.name, {super.key, this.size = 40, this.accent = false});
+  const Avatar(this.name, {super.key, this.size = 40, this.tone});
 
   final String name;
   final double size;
-  final bool accent;
+  final AvatarTone? tone;
 
   static String initialsOf(String name) {
     final parts = name.trim().split(RegExp(r'\s+')).take(2);
@@ -151,27 +194,54 @@ class Avatar extends StatelessWidget {
     return letters.isEmpty ? '?' : letters;
   }
 
+  /// Picks the tint from a net balance.
+  static AvatarTone toneFor(int netMinor) => switch (balanceTone(netMinor)) {
+        BalanceTone.receivable => AvatarTone.receivable,
+        BalanceTone.payable => AvatarTone.payable,
+        BalanceTone.settled => AvatarTone.neutral,
+      };
+
   @override
   Widget build(BuildContext context) {
+    final palette = context.money;
+    final (background, foreground, border) = switch (tone) {
+      null => () {
+          final identity = AvatarColor.of(name, Theme.of(context).brightness);
+          return (identity.background, identity.foreground, identity.border);
+        }(),
+      AvatarTone.receivable => (
+          palette.receivableSoft,
+          palette.receivable,
+          palette.receivableLine
+        ),
+      AvatarTone.payable => (palette.payableSoft, palette.payable, palette.payableLine),
+      AvatarTone.accent => (palette.accentSoft, context.colors.primary, palette.accentLine),
+      AvatarTone.neutral => (palette.sunken, palette.inkMuted, palette.line),
+    };
+
     return Container(
       width: size,
       height: size,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: accent ? context.colors.primaryContainer : context.money.sunken,
+        color: background,
         borderRadius: BorderRadius.circular(size / 3.2),
+        border: Border.all(color: border),
       ),
       child: Text(
         initialsOf(name),
         style: TextStyle(
-          fontSize: size * 0.34,
+          fontSize: size * 0.33,
           fontWeight: FontWeight.w600,
-          color: accent ? context.colors.primary : context.money.inkMuted,
+          letterSpacing: -0.2,
+          color: foreground,
         ),
       ),
     );
   }
 }
+
+enum AvatarTone { neutral, receivable, payable, accent }
 
 /// A bordered card with an optional header row.
 class SectionCard extends StatelessWidget {
@@ -181,6 +251,8 @@ class SectionCard extends StatelessWidget {
     this.title,
     this.action,
     this.padding = EdgeInsets.zero,
+    this.raised = false,
+    this.brandRule = false,
   });
 
   final Widget child;
@@ -188,22 +260,36 @@ class SectionCard extends StatelessWidget {
   final Widget? action;
   final EdgeInsets padding;
 
+  /// Lifts the card a step above the page — used for the one hero panel on a
+  /// screen, never for a list.
+  final bool raised;
+
+  /// A single gradient hairline along the top edge: the only place the brand
+  /// ramp appears in the chrome.
+  final bool brandRule;
+
   @override
   Widget build(BuildContext context) {
-    return Card(
+    final card = Card(
       clipBehavior: Clip.antiAlias,
+      color: raised ? context.money.raised : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (brandRule)
+            const SizedBox(
+              height: 1,
+              child: DecoratedBox(decoration: BoxDecoration(gradient: AccounicColors.brandGradient)),
+            ),
           if (title != null) ...[
             Padding(
-              padding: const EdgeInsets.fromLTRB(18, 14, 10, 14),
+              padding: EdgeInsets.fromLTRB(16, brandRule ? 13 : 14, 8, 14),
               child: Row(
                 children: [
                   Expanded(
                     child: Text(
                       title!,
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                      style: context.display(15),
                     ),
                   ),
                   if (action != null) action!,
@@ -214,6 +300,40 @@ class SectionCard extends StatelessWidget {
           ],
           Padding(padding: padding, child: child),
         ],
+      ),
+    );
+    return card;
+  }
+}
+
+/// A hairline showing how a total splits between the two directions. Not a
+/// chart — a proportion, read in the same glance as the numbers above it. Drawn
+/// only when both sides are non-zero, because a full-width bar of one colour
+/// says nothing the figure has not already said.
+class SplitBar extends StatelessWidget {
+  const SplitBar({super.key, required this.receivable, required this.payable});
+
+  final int receivable;
+  final int payable;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = receivable + payable;
+    if (total <= 0 || receivable == 0 || payable == 0) return const SizedBox.shrink();
+
+    return Semantics(
+      label: '${(receivable / total * 100).round()} percent receivable',
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(3),
+        child: SizedBox(
+          height: 4,
+          child: Row(
+            children: [
+              Expanded(flex: receivable, child: ColoredBox(color: context.money.receivable)),
+              Expanded(flex: payable, child: ColoredBox(color: context.money.payable)),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -237,7 +357,7 @@ class EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 44),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -249,22 +369,19 @@ class EmptyState extends StatelessWidget {
               decoration: BoxDecoration(
                 color: context.money.sunken,
                 borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: context.money.line),
               ),
               child: Icon(icon, size: 22, color: context.money.inkFaint),
             ),
             const SizedBox(height: 16),
           ],
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w600),
-          ),
+          Text(title, textAlign: TextAlign.center, style: context.display(15)),
           if (description != null) ...[
             const SizedBox(height: 6),
             Text(
               description!,
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13.5, height: 1.5, color: context.money.inkMuted),
+              style: TextStyle(fontSize: 13, height: 1.5, color: context.money.inkMuted),
             ),
           ],
           if (action != null) ...[const SizedBox(height: 20), action!],
@@ -290,7 +407,17 @@ class _SkeletonState extends State<Skeleton> with SingleTickerProviderStateMixin
   late final AnimationController _controller = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1400),
-  )..repeat();
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    // A shimmer that never stops is a repeating animation on a screen the user
+    // may be staring at; reduced motion turns it into a plain block.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !Motion.of(context)) _controller.repeat();
+    });
+  }
 
   @override
   void dispose() {
@@ -302,7 +429,7 @@ class _SkeletonState extends State<Skeleton> with SingleTickerProviderStateMixin
   Widget build(BuildContext context) {
     final base = context.money.sunken;
     final highlight = Color.alphaBlend(
-      context.money.line.withValues(alpha: 0.7),
+      context.money.lineStrong.withValues(alpha: 0.55),
       base,
     );
 
@@ -338,23 +465,23 @@ class SkeletonList extends StatelessWidget {
     return Column(
       children: [
         for (var i = 0; i < rows; i++)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 13),
             child: Row(
               children: [
-                const Skeleton(width: 40, height: 40, radius: 12),
-                const SizedBox(width: 12),
+                Skeleton(width: 40, height: 40, radius: 12),
+                SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
+                    children: [
                       Skeleton(width: 140),
                       SizedBox(height: 7),
                       Skeleton(width: 90, height: 11),
                     ],
                   ),
                 ),
-                const Skeleton(width: 74, height: 14),
+                Skeleton(width: 74, height: 14),
               ],
             ),
           ),
@@ -377,15 +504,15 @@ class ErrorNote extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: context.money.payableSoft,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: context.money.payable.withValues(alpha: 0.3)),
+        borderRadius: BorderRadius.circular(AppTheme.radiusField),
+        border: Border.all(color: context.money.payableLine),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             message,
-            style: TextStyle(color: context.money.payable, fontSize: 13.5, height: 1.45),
+            style: TextStyle(color: context.money.payable, fontSize: 13, height: 1.45),
           ),
           if (onRetry != null) ...[
             const SizedBox(height: 8),
@@ -416,15 +543,19 @@ class StatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.money;
-    final (bg, fg) = switch (tone) {
-      StatusTone.done => (palette.receivableSoft, palette.receivable),
-      StatusTone.partial => (context.colors.primaryContainer, context.colors.primary),
-      StatusTone.muted => (palette.sunken, palette.inkFaint),
+    final (bg, fg, border) = switch (tone) {
+      StatusTone.done => (palette.receivableSoft, palette.receivable, palette.receivableLine),
+      StatusTone.partial => (palette.accentSoft, context.colors.primary, palette.accentLine),
+      StatusTone.muted => (palette.sunken, palette.inkFaint, palette.line),
     };
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(100)),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(100),
+        border: Border.all(color: border),
+      ),
       child: Text(
         label,
         style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: fg),
@@ -456,12 +587,22 @@ class PageBody extends StatelessWidget {
 }
 
 void showMessage(BuildContext context, String message, {bool error = false}) {
+  final palette = context.money;
   ScaffoldMessenger.of(context)
     ..clearSnackBars()
     ..showSnackBar(
       SnackBar(
-        content: Text(message),
-        backgroundColor: error ? context.money.payable : null,
+        content: Row(
+          children: [
+            Icon(
+              error ? Icons.error_outline : Icons.check_circle_outline,
+              size: 18,
+              color: error ? palette.payable : palette.receivable,
+            ),
+            const SizedBox(width: 10),
+            Expanded(child: Text(message)),
+          ],
+        ),
         duration: Duration(seconds: error ? 5 : 3),
       ),
     );

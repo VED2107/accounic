@@ -94,7 +94,7 @@ export function PersonPicker({
       <div className="space-y-1.5">
         <span className="block text-[0.8125rem] font-medium text-ink-muted">Who?</span>
         <div className="flex items-center gap-3 rounded-field border border-line-strong bg-sunken px-3 py-2.5">
-          <Avatar tone="accent" size="sm">
+          <Avatar identity={value.name} size="sm">
             {initials(value.name)}
           </Avatar>
           <span className="min-w-0 flex-1 truncate text-[0.875rem] font-medium text-ink">
@@ -153,7 +153,7 @@ export function PersonPicker({
                 'transition-colors duration-[var(--dur)] ease-[var(--ease)] hover:bg-sunken',
               )}
             >
-              <Avatar size="sm">{initials(option.name)}</Avatar>
+              <Avatar size="sm" identity={option.name}>{initials(option.name)}</Avatar>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[0.875rem] font-medium text-ink">
                   {option.name}

@@ -32,19 +32,21 @@ Future<void> main() async {
     ),
   );
 
-  runApp(const ProviderScope(child: LedgerApp()));
+  runApp(const ProviderScope(child: AccounicApp()));
 }
 
-class LedgerApp extends StatelessWidget {
-  const LedgerApp({super.key});
+class AccounicApp extends StatelessWidget {
+  const AccounicApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      title: 'Ledger',
+      title: 'Accounic',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
+      // Dark is the product's face; the light scheme is there for anyone whose
+      // system asks for it (docs/decisions.md).
       themeMode: ThemeMode.system,
       routerConfig: appRouter,
     );

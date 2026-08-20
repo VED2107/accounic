@@ -46,7 +46,7 @@ enum TxnType {
   String get wire => name;
 
   /// What this row actually means: who handed money to whom.
-  Flow get flow => this == TxnType.credit ? Flow.ownerToPerson : Flow.personToOwner;
+  MoneyFlow get flow => this == TxnType.credit ? MoneyFlow.ownerToPerson : MoneyFlow.personToOwner;
 
   /// Plain language, not accounting language (context.md §8).
   String get label => flow.label;
@@ -55,8 +55,8 @@ enum TxnType {
   bool get isReceivable => flow.isReceivable;
 
   /// The stored value for a direction the user picked.
-  static TxnType forFlow(Flow flow) =>
-      flow == Flow.ownerToPerson ? TxnType.credit : TxnType.debit;
+  static TxnType forFlow(MoneyFlow flow) =>
+      flow == MoneyFlow.ownerToPerson ? TxnType.credit : TxnType.debit;
 }
 
 enum SettlementDirection {
@@ -402,7 +402,7 @@ class ActivityItem {
 
   String get label => isSettlement
       ? (settlementIncoming ? 'Settlement received' : 'Settlement paid')
-      : (isReceivable ? Flow.ownerToPerson.label : Flow.personToOwner.label);
+      : (isReceivable ? MoneyFlow.ownerToPerson.label : MoneyFlow.personToOwner.label);
 }
 
 class TodayTotals {

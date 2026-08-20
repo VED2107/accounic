@@ -30,7 +30,7 @@ export default async function ProfilePage() {
 
       <Reveal delay={40}>
         <Card className="mb-4 flex flex-wrap items-center gap-4 px-5 py-4">
-          <Avatar size="lg" tone="accent">
+          <Avatar size="lg" identity={me.name || me.email}>
             {initials(me.name || me.email)}
           </Avatar>
           <div className="min-w-0 flex-1">

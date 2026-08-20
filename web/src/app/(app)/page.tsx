@@ -491,13 +491,12 @@ function SectionBar({
 
 /** A person and where they stand — the balance is the anchor (context.md §5). */
 function BalanceRow({ person, currency }: { person: DashboardPeopleRow; currency: string }) {
-  const tone = balanceTone(person.net_balance);
   return (
     <Link
       href={`/people/${person.person_id}`}
       className="group flex items-center gap-3 px-4 py-3 transition-colors duration-[var(--dur)] ease-[var(--ease)] hover:bg-sunken sm:px-5"
     >
-      <Avatar tone={tone === 'settled' ? 'neutral' : tone}>{initials(person.name)}</Avatar>
+      <Avatar identity={person.name}>{initials(person.name)}</Avatar>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[0.875rem] font-medium text-ink">{person.name}</span>
         <span className="block truncate text-[0.75rem] text-ink-faint">

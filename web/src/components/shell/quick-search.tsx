@@ -145,7 +145,7 @@ export function QuickSearch({
                             highlight === index ? 'bg-sunken' : 'hover:bg-sunken',
                           )}
                         >
-                          <Avatar tone="accent" size="sm">
+                          <Avatar identity={person.name} size="sm">
                             {initials(person.name)}
                           </Avatar>
                           <span className="min-w-0 flex-1">

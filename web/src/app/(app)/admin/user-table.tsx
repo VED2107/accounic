@@ -132,7 +132,11 @@ export function UserTable({
                   !user.is_active && 'bg-payable-soft/40',
                 )}
               >
-                <Avatar tone={user.is_active ? 'neutral' : 'payable'}>
+                <Avatar
+                  size="md"
+                  tone={user.is_active ? 'neutral' : 'payable'}
+                  identity={user.is_active ? user.name || user.email : undefined}
+                >
                   {initials(user.name || user.email)}
                 </Avatar>
 

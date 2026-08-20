@@ -120,7 +120,7 @@ class _SearchSheetState extends ConsumerState<_SearchSheet> {
                               for (final person in results.people)
                                 ListTile(
                                   onTap: () => _open(person.personId),
-                                  leading: Avatar(person.name, size: 36, accent: true),
+                                  leading: Avatar(person.name, size: 36, tone: AvatarTone.accent),
                                   title: Text(
                                     person.name,
                                     maxLines: 1,

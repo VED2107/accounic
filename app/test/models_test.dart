@@ -245,7 +245,7 @@ void main() {
   group('direction (docs/accounting-direction.md)', () {
     test('a person handing money to the owner is a payable credit', () {
       // Rahul gives Ved 5,000: Ved holds Rahul's money, so Ved owes it back.
-      const flow = Flow.personToOwner;
+      const flow = MoneyFlow.personToOwner;
 
       expect(flow.label, 'Credit');
       expect(flow.meaning, 'They gave me money');
@@ -257,7 +257,7 @@ void main() {
 
     test('the owner handing money to a person is a receivable debit', () {
       // Ved gives Rahul 5,000: Rahul owes it back.
-      const flow = Flow.ownerToPerson;
+      const flow = MoneyFlow.ownerToPerson;
 
       expect(flow.label, 'Debit');
       expect(flow.meaning, 'I gave them money');

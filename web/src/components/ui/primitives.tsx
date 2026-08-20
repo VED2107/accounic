@@ -6,6 +6,7 @@ import type {
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from 'react';
+import { avatarPalette } from '@/lib/avatar-color';
 
 /**
  * Accounic design system primitives (context.md §18, §32).
@@ -254,18 +255,27 @@ const AVATAR_TONE: Record<AvatarTone, string> = {
 };
 
 /**
- * Initials avatar. Tone tracks the balance so a list of people carries its
- * receivable/payable split before a single figure is read.
+ * Initials avatar.
+ *
+ * Pass `identity` — the person's name — and the avatar takes a stable colour of
+ * its own, so a directory reads as a set of distinct faces rather than a wall of
+ * red and green. Red and green then mean money and only money, which is the
+ * whole point of reserving them (lib/avatar-color.ts).
+ *
+ * The `tone` fallback stays for the handful of places where the avatar really is
+ * about state rather than identity — a disabled account in the admin list.
  */
 export function Avatar({
   children,
   tone = 'neutral',
   size = 'md',
+  identity,
   className,
 }: {
   children: ReactNode;
   tone?: AvatarTone;
   size?: 'sm' | 'md' | 'lg';
+  identity?: string;
   className?: string;
 }) {
   const sizes = {
@@ -273,13 +283,25 @@ export function Avatar({
     md: 'size-10 rounded-xl text-[0.8125rem]',
     lg: 'size-14 rounded-2xl text-base',
   };
+
+  const palette = identity ? avatarPalette(identity) : null;
+
   return (
     <span
       aria-hidden
+      style={
+        palette
+          ? {
+              backgroundColor: palette.bg,
+              color: palette.fg,
+              borderColor: palette.border,
+            }
+          : undefined
+      }
       className={cn(
         'grid shrink-0 place-items-center border font-semibold tracking-tight',
         sizes[size],
-        AVATAR_TONE[tone],
+        palette ? null : AVATAR_TONE[tone],
         className,
       )}
     >

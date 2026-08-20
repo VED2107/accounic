@@ -81,7 +81,7 @@ export default async function PersonPage({
       {/* Identity                                                            */}
       {/* ------------------------------------------------------------------ */}
       <Reveal as="header" className="mb-4 flex items-start gap-4">
-        <Avatar size="lg" tone={tone === 'settled' ? 'neutral' : tone}>
+        <Avatar size="lg" identity={person.name}>
           {initials(person.name)}
         </Avatar>
         <div className="min-w-0 flex-1">

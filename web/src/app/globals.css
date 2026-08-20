@@ -88,6 +88,10 @@
   --shadow-pop: 0 1px 0 0 rgb(255 255 255 / 0.05) inset, 0 24px 60px -20px rgb(0 0 0 / 0.85);
   --glow-brand: 0 0 0 1px var(--accent-line), 0 12px 40px -18px rgb(37 99 235 / 0.55);
 
+  /* Lightness for avatar initials, which are tinted per person rather than by
+     balance so that red and green keep meaning money (lib/avatar-color.ts). */
+  --avatar-ink: 68%;
+
   /* Motion — 120–220ms, one easing curve. */
   --dur-fast: 120ms;
   --dur: 170ms;
@@ -129,6 +133,7 @@
     --payable-line: rgb(190 18 60 / 0.22);
     --payable-ink: #ffffff;
     --money-neutral: #5b6472;
+    --avatar-ink: 38%;
 
     --shadow-card: 0 1px 2px rgb(11 15 23 / 0.05), 0 1px 3px rgb(11 15 23 / 0.05);
     --shadow-raised: 0 2px 4px rgb(11 15 23 / 0.04), 0 12px 28px -16px rgb(11 15 23 / 0.28);
@@ -167,6 +172,7 @@
     --payable-line: rgb(190 18 60 / 0.22);
     --payable-ink: #ffffff;
     --money-neutral: #5b6472;
+    --avatar-ink: 38%;
 
     --shadow-card: 0 1px 2px rgb(11 15 23 / 0.05), 0 1px 3px rgb(11 15 23 / 0.05);
     --shadow-raised: 0 2px 4px rgb(11 15 23 / 0.04), 0 12px 28px -16px rgb(11 15 23 / 0.28);

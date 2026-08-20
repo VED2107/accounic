@@ -9,6 +9,11 @@ import '../../core/theme.dart';
 /// A text field, never a numeric stepper: the user types digits and a decimal
 /// point, and [parseAmountToMinor] turns that into integer minor units. The
 /// widget never holds a double, and the value it reports is always an int.
+///
+/// It is the largest control in any sheet it appears in, because it is the only
+/// one the user really has to think about. When a ceiling is known — settling
+/// against an outstanding figure — the quarter steps turn the common cases into
+/// one tap without hiding the field they fill in.
 class AmountField extends StatefulWidget {
   const AmountField({
     super.key,
@@ -75,10 +80,11 @@ class _AmountFieldState extends State<AmountField> {
     widget.onChanged(minor);
   }
 
-  void _fillMax() {
+  void _fillShare(double share) {
     final max = widget.maxMinor;
     if (max == null) return;
-    _controller.text = minorToInput(max);
+    final target = share == 1 ? max : (max * share).round();
+    _controller.text = minorToInput(target);
     _handle(_controller.text);
   }
 
@@ -101,10 +107,8 @@ class _AmountFieldState extends State<AmountField> {
             LengthLimitingTextInputFormatter(16),
           ],
           onChanged: _handle,
-          style: const TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.w600,
-            letterSpacing: -0.4,
+          style: context.display(26).copyWith(
+            fontFeatures: const [FontFeature.tabularFigures()],
           ),
           decoration: InputDecoration(
             hintText: '0',
@@ -115,7 +119,8 @@ class _AmountFieldState extends State<AmountField> {
               child: Text(
                 currencySymbol(widget.currency),
                 style: TextStyle(
-                  fontSize: 20,
+                  fontFamily: 'Poppins',
+                  fontSize: 21,
                   color: context.money.inkFaint,
                   fontWeight: FontWeight.w500,
                 ),
@@ -130,21 +135,69 @@ class _AmountFieldState extends State<AmountField> {
                 : null,
           ),
         ),
-        if (widget.maxMinor != null && !invalid) ...[
-          const SizedBox(height: 4),
-          TextButton(
-            onPressed: _fillMax,
-            style: TextButton.styleFrom(
-              padding: EdgeInsets.zero,
-              minimumSize: const Size(0, 32),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: Text(
-              'Settle the full ${formatMinor(widget.maxMinor!, currency: widget.currency)}',
-            ),
+        if (widget.maxMinor != null && widget.maxMinor! > 0) ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              for (final share in const [0.25, 0.5, 0.75, 1.0]) ...[
+                _ShareChip(
+                  label: share == 1 ? 'Full' : '${(share * 100).round()}%',
+                  onTap: () => _fillShare(share),
+                ),
+                const SizedBox(width: 6),
+              ],
+              const Spacer(),
+              Flexible(
+                child: Text(
+                  '${formatMinor(widget.maxMinor!, currency: widget.currency)} outstanding',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11.5, color: context.money.inkFaint),
+                ),
+              ),
+            ],
           ),
         ],
       ],
+    );
+  }
+}
+
+
+/// One of the quarter steps under the amount field. A minimum 44px tap target,
+/// because it sits directly under the keyboard's thumb zone.
+class _ShareChip extends StatelessWidget {
+  const _ShareChip({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.money;
+    return Material(
+      color: palette.sunken,
+      borderRadius: BorderRadius.circular(100),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(100),
+        child: Container(
+          constraints: const BoxConstraints(minWidth: 46, minHeight: 32),
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(100),
+            border: Border.all(color: palette.line),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: palette.inkMuted,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

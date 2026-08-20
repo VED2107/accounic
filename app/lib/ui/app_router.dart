@@ -10,6 +10,7 @@ import 'screens/login_screen.dart';
 import 'screens/people_screen.dart';
 import 'screens/person_screen.dart';
 import 'screens/profile_screen.dart';
+import 'motion.dart';
 import 'shell.dart';
 
 /// Routing (context.md §20, §29).
@@ -19,6 +20,11 @@ import 'shell.dart';
 /// the route names line up with the web client's.
 ///
 /// The redirect is the app's front door, not its lock — RLS is (context.md §3).
+///
+/// Tab switches inside the shell cross-fade rather than slide: the four
+/// destinations are siblings, and a horizontal slide would imply an order they
+/// do not have. The person drill-down keeps the platform's push, because that
+/// one *is* a hierarchy and the gesture to come back depends on it.
 
 final _rootKey = GlobalKey<NavigatorState>();
 final _shellKey = GlobalKey<NavigatorState>();
@@ -58,19 +64,43 @@ final appRouter = GoRouter(
       routes: [
         GoRoute(
           path: '/',
-          pageBuilder: (context, state) => const NoTransitionPage(child: DashboardScreen()),
+          pageBuilder: (context, state) => CustomTransitionPage(
+            key: state.pageKey,
+            transitionDuration: Motion.component,
+            reverseTransitionDuration: Motion.micro,
+            transitionsBuilder: fadeThrough,
+            child: const DashboardScreen(),
+          ),
         ),
         GoRoute(
           path: '/people',
-          pageBuilder: (context, state) => const NoTransitionPage(child: PeopleScreen()),
+          pageBuilder: (context, state) => CustomTransitionPage(
+            key: state.pageKey,
+            transitionDuration: Motion.component,
+            reverseTransitionDuration: Motion.micro,
+            transitionsBuilder: fadeThrough,
+            child: const PeopleScreen(),
+          ),
         ),
         GoRoute(
           path: '/activity',
-          pageBuilder: (context, state) => const NoTransitionPage(child: ActivityScreen()),
+          pageBuilder: (context, state) => CustomTransitionPage(
+            key: state.pageKey,
+            transitionDuration: Motion.component,
+            reverseTransitionDuration: Motion.micro,
+            transitionsBuilder: fadeThrough,
+            child: const ActivityScreen(),
+          ),
         ),
         GoRoute(
           path: '/profile',
-          pageBuilder: (context, state) => const NoTransitionPage(child: ProfileScreen()),
+          pageBuilder: (context, state) => CustomTransitionPage(
+            key: state.pageKey,
+            transitionDuration: Motion.component,
+            reverseTransitionDuration: Motion.micro,
+            transitionsBuilder: fadeThrough,
+            child: const ProfileScreen(),
+          ),
         ),
       ],
     ),

@@ -34,29 +34,29 @@ library;
 /// ---------------------------------------------------------------------------
 
 /// The real-world movement of money, which is what the product actually means.
-enum Flow {
+enum MoneyFlow {
   /// They gave the owner money. The owner owes it back — payable.
   personToOwner,
 
   /// The owner gave them money. They owe it back — receivable.
   ownerToPerson;
 
-  String get label => this == Flow.personToOwner ? 'Credit' : 'Debit';
+  String get label => this == MoneyFlow.personToOwner ? 'Credit' : 'Debit';
 
   /// Plain language, not accounting language (context.md §8).
   String get meaning =>
-      this == Flow.personToOwner ? 'They gave me money' : 'I gave them money';
+      this == MoneyFlow.personToOwner ? 'They gave me money' : 'I gave them money';
 
   /// What it does to the balance, in the user's words.
-  String get effect => this == Flow.personToOwner ? 'I owe them' : 'They owe me';
+  String get effect => this == MoneyFlow.personToOwner ? 'I owe them' : 'They owe me';
 
-  bool get isReceivable => this == Flow.ownerToPerson;
+  bool get isReceivable => this == MoneyFlow.ownerToPerson;
 
   /// The value the database stores for this direction.
-  String get wire => this == Flow.personToOwner ? 'debit' : 'credit';
+  String get wire => this == MoneyFlow.personToOwner ? 'debit' : 'credit';
 
-  static Flow parse(Object? wireValue) =>
-      wireValue == 'debit' ? Flow.personToOwner : Flow.ownerToPerson;
+  static MoneyFlow parse(Object? wireValue) =>
+      wireValue == 'debit' ? MoneyFlow.personToOwner : MoneyFlow.ownerToPerson;
 }
 
 /// The same question for an activity entry, whose type is a transaction type on
@@ -65,5 +65,5 @@ bool entryIsReceivable(String? entryType) {
   // 'in' is money arriving, which only ever retires a receivable.
   if (entryType == 'in') return true;
   if (entryType == 'out') return false;
-  return Flow.parse(entryType).isReceivable;
+  return MoneyFlow.parse(entryType).isReceivable;
 }

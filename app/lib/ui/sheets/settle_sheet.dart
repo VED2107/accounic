@@ -7,6 +7,7 @@ import '../../core/money.dart';
 import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../providers.dart';
+import '../motion.dart';
 import '../widgets/amount_field.dart';
 import 'sheet_scaffold.dart';
 
@@ -16,9 +17,14 @@ import 'sheet_scaffold.dart';
 /// is only receivable can only be settled by money coming in — and offered as a
 /// choice only when the person both owes and is owed.
 ///
-/// Partial is the normal case, so the amount is freely editable with the
-/// outstanding figure shown beside it. The database rejects anything above it,
+/// Partial is the normal case, so the amount is freely editable, the quarter
+/// steps make the common cases one tap, and the arithmetic the user would
+/// otherwise do in their head — outstanding, settling, what is left — is done
+/// live above the field. The database still rejects anything above the ceiling,
 /// so a stale screen cannot over-settle.
+///
+/// Closing a debt is the most satisfying thing this product does, so it is the
+/// one place given a real success state rather than a dismissal and a snackbar.
 Future<bool> showSettleSheet(
   BuildContext context,
   WidgetRef ref, {
@@ -63,6 +69,11 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
   int? _amount;
   bool _saving = false;
   String? _error;
+
+  /// Set once the settlement is committed. The figures are captured at that
+  /// moment rather than read back from the balance, which the refresh has
+  /// already moved.
+  ({int amount, int remaining})? _done;
 
   bool get _canReceive => widget.balance.outstandingReceivable > 0;
   bool get _canPay => widget.balance.outstandingPayable > 0;
@@ -122,8 +133,15 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
             transactionId: _transactionId,
             note: _note.text.trim().isEmpty ? null : _note.text.trim(),
           );
+      final settled = _amount!;
+      final remaining = _max - settled;
       ref.refreshLedger(personId: widget.balance.personId);
-      if (mounted) Navigator.of(context).pop(true);
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _done = (amount: settled, remaining: remaining);
+        });
+      }
     } on Failure catch (failure) {
       setState(() {
         _saving = false;
@@ -137,6 +155,16 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
     final currency = ref.watch(currencyProvider);
     final incoming = _direction == SettlementDirection.moneyIn;
     final accent = incoming ? context.money.receivable : context.money.payable;
+
+    if (_done != null) {
+      return _SettlementSuccess(
+        amount: _done!.amount,
+        remaining: _done!.remaining,
+        incoming: incoming,
+        currency: currency,
+        name: widget.balance.name,
+      );
+    }
 
     if (!_canReceive && !_canPay) {
       return SheetScaffold(
@@ -160,7 +188,7 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
       error: _error,
       busy: _saving,
       primaryColor: accent,
-      primaryLabel: 'Record settlement',
+      primaryLabel: 'Settle now',
       onPrimary: _amount == null ? null : _save,
       children: [
         if (_bothSides)
@@ -267,6 +295,15 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
           const SizedBox(height: 18),
         ],
 
+        _Arithmetic(
+          outstanding: _max,
+          settling: (_amount ?? 0).clamp(0, _max),
+          currency: currency,
+          accent: accent,
+        ),
+
+        const SizedBox(height: 18),
+
         AmountField(
           key: ValueKey('settle-$_direction-$_transactionId'),
           currency: currency,
@@ -350,6 +387,155 @@ class _SideOption extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+
+/// Outstanding, settling, remaining — the sum the user would otherwise do in
+/// their head, kept live as they type.
+class _Arithmetic extends StatelessWidget {
+  const _Arithmetic({
+    required this.outstanding,
+    required this.settling,
+    required this.currency,
+    required this.accent,
+  });
+
+  final int outstanding;
+  final int settling;
+  final String currency;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.money;
+    final remaining = outstanding - settling;
+
+    Widget cell(String label, int minor, Color color) => Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11.5, color: palette.inkMuted)),
+                const SizedBox(height: 3),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: AnimatedMoney(
+                    minor,
+                    currency: currency,
+                    color: color,
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+
+    return Container(
+      decoration: BoxDecoration(
+        color: palette.sunken,
+        borderRadius: BorderRadius.circular(AppTheme.radiusCard),
+        border: Border.all(color: palette.line),
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            cell('Outstanding', outstanding, context.colors.onSurface),
+            VerticalDivider(width: 1, color: palette.line),
+            cell('Settling', settling, accent),
+            VerticalDivider(width: 1, color: palette.line),
+            cell('Remaining', remaining,
+                remaining == 0 ? palette.inkFaint : context.colors.onSurface),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// What a closed debt looks like. The tick draws itself once, the figures are
+/// the ones from the moment of submission, and the balance on the screen behind
+/// has already animated to its new value.
+class _SettlementSuccess extends StatelessWidget {
+  const _SettlementSuccess({
+    required this.amount,
+    required this.remaining,
+    required this.incoming,
+    required this.currency,
+    required this.name,
+  });
+
+  final int amount;
+  final int remaining;
+  final bool incoming;
+  final String currency;
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.money;
+
+    return SheetScaffold(
+      title: 'Settled',
+      primaryLabel: 'Done',
+      onPrimary: () => Navigator.of(context).pop(true),
+      children: [
+        Center(
+          child: Column(
+            children: [
+              const SettledMark(),
+              const SizedBox(height: 16),
+              Text('Settlement recorded', style: context.display(18)),
+              const SizedBox(height: 6),
+              Text(
+                '${incoming ? 'Received' : 'Paid'} '
+                '${formatMinor(amount, currency: currency)} '
+                '${incoming ? 'from' : 'to'} $name',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13, color: palette.inkMuted),
+              ),
+              const SizedBox(height: 20),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: palette.sunken,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusCard),
+                  border: Border.all(color: palette.line),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      remaining > 0 ? 'Remaining balance' : 'Balance',
+                      style: TextStyle(fontSize: 12, color: palette.inkMuted),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      remaining > 0
+                          ? formatMinor(remaining, currency: currency)
+                          : 'Fully settled',
+                      style: context.display(22).copyWith(
+                            color: remaining > 0
+                                ? (incoming ? palette.receivable : palette.payable)
+                                : context.colors.onSurface,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

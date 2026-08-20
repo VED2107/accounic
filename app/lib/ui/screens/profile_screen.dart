@@ -132,7 +132,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   children: [
                     Row(
                       children: [
-                        Avatar(me.name, size: 52, accent: true),
+                        Avatar(me.name, size: 52, tone: AvatarTone.accent),
                         const SizedBox(width: 14),
                         Expanded(
                           child: Column(

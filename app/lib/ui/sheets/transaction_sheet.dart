@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/dates.dart';
+import '../../core/direction.dart';
 import '../../core/failure.dart';
 import '../../core/theme.dart';
 import '../../data/ledger_repository.dart';
 import '../../data/models.dart';
 import '../../providers.dart';
+import '../motion.dart';
 import '../widgets/amount_field.dart';
 import '../widgets/common.dart';
 import 'sheet_scaffold.dart';
@@ -197,6 +199,12 @@ class _TransactionSheetState extends ConsumerState<_TransactionSheet> {
 }
 
 /// Credit / Debit stated in the user's language (context.md §8).
+///
+/// Credit is money arriving from the person, which leaves the owner owing it
+/// back; debit is money going the other way. Each option says what happened and
+/// what it means for the balance, and the colour agrees with both: red for what
+/// you owe, green for what you are owed. The mapping to stored values lives in
+/// core/direction.dart and nowhere else.
 class _TypeToggle extends StatelessWidget {
   const _TypeToggle({required this.value, required this.onChanged});
 
@@ -214,25 +222,23 @@ class _TypeToggle extends StatelessWidget {
           children: [
             Expanded(
               child: _TypeOption(
-                selected: value == TxnType.credit,
-                onTap: () => onChanged(TxnType.credit),
-                icon: Icons.south_west,
-                title: 'Credit',
-                subtitle: 'They owe me',
-                color: context.money.receivable,
-                background: context.money.receivableSoft,
+                selected: value.flow == MoneyFlow.personToOwner,
+                onTap: () => onChanged(TxnType.forFlow(MoneyFlow.personToOwner)),
+                icon: Icons.south_west_rounded,
+                flow: MoneyFlow.personToOwner,
+                color: context.money.payable,
+                background: context.money.payableSoft,
               ),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: _TypeOption(
-                selected: value == TxnType.debit,
-                onTap: () => onChanged(TxnType.debit),
-                icon: Icons.north_east,
-                title: 'Debit',
-                subtitle: 'I owe them',
-                color: context.money.payable,
-                background: context.money.payableSoft,
+                selected: value.flow == MoneyFlow.ownerToPerson,
+                onTap: () => onChanged(TxnType.forFlow(MoneyFlow.ownerToPerson)),
+                icon: Icons.north_east_rounded,
+                flow: MoneyFlow.ownerToPerson,
+                color: context.money.receivable,
+                background: context.money.receivableSoft,
               ),
             ),
           ],
@@ -247,8 +253,7 @@ class _TypeOption extends StatelessWidget {
     required this.selected,
     required this.onTap,
     required this.icon,
-    required this.title,
-    required this.subtitle,
+    required this.flow,
     required this.color,
     required this.background,
   });
@@ -256,50 +261,68 @@ class _TypeOption extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
   final IconData icon;
-  final String title;
-  final String subtitle;
+  final MoneyFlow flow;
   final Color color;
   final Color background;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: selected ? background : context.colors.surface,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: selected ? color : context.colors.outline,
-              width: selected ? 1.5 : 1,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(icon,
-                      size: 16, color: selected ? color : context.colors.onSurface),
-                  const SizedBox(width: 6),
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                      color: selected ? color : context.colors.onSurface,
+    final resting = context.money.sunken;
+
+    return AnimatedContainer(
+      duration: Motion.micro,
+      curve: Motion.enter,
+      decoration: BoxDecoration(
+        color: selected ? background : resting,
+        borderRadius: BorderRadius.circular(AppTheme.radiusField),
+        border: Border.all(
+          color: selected ? color : context.money.line,
+          width: selected ? 1.5 : 1,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(AppTheme.radiusField),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AppTheme.radiusField),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(icon, size: 16, color: selected ? color : context.colors.onSurface),
+                    const SizedBox(width: 6),
+                    Text(
+                      flow.label,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: selected ? color : context.colors.onSurface,
+                      ),
                     ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  flow.meaning,
+                  style: TextStyle(fontSize: 12, color: context.money.inkMuted),
+                ),
+                const SizedBox(height: 2),
+                // What it does to the balance — the line that stops credit and
+                // debit being mixed up.
+                Text(
+                  flow.effect,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: color,
                   ),
-                ],
-              ),
-              const SizedBox(height: 2),
-              Text(subtitle,
-                  style: TextStyle(fontSize: 12, color: context.money.inkMuted)),
-            ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -407,7 +430,7 @@ class _PersonPickerFieldState extends ConsumerState<PersonPickerField> {
             ),
             child: Row(
               children: [
-                Avatar(selected.name, size: 32, accent: true),
+                Avatar(selected.name, size: 32, tone: AvatarTone.accent),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
