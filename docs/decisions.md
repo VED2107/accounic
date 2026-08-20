@@ -406,3 +406,37 @@ addresses have accounts.
 Unrecognised codes still fall back rather than inventing a reason, and the raw GoTrue text
 stays on `Failure.detail` for debug builds. `app/test/auth_errors_test.dart` pins all of it,
 including the deliberate vagueness.
+
+## 28. The release APK had no INTERNET permission
+
+Accounic worked on Windows and on every Android debug build, and the release APK could not
+reach Supabase at all. The sign-in screen said *"That email and password combination is not
+correct."*
+
+`android/app/src/main/AndroidManifest.xml` never declared
+`android.permission.INTERNET`. Flutter's stock `src/debug/` and `src/profile/` manifests do
+declare it — with a comment saying it is there so the tool can hot-reload — and those are
+merged into debug and profile builds only. So the permission was present in every build
+anyone develops against and absent from the one that ships.
+
+It is close to undetectable from the desk: `flutter analyze` is clean, every unit and widget
+test passes, the debug APK installs and works, and the release APK builds without a warning.
+
+The second half of the bug is why it lied about the reason. Supabase surfaces a failed
+request as `AuthRetryableFetchException`, which **extends `AuthException`** — so it matched
+the auth branch in `Failure.from`, found no matching GoTrue code, and fell through to the
+caller's fallback. The sign-in call's fallback is the credentials sentence, so a request that
+never left the device was reported as a wrong password.
+
+Both halves are fixed and both are pinned:
+
+- `test/android_manifest_test.dart` reads the main manifest and fails if the permission is
+  missing. A test that asserts on a build-config file rather than on code is unusual, and
+  earns its place here because nothing else in the suite can see the difference between a
+  debug build and a release one.
+- `test/auth_errors_test.dart` asserts that a fetch failure is reported as a connection
+  problem and never as bad credentials.
+
+The general rule the fallback broke: **never let a transport failure inherit a
+domain-specific error message.** A request that did not arrive tells you nothing about what
+was in it.

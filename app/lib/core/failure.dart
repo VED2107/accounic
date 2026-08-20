@@ -33,6 +33,17 @@ bool _looksLikeOurMessage(String message) {
   return RegExp(r'[.!?]$').hasMatch(trimmed);
 }
 
+bool _looksLikeNetworkFailure(Object error) {
+  final text = error.toString();
+  return text.contains('SocketException') ||
+      text.contains('Failed host lookup') ||
+      text.contains('ClientException') ||
+      text.contains('Connection closed') ||
+      text.contains('Connection refused') ||
+      // Android returns this verbatim when the app holds no INTERNET permission.
+      text.contains('Permission denied');
+}
+
 /// GoTrue's error codes, translated.
 ///
 /// These were all collapsed into "That email and password combination is not
@@ -45,6 +56,18 @@ bool _looksLikeOurMessage(String message) {
 /// one deliberate exception is [invalid_credentials], which stays vague on
 /// purpose so the form cannot be used to discover which addresses exist.
 String _authMessage(AuthException error, String fallback) {
+  // A failure to *reach* GoTrue arrives as an AuthException too —
+  // `AuthRetryableFetchException` extends it — and without this it falls
+  // through to the caller's fallback, which on the sign-in form is "That email
+  // and password combination is not correct."
+  //
+  // That is how a release APK built without the INTERNET permission spent a
+  // release telling the user their password was wrong. A request that never
+  // left the device says nothing whatsoever about the credentials in it.
+  if (error is AuthRetryableFetchException || _looksLikeNetworkFailure(error)) {
+    return 'Could not reach the server. Check your connection and try again.';
+  }
+
   switch (error.code) {
     case 'invalid_credentials':
     case 'invalid_grant':
@@ -152,9 +175,7 @@ class Failure implements Exception {
           cause: error, stackTrace: stackTrace);
     }
 
-    if (error.toString().contains('SocketException') ||
-        error.toString().contains('Failed host lookup') ||
-        error.toString().contains('ClientException')) {
+    if (_looksLikeNetworkFailure(error)) {
       return Failure(
         'Could not reach the server. Check your connection and try again.',
         cause: error,

@@ -1,4 +1,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      Accounic talks to Supabase over HTTPS for everything, so it cannot work
+      without this.
+
+      It has to be declared *here*, in the main manifest. Flutter's stock
+      `src/debug/` and `src/profile/` manifests declare it too, but only so the
+      tooling can hot-reload — those are merged into debug and profile builds
+      and are absent from a release build. Leaving it out therefore produces the
+      worst kind of bug: every debug build works, and the release APK cannot
+      reach the network at all.
+    -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
     <application
         android:label="Accounic"
         android:name="${applicationName}"

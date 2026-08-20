@@ -73,6 +73,22 @@ void main() {
       );
     });
 
+    test('a network failure is never reported as bad credentials', () {
+      // The Android release APK shipped without android.permission.INTERNET, so
+      // every request failed before it left the device. Supabase surfaces that
+      // as AuthRetryableFetchException, which *extends* AuthException, so it
+      // fell through to the sign-in fallback and told the user their password
+      // was wrong. A request that never reached the server says nothing about
+      // the credentials inside it.
+      final failure = Failure.from(
+        AuthRetryableFetchException(message: 'ClientException: Failed host lookup'),
+        'That email and password combination is not correct.',
+      );
+
+      expect(failure.message, contains('Could not reach the server'));
+      expect(failure.message, isNot(contains('not correct')));
+    });
+
     test('an unrecognised auth code falls back rather than inventing a reason', () {
       final failure = translate('something_new_in_gotrue',
           statusCode: '400', fallback: 'Your password could not be changed.');
