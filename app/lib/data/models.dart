@@ -526,3 +526,32 @@ class LedgerMutation {
     );
   }
 }
+
+/// public.activity_summary() — one row per bucket, newest first.
+///
+/// The only aggregate the product exposes. `credit` and `debit` here are the
+/// engine's directions, which are the reverse of the words the user sees; see
+/// docs/accounting-direction.md before labelling either of them.
+class ActivityBucket {
+  const ActivityBucket({
+    required this.bucket,
+    required this.credit,
+    required this.debit,
+    required this.settled,
+    required this.entries,
+  });
+
+  final String bucket;
+  final int credit;
+  final int debit;
+  final int settled;
+  final int entries;
+
+  factory ActivityBucket.fromJson(Map<String, dynamic> json) => ActivityBucket(
+        bucket: (json['bucket'] as String?) ?? '',
+        credit: _int(json['credit']),
+        debit: _int(json['debit']),
+        settled: _int(json['settled']),
+        entries: _int(json['entries']),
+      );
+}

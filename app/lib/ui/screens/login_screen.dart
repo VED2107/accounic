@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/failure.dart';
 import '../../core/theme.dart';
 import '../../providers.dart';
+import '../widgets/brand.dart';
 import '../widgets/common.dart';
 
 /// Sign-in (context.md §2).
@@ -82,32 +83,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Center(
-                    child: Container(
-                      width: 48,
-                      height: 48,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: context.colors.primary,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Icon(
-                        Icons.account_balance_wallet_outlined,
-                        color: context.colors.onPrimary,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  const Text(
-                    'Welcome back',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 23, fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 6),
+                  // The one screen seen before the product starts, so it
+                  // carries the mark at full size and nothing else. A door.
+                  const Center(child: AccounicMark(size: 56)),
+                  const SizedBox(height: 18),
+                  const Center(child: AccounicLogo(markSize: 0, fontSize: 24)),
+                  const SizedBox(height: 8),
                   Text(
-                    'Sign in to your accounting workspace.',
+                    'Know who owes you, who you owe, and what is settled.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 13.5, color: context.money.inkMuted),
+                    style: TextStyle(fontSize: 13, height: 1.5, color: context.money.inkMuted),
                   ),
                   const SizedBox(height: 28),
 

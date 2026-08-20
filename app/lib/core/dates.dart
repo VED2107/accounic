@@ -60,11 +60,31 @@ String greeting([DateTime? now]) {
   return 'Good evening';
 }
 
+/// A heading for a day of activity.
+///
+/// Inside the last week people think in weekdays — "that was Tuesday" — and
+/// beyond it they think in dates, so the label switches at seven days rather
+/// than trying to be clever about it. Matches the web client's dayGroupLabel.
+String dayGroupLabel(String value) {
+  final date = parseDbDate(value);
+  final now = DateTime.now();
+  final days = DateTime(now.year, now.month, now.day)
+      .difference(DateTime(date.year, date.month, date.day))
+      .inDays;
+
+  if (days == 0) return 'Today';
+  if (days == 1) return 'Yesterday';
+  if (days > 1 && days < 7) return DateFormat('EEEE').format(date);
+
+  return DateFormat(date.year == now.year ? 'd MMMM' : 'd MMMM y').format(date);
+}
+
 /// Groups dated rows into the day buckets the timeline renders.
 List<({String date, String label, List<T> items})> groupByDate<T>(
   List<T> rows,
-  String Function(T) dateOf,
-) {
+  String Function(T) dateOf, {
+  String Function(String)? label,
+}) {
   final buckets = <String, List<T>>{};
   for (final row in rows) {
     final key = dateOf(row).substring(0, 10);
@@ -73,6 +93,6 @@ List<({String date, String label, List<T> items})> groupByDate<T>(
   final keys = buckets.keys.toList()..sort((a, b) => b.compareTo(a));
   return [
     for (final key in keys)
-      (date: key, label: friendlyDate(key), items: buckets[key]!),
+      (date: key, label: (label ?? friendlyDate)(key), items: buckets[key]!),
   ];
 }

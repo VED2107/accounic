@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/dates.dart';
 import '../../core/failure.dart';
+import '../../core/direction.dart';
 import '../../core/money.dart';
 import '../../core/theme.dart';
 import '../../data/models.dart';
@@ -12,6 +13,7 @@ import '../sheets/person_sheet.dart';
 import '../sheets/settle_sheet.dart';
 import '../sheets/sheet_scaffold.dart';
 import '../sheets/transaction_sheet.dart';
+import '../motion.dart';
 import '../widgets/common.dart';
 
 /// Person / business account — the screen the product is really about
@@ -109,87 +111,67 @@ class _PersonBody extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
 
-              // ---- position: both sides on one page (context.md §6) ---------
-              Card(
-                clipBehavior: Clip.antiAlias,
+              // ---- position: the balance is the hero (context.md §6) --------
+              //
+              // Where we stand, what to do about it, then the four figures that
+              // add up to it. Credit, debit and settlement all stay on this one
+              // page — the account is a statement, not a set of tabs.
+              SectionCard(
+                raised: true,
+                brandRule: true,
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    IntrinsicHeight(
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: _SidePanel(
-                              label: 'You will receive',
-                              minor: balance.outstandingReceivable,
-                              currency: currency,
-                              tone: balance.outstandingReceivable > 0
-                                  ? MoneyTone.receivable
-                                  : MoneyTone.neutral,
-                            ),
-                          ),
-                          VerticalDivider(width: 1, color: context.money.line),
-                          Expanded(
-                            child: _SidePanel(
-                              label: 'You will pay',
-                              minor: balance.outstandingPayable,
-                              currency: currency,
-                              tone: balance.outstandingPayable > 0
-                                  ? MoneyTone.payable
-                                  : MoneyTone.neutral,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Divider(height: 1, color: context.money.line),
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+                      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Net balance',
-                              style: TextStyle(fontSize: 13.5, color: context.money.inkMuted)),
-                          const SizedBox(height: 4),
+                          Text('Current position',
+                              style: TextStyle(fontSize: 13, color: context.money.inkMuted)),
+                          const SizedBox(height: 8),
                           FittedBox(
                             fit: BoxFit.scaleDown,
                             alignment: Alignment.centerLeft,
-                            child: MoneyText(
+                            // Animates when it changes — which is exactly when a
+                            // settlement has just been recorded on this screen.
+                            child: AnimatedMoney(
                               balance.netBalance.abs(),
                               currency: currency,
-                              tone: switch (tone) {
-                                BalanceTone.receivable => MoneyTone.receivable,
-                                BalanceTone.payable => MoneyTone.payable,
-                                BalanceTone.settled => MoneyTone.neutral,
+                              color: switch (tone) {
+                                BalanceTone.receivable => context.money.receivable,
+                                BalanceTone.payable => context.money.payable,
+                                BalanceTone.settled => context.colors.onSurface,
                               },
-                              style: const TextStyle(
-                                  fontSize: 32, fontWeight: FontWeight.w600),
+                              style: context.display(38),
                             ),
                           ),
+                          const SizedBox(height: 6),
                           Text(
                             switch (tone) {
-                              BalanceTone.receivable => 'receivable',
-                              BalanceTone.payable => 'payable',
+                              BalanceTone.receivable =>
+                                '${person.name.split(' ').first} owes you',
+                              BalanceTone.payable =>
+                                'You owe ${person.name.split(' ').first}',
                               BalanceTone.settled => 'Everything is settled',
                             },
-                            style: TextStyle(fontSize: 13, color: context.money.inkFaint),
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: switch (tone) {
+                                BalanceTone.receivable => context.money.receivable,
+                                BalanceTone.payable => context.money.payable,
+                                BalanceTone.settled => context.money.inkFaint,
+                              },
+                            ),
                           ),
                           const SizedBox(height: 16),
                           _ActionRow(page: page),
                         ],
                       ),
                     ),
-                    if (balance.totalSettled > 0) ...[
-                      Divider(height: 1, color: context.money.line),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                        child: Text(
-                          '${formatMinor(balance.totalSettled, currency: currency)} settled so far '
-                          'across ${balance.transactionCount} '
-                          '${balance.transactionCount == 1 ? 'transaction' : 'transactions'}.',
-                          style: TextStyle(fontSize: 12.5, color: context.money.inkFaint),
-                        ),
-                      ),
-                    ],
+                    Divider(height: 1, color: context.money.line),
+                    _Figures(balance: balance, currency: currency, tone: tone),
                   ],
                 ),
               ),
@@ -271,94 +253,135 @@ class _PersonBody extends ConsumerWidget {
   }
 }
 
-class _SidePanel extends StatelessWidget {
-  const _SidePanel({
-    required this.label,
-    required this.minor,
-    required this.currency,
-    required this.tone,
-  });
-
-  final String label;
-  final int minor;
-  final String currency;
-  final MoneyTone tone;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: TextStyle(fontSize: 13, color: context.money.inkMuted)),
-          const SizedBox(height: 4),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: MoneyText(
-              minor,
-              currency: currency,
-              tone: tone,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
+/// Settle, credit, debit.
+///
+/// Settle is the filled one whenever anything is outstanding — that is the
+/// spec's headline interaction. Credit and debit are separate buttons rather
+/// than one "add" that then asks which: the type is the decision, so it is the
+/// click.
 class _ActionRow extends ConsumerWidget {
   const _ActionRow({required this.page});
 
   final PersonPage page;
 
+  Future<void> _add(BuildContext context, WidgetRef ref, MoneyFlow flow) async {
+    final saved = await showTransactionSheet(
+      context,
+      ref,
+      person: PersonRef(page.person.id, page.person.name),
+      defaultType: TxnType.forFlow(flow),
+    );
+    if (saved && context.mounted) showMessage(context, 'Transaction recorded.');
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final balance = page.balance;
+    final palette = context.money;
 
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+    return Row(
       children: [
-        if (balance.hasOutstanding)
-          FilledButton.icon(
-            style: FilledButton.styleFrom(
-              backgroundColor: balance.netBalance >= 0
-                  ? context.money.receivable
-                  : context.money.payable,
-              foregroundColor: Colors.white,
+        if (balance.hasOutstanding) ...[
+          Expanded(
+            child: Pressable(
+              onTap: () async {
+                final saved = await showSettleSheet(
+                  context,
+                  ref,
+                  balance: balance,
+                  openTransactions: page.openTransactions,
+                );
+                if (saved && context.mounted) {
+                  showMessage(context, 'Settlement recorded.');
+                }
+              },
+              child: Container(
+                height: 46,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  gradient: AccounicColors.actionGradient,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusField),
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.swap_horiz_rounded, size: 18, color: Colors.white),
+                    SizedBox(width: 7),
+                    Text(
+                      'Settle',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-            onPressed: () async {
-              final saved = await showSettleSheet(
-                context,
-                ref,
-                balance: balance,
-                openTransactions: page.openTransactions,
-              );
-              if (saved && context.mounted) {
-                showMessage(context, 'Settlement recorded.');
-              }
-            },
-            icon: const Icon(Icons.swap_horiz, size: 18),
-            label: const Text('Settle'),
           ),
-        OutlinedButton.icon(
-          onPressed: () async {
-            final saved = await showTransactionSheet(
-              context,
-              ref,
-              person: PersonRef(page.person.id, page.person.name),
-            );
-            if (saved && context.mounted) {
-              showMessage(context, 'Transaction saved.');
-            }
-          },
-          icon: const Icon(Icons.add, size: 18),
-          label: const Text('Add transaction'),
+          const SizedBox(width: 8),
+        ],
+        Expanded(
+          child: _TypeButton(
+            label: 'Credit',
+            icon: Icons.south_west_rounded,
+            color: palette.payable,
+            onTap: () => _add(context, ref, MoneyFlow.personToOwner),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _TypeButton(
+            label: 'Debit',
+            icon: Icons.north_east_rounded,
+            color: palette.receivable,
+            onTap: () => _add(context, ref, MoneyFlow.ownerToPerson),
+          ),
         ),
       ],
+    );
+  }
+}
+
+class _TypeButton extends StatelessWidget {
+  const _TypeButton({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.money;
+    return Pressable(
+      onTap: onTap,
+      child: Container(
+        height: 46,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: palette.sunken,
+          borderRadius: BorderRadius.circular(AppTheme.radiusField),
+          border: Border.all(color: palette.line),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 17, color: color),
+            const SizedBox(width: 7),
+            Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -687,6 +710,88 @@ class _PersonSkeleton extends StatelessWidget {
         ),
         const SizedBox(height: 22),
         const Card(child: SkeletonList(rows: 4)),
+      ],
+    );
+  }
+}
+
+
+/// Credited, debited, settled, remaining — the four figures the position is made
+/// of, laid out two by two so they fit a phone without shrinking.
+class _Figures extends StatelessWidget {
+  const _Figures({required this.balance, required this.currency, required this.tone});
+
+  final PersonBalance balance;
+  final String currency;
+  final BalanceTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.money;
+
+    Widget cell(String label, int minor, MoneyTone moneyTone) => Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11.5, color: palette.inkMuted)),
+                const SizedBox(height: 3),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: MoneyText(
+                    minor,
+                    currency: currency,
+                    tone: moneyTone,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+
+    // The engine's total_credit is the owner-to-person direction, which the
+    // product calls a debit — see docs/accounting-direction.md.
+    return Column(
+      children: [
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              cell('Credited to you', balance.totalDebit,
+                  balance.totalDebit > 0 ? MoneyTone.payable : MoneyTone.neutral),
+              VerticalDivider(width: 1, color: palette.line),
+              cell('Debited to them', balance.totalCredit,
+                  balance.totalCredit > 0 ? MoneyTone.receivable : MoneyTone.neutral),
+            ],
+          ),
+        ),
+        Divider(height: 1, color: palette.line),
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              cell('Settled', balance.totalSettled, MoneyTone.neutral),
+              VerticalDivider(width: 1, color: palette.line),
+              cell(
+                tone == BalanceTone.payable ? 'You will pay' : 'You will receive',
+                tone == BalanceTone.payable
+                    ? balance.outstandingPayable
+                    : balance.outstandingReceivable,
+                switch (tone) {
+                  BalanceTone.payable => MoneyTone.payable,
+                  BalanceTone.receivable => MoneyTone.receivable,
+                  BalanceTone.settled => MoneyTone.neutral,
+                },
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }

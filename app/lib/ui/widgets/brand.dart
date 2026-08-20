@@ -95,8 +95,12 @@ class AccounicLogo extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        AccounicMark(size: markSize),
-        SizedBox(width: markSize * 0.34),
+        // A zero mark means wordmark only — the login screen shows the mark
+        // separately, at full size, above it.
+        if (markSize > 0) ...[
+          AccounicMark(size: markSize),
+          SizedBox(width: markSize * 0.34),
+        ],
         Text.rich(
           TextSpan(
             children: [

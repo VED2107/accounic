@@ -132,3 +132,95 @@ contract.
 The Flutter shell switches between a navigation rail and a bottom bar at 900px of width,
 not on `Platform.isWindows`. A Windows window dragged narrow behaves like a phone; an
 Android tablet in landscape gets the rail. One rule, no per-platform branches.
+
+## 14. The dark scheme is the product; light is a courtesy
+
+Accounic leads with near-black surfaces and one brand blue. The light scheme is kept and
+tuned to the same rules — not mechanically inverted — because a ledger gets read for long
+stretches in whatever light the reader is in.
+
+The choice is the user's: system, light or dark, stored per device. On the web that is
+`data-theme` on `<html>` with a boot script inlined in `<head>`, because without it the
+page paints dark and swaps on every navigation for anyone who picked light. Flutter uses
+`ThemeMode.system`.
+
+The alternative — forcing dark — looks decisive in a screenshot and is hostile at a desk
+by a window.
+
+## 15. Colour has three jobs and no fourth
+
+Brand blue means *interaction*. Green means *money coming in*. Red means *money going out*.
+Everything else is a neutral surface or ink at some strength.
+
+Two consequences follow, and both were changes:
+
+- The blue → cyan → teal → green brand gradient is confined to the mark, one hairline at
+  the top of a hero panel, the primary action's tonal fill, and the active nav marker. It is
+  never a field of colour behind content, because a gradient behind a number changes what
+  the number's colour appears to be.
+- **Avatars are coloured by identity, not by balance.** They used to be tinted green or red
+  from the person's net position, which made a directory of ten people a wall of the two
+  colours that are supposed to mean money. Now each person gets a stable colour hashed from
+  their name, out of a palette that deliberately excludes the receivable green and payable
+  red (`web/src/lib/avatar-color.ts`, `app/lib/core/avatar_color.dart` — same hues, same
+  FNV-1a hash, so the same person is the same colour on both clients).
+
+## 16. Credit and debit are a vocabulary layer, not an arithmetic one
+
+The full statement is in `docs/accounting-direction.md`. The decision recorded here is
+*where the fix went*.
+
+The database's `transactions.type` enum labels are the reverse of what the words mean to a
+user: stored `'credit'` is the owner → person direction, which is the receivable one. Every
+balance, settlement pairing and colour derived from those columns was already correct; only
+the two words were on the wrong ends.
+
+So the correction is a presentation-layer vocabulary map — one module per client, and
+nothing outside it may compare a stored type against a literal to label or colour anything.
+There is **no migration**, and that is the point: flipping the engine would invert the
+meaning of every row already recorded, turning a ₹5,000 receivable entered last month into a
+₹5,000 payable. That is data corruption wearing the costume of a fix.
+
+The cost is that a reader of the SQL must remember the inversion. It is paid once, in the
+header comment of each direction module and in the doc, and pinned by four Dart tests that
+assert the inversion on purpose — so that anyone "fixing" those tests has to read the doc
+first.
+
+## 17. Entrances are CSS; only one thing gets a JavaScript tween
+
+On the web, every entrance and list stagger is a CSS class with an inline `animation-delay`.
+An entrance is a one-shot, non-interactive animation, so it needs no runtime, no hydration
+and no client component — two hundred ledger rows can stagger without shipping a byte of
+animation code.
+
+GSAP is loaded, dynamically and in its own chunk, for exactly one thing: a balance that
+travels to its new value when it changes. That is an interruptible tween over a formatted
+value which must retarget mid-flight if a second settlement lands, and it is the one place
+motion carries information rather than polish — it shows the user the consequence of what
+they just did, on the number they were looking at. It deliberately does **not** animate on
+first paint; a balance counting up from zero on every page load is decoration.
+
+Flutter mirrors the same motion language with the same three bands (micro 100–180ms,
+component 180–300ms, major 300–450ms) and the same easing family, implemented natively in
+`app/lib/ui/motion.dart`. Nothing is shared between the two but the numbers.
+
+## 18. Sparklines are drawn by hand, from data already fetched
+
+The dashboard's trend lines are one SVG path on the web and one `CustomPainter` in Flutter.
+No charting library on either side: it is a single smoothed path with no axes, grid or
+tooltip, and the figure beside it carries the value.
+
+Every point comes from the same thirty-day `activity_summary` the activity screen already
+uses — no extra query and no invented data. Where a number cannot be derived honestly the
+graphic is not drawn, which is why the series helpers can all return null. The "up 12.5%"
+chip compares the recent half of the window against the earlier half and says exactly that,
+because that is the only honest comparison a flow series supports.
+
+## 19. Poppins is bundled; the body face is the platform's
+
+Both clients use Poppins for the brand and headings, matching the wordmark.
+
+The web pairs it with Inter, self-hosted by `next/font`. Flutter bundles Poppins as an asset
+but leaves body text to the platform face — Roboto on Android, Segoe UI on Windows. Shipping
+a second megabyte of font to a phone to fill a role the system already fills well is a poor
+trade, and `google_fonts` at runtime would mean a network request for text.

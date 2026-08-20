@@ -103,6 +103,26 @@ class LedgerRepository {
     }
   }
 
+  /// Daily totals for the last [days]. Feeds the activity screen's summary and
+  /// nothing else — this is context, not a reporting engine (context.md §30).
+  Future<List<ActivityBucket>> activitySummary({
+    String bucket = 'day',
+    int days = 30,
+  }) async {
+    try {
+      final data = await _client.rpc(
+        'activity_summary',
+        params: {'p_bucket': bucket, 'p_days': days},
+      );
+      return [
+        for (final row in (data as List? ?? const []))
+          ActivityBucket.fromJson(Map<String, dynamic>.from(row as Map)),
+      ];
+    } catch (error) {
+      throw Failure.from(error, 'Your activity totals could not be loaded.');
+    }
+  }
+
   Future<ActivityPage> activity({int page = 0, int pageSize = 40, String? kind}) async {
     try {
       final data = await _client.rpc(

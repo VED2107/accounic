@@ -3,10 +3,15 @@
 Status of the Accounic build against `context.md`. This is the file to read first when
 picking the work back up.
 
-**Last updated:** 2026-08-20
+**Last updated:** 2026-08-20 (second session)
 **Overall:** Phases 1–4 complete and verified against the live database. Phase 5
-(performance) measured but not tuned. Phase 6 (hardening) partly done. Branding assets
-created but **not yet wired into either client**.
+(performance) measured but not tuned. Phase 6 (hardening) partly done.
+
+Since the first session: the Accounic branding and a full design system are wired into the
+**web** client, which is verified in a browser at desktop and phone widths. The
+credit/debit direction semantics were corrected across both clients (see
+`docs/accounting-direction.md`). The **Flutter** client has had the same treatment applied
+to its code but **does not render correctly yet** — see §9.
 
 ---
 
@@ -126,23 +131,18 @@ at realistic scale (10k+ transactions), where the `person_balances` lateral join
 
 ## 7. What is left
 
-### 7.1 Branding — the live task
+### 7.1 Branding
 
-Assets exist in `brand/` (six SVG variants + `build-assets.mjs`, already rasterised into
-both clients' icon slots). **Neither client uses them yet.** Remaining:
-
-- [ ] Web: replace "Ledger" in `app/layout.tsx` metadata, `app-shell.tsx` sidebar and mobile
-      header, and `login/page.tsx` — swap `WalletIcon` for the Accounic mark
-- [ ] Web: load Poppins (`next/font/google`) and use it for the wordmark and headings
-- [ ] Web: move the accent from indigo `#4338CA` to the brand blue in `globals.css`
-      (keep green/rose reserved for receivable/payable — see `docs/decisions.md`)
-- [ ] Flutter: app title in `main.dart`, `pubspec.yaml` name/description, the wallet glyph in
-      `shell.dart` and `login_screen.dart`
-- [ ] Flutter: register `assets/brand/` in `pubspec.yaml`; add `flutter_svg` or use the PNG
-- [ ] Flutter: accent colour in `theme.dart` to match the web
+- [x] Web: Accounic name and mark throughout — metadata, sidebar, mobile header, login
+- [x] Web: Poppins for the wordmark and headings, Inter for UI text, both via `next/font`
+- [x] Web: accent moved off indigo to the brand blue; full token set in `globals.css`
+- [x] Flutter: app title, `pubspec.yaml` name (`accounic`), mark drawn in
+      `ui/widgets/brand.dart`, Accounic palette in `core/theme.dart`
+- [x] Flutter: `assets/brand/` registered; Poppins bundled in `assets/fonts/`
 - [ ] Android label in `AndroidManifest.xml`; Windows product name in `Runner.rc`
-- [ ] Rename the Flutter binary from `ledger.exe` (`pubspec.yaml` → `name:`)
-- [ ] README, docs and package names: Ledger → Accounic
+- [ ] Rename the Windows binary — still builds as `ledger.exe`
+      (`app/windows/runner/CMakeLists.txt` → `BINARY_NAME`)
+- [ ] README and remaining prose: Ledger → Accounic
 
 ### 7.2 Documentation
 
@@ -153,13 +153,19 @@ both clients' icon slots). **Neither client uses them yet.** Remaining:
 
 ### 7.3 Production readiness
 
-- [ ] Re-run `cd web && npm run build` — the app was edited after the last production build
+- [x] `cd web && npm run build` — clean; 103 kB shared first-load JS, largest route 190 kB
 - [ ] Delete the demo seed users (`demo@example.com`, `friend@example.com`) before real use
 - [ ] Decide on rate limiting (currently none at the application layer)
 - [ ] Accept the Android licences (`flutter doctor --android-licenses`) for release APK signing
 - [ ] Release APK is unsigned — needs a keystore for distribution
 
-### 7.4 Deliberately deferred
+### 7.4 Repository
+
+- [x] Pushed to **https://github.com/VED2107/accounic** (private). `main` is current.
+      `web/.env.local` is gitignored and was verified absent from the tree before the
+      first push.
+
+### 7.5 Deliberately deferred
 
 Offline sync (`context.md` §22 — the repository layer is structured for it), notifications
 (§31), and anything in the "not built" list in the README.
@@ -188,3 +194,102 @@ Offline sync (`context.md` §22 — the repository layer is structured for it), 
 | 16 | Deployment instructions | **outstanding** |
 | 17 | Performance notes | measured; **write-up outstanding** |
 | 18 | Security notes | done — `docs/security.md` |
+
+
+---
+
+## 9. UI/UX pass — second session
+
+### 9.1 Direction semantics (both clients) — **done and correct**
+
+The words *credit* and *debit* were attached to the wrong directions. The rule now, stated
+once in `docs/accounting-direction.md` and implemented once per client:
+
+| Movement | Called | Balance | Colour |
+|---|---|---|---|
+| person → owner | Credit | payable | red |
+| owner → person | Debit | receivable | green |
+
+Only the vocabulary was wrong. The engine's balances, settlement pairings and colours
+already matched this rule, because the stored enum labels are the reverse of the spoken
+words. **No migration**: flipping the engine would invert the meaning of every row already
+recorded. The mapping lives in `web/src/lib/direction.ts` and `app/lib/core/direction.dart`
+and nowhere else; four Dart tests pin it, including the deliberate inversion.
+
+### 9.2 Web — done and verified in a browser
+
+- **Design system.** Dark-first token set in `globals.css` (surfaces, ink, brand ramp,
+  money colours, radius, elevation, motion). Light scheme kept and tuned. Theme is
+  user-selectable — system / light / dark — via `lib/theme.ts` with a no-FOUC boot script.
+- **Primitives.** Button, field, card, panel, avatar, badge, segmented control, skeleton,
+  empty state, toast, modal/bottom sheet, page header.
+- **Screens.** Dashboard (two sides + net hero, sparklines, insights, quick actions),
+  People (totals strip, search, direction filter, sort, archived), Person detail (hero
+  balance, settle/credit/debit, four figures, history/details/notes tabs), Activity
+  (30-day totals, day grouping, filter), Profile (identity, details, appearance, security,
+  session), Admin (stats, user rows, destructive actions marked out), Login.
+- **Motion.** CSS entrances and stagger (no JS); GSAP loaded dynamically for the one thing
+  that earns it — a balance that travels to its new value when a settlement lands.
+- **Avatars** are coloured per person from a hash of the name (`lib/avatar-color.ts`), so
+  red and green mean money and nothing else.
+- **Verified in a browser** at 2133px and 555px: every screen, a real partial settlement
+  (₹750 then ₹250 against Priya Nair), the success state, the balance animation, and both
+  reversals. Demo data was restored — the two test settlements remain as voided history.
+- **Two real bugs found and fixed by that walkthrough**, both invisible to typecheck:
+  1. `useActionState` keeps its result for the life of the component, so success effects
+     re-fired on unrelated state changes — a repeating "Transaction recorded" toast, and a
+     settle sheet that replayed its success screen on reopen. Now keyed on result identity.
+  2. The settle sheet reported the wrong remaining figure, because the server action's own
+     revalidation had already moved the balance by the time the effect read it. It now
+     snapshots the figures at submit.
+
+### 9.3 Flutter — code written, **not working yet**
+
+Applied: Accounic theme and tokens, Poppins, drawn brand mark, motion primitives
+(`ui/motion.dart`), bottom bar with a docked primary action, rebuilt dashboard, people
+directory with totals and a direction filter, person hero with settle/credit/debit, the
+activity summary strip and day grouping, quarter-step amount entry, and a settlement
+success state.
+
+`flutter analyze` is clean and all 32 tests pass, but the app does not render:
+
+> **On Windows, the app launches, signs in and draws the rail, the brand and the sidebar
+> correctly — and the entire dashboard content area is blank.** No cards, no skeleton, no
+> empty state, no error note. The app bar renders ("Dashboard"), so the Scaffold is fine
+> and the body is not painting.
+
+Not yet diagnosed. The likely suspects, in order:
+
+1. `Reveal` / `Stagger` in `ui/motion.dart` — they wrap children in `flutter_animate`
+   `.fadeIn()`. If the animation never runs, `both`-style fill leaves the child at opacity
+   zero and everything inside disappears. **Test first by returning `child` unchanged from
+   both widgets** and re-running; if the content comes back, the fault is there.
+2. The `dashboardProvider` sitting in `loading` forever, with `_DashboardSkeleton` also
+   invisible for reason (1) — the skeleton is built from the same primitives.
+3. The account in use (`vedchauhan2107@gmail.com`) has no people and no transactions, so
+   the correct render is the *empty state* — which is also wrapped in `Reveal`.
+
+Reproduce:
+
+```
+cd app
+flutter run -d windows \
+  --dart-define=SUPABASE_URL=… --dart-define=SUPABASE_ANON_KEY=…
+```
+
+Run it **attached** (not the detached `.exe`) so the console shows exceptions — the
+detached binary was how this was first seen, and it swallowed whatever was thrown.
+
+Also outstanding on Flutter:
+
+- [ ] Profile screen still has the pre-Accounic layout
+- [ ] Person timeline rows not restyled to match the web's
+- [ ] Search sheet only partly restyled
+- [ ] Android emulator: the Pixel_8 AVD hangs on a black screen with the default GPU;
+      it boots with `-gpu swiftshader_indirect -no-snapshot-load`. The app was never
+      confirmed running on Android — only on Windows.
+- [ ] No screenshots taken on a phone-width layout yet
+
+### 9.4 Also done this session
+
+- `vedchauhan2107@gmail.com` was granted admin (a row in `public.app_admins`).

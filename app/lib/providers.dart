@@ -82,6 +82,12 @@ final activityProvider =
   return ref.watch(ledgerRepositoryProvider).activity(page: args.page, kind: args.kind);
 });
 
+/// Thirty days of daily totals, for the activity screen's summary strip.
+final activitySummaryProvider =
+    FutureProvider.autoDispose<List<ActivityBucket>>((ref) {
+  return ref.watch(ledgerRepositoryProvider).activitySummary();
+});
+
 final searchProvider =
     FutureProvider.autoDispose.family<SearchResults, String>((ref, query) async {
   if (query.trim().isEmpty) {
