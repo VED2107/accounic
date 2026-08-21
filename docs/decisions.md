@@ -528,3 +528,48 @@ user, resetting a password, deleting an account, changing administrator rights.
 
 That is the one permanent asymmetry between the clients. Everything else is at
 parity and should stay there.
+
+---
+
+## 32. A voided row is a retraction, and the delete rule now says so
+
+Deleting a person was refused for an account showing ₹0, "Everything is
+settled", and no transactions — with the message "This person has transactions
+and cannot be deleted."
+
+Two definitions of "has transactions" had drifted apart:
+
+- `person_balances.transaction_count` counts rows that are **not void**, because
+  every figure in that view treats a voided row as something that did not happen.
+  Both clients read that column to decide whether to offer Delete.
+- `delete_person()` counted **every** row, void or not.
+
+So an account whose transactions had all been voided reported zero, was offered
+Delete, and was then refused — the exact "offered and then refused" outcome §29
+exists to prevent, made worse by §29 having given Delete more prominence.
+
+They agree now, on the view's definition: a voided transaction is a retraction.
+It contributes to no balance, appears in no total, and is excluded from the
+activity feed. An account holding nothing but retractions has no financial
+position, and deleting it removes a self-contained set of rows — nothing survives
+to be left inconsistent, which is what `context.md`'s "deleted entities must not
+corrupt historical records" protects. A single live transaction or settlement
+still blocks the delete in favour of archiving.
+
+Two things this turned up that were not obvious:
+
+**It had to become SECURITY DEFINER.** `authenticated` is granted
+select/insert/update on transactions and settlements and deliberately *not*
+delete: no client may hard-delete a ledger row directly. Removing the retracted
+rows could not be done as the caller, and widening that grant would have handed
+every client a raw DELETE over the whole ledger through PostgREST. So the one
+audited function does it. Being DEFINER it bypasses RLS, which makes the
+`owner_id = v_owner` on every statement the only thing separating callers — it is
+not optional, and `v_owner` comes from the caller's JWT, not from an argument.
+
+**Settlements needed their own guard.** A settlement is checked separately rather
+than assumed to follow its transaction. The engine refuses to void a transaction
+that has been settled, so reaching a fully retracted account means reversing the
+settlement first — and `db/tests/03_delete_person.sql` walks exactly that path,
+because the first version of that test asserted a state the engine will not allow
+to exist.

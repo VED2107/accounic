@@ -106,7 +106,11 @@ export function PersonActionBar({
           is history reads as the action being broken rather than as it being
           unavailable, and it names no alternative — so it is disabled instead,
           carrying the count that blocks it and pointing at Archive. */}
-      {balance.transaction_count === 0 ? (
+      {/* The same test the server applies. Both counts exclude voided rows and
+          delete_person() now counts live rows only, so the two agree — which
+          they did not before: an account whose transactions had all been voided
+          reported zero here, offered Delete, and was then refused. */}
+      {balance.transaction_count === 0 && balance.total_settled === 0 ? (
         <button
           type="button"
           onClick={() => setConfirm('delete')}
@@ -118,9 +122,12 @@ export function PersonActionBar({
         <p className="text-[0.75rem] text-ink-faint">
           <span className="text-ink-muted">Delete this person</span>
           {' — '}
-          {balance.transaction_count}{' '}
-          {balance.transaction_count === 1 ? 'transaction' : 'transactions'} on this
-          account. Archive them instead.
+          {balance.transaction_count > 0
+            ? `${balance.transaction_count} ${
+                balance.transaction_count === 1 ? 'transaction' : 'transactions'
+              } on this account.`
+            : 'a settlement is still recorded here.'}{' '}
+          Archive them instead.
         </p>
       )}
 

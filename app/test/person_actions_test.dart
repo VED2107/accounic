@@ -15,7 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// * The add/edit sheet put Phone and Email side by side at every width. On a
 ///   phone that is roughly 150px each, which is narrower than the values.
 void main() {
-  PersonPage page({required int transactions}) => PersonPage.fromJson({
+  PersonPage page({required int transactions, int settled = 0}) => PersonPage.fromJson({
         'person': {
           'id': 'p1',
           'owner_id': 'o1',
@@ -31,6 +31,7 @@ void main() {
           'type': 'business',
           'is_archived': false,
           'transaction_count': transactions,
+          'total_settled': settled,
         },
         'timeline': const [],
         'timeline_total': 0,
@@ -70,6 +71,43 @@ void main() {
       expect(entry.enabled, isFalse);
       expect(
         find.text('3 transactions on this account — archive instead'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('offers Delete once every transaction has been voided',
+        (tester) async {
+      // The reported bug. `transaction_count` excludes voided rows, so an
+      // account whose transactions were all voided reads as empty here — and
+      // used to be offered Delete and then refused by a server that was still
+      // counting the voided rows. delete_person() counts live rows only now, so
+      // this is offered *and* works.
+      await tester.pumpWidget(host(PersonMenu(page: page(transactions: 0))));
+      await tester.tap(find.byType(PopupMenuButton<String>));
+      await tester.pumpAndSettle();
+
+      final entry = tester.widget<PopupMenuItem<String>>(
+        find.widgetWithText(PopupMenuItem<String>, 'Delete'),
+      );
+      expect(entry.enabled, isTrue);
+    });
+
+    testWidgets('still blocks Delete while a settlement is recorded',
+        (tester) async {
+      // No live transactions but real money moved: the server refuses this one,
+      // so the menu must not offer it.
+      await tester.pumpWidget(
+        host(PersonMenu(page: page(transactions: 0, settled: 100000))),
+      );
+      await tester.tap(find.byType(PopupMenuButton<String>));
+      await tester.pumpAndSettle();
+
+      final entry = tester.widget<PopupMenuItem<String>>(
+        find.widgetWithText(PopupMenuItem<String>, 'Delete'),
+      );
+      expect(entry.enabled, isFalse);
+      expect(
+        find.text('A settlement is still recorded here — archive instead'),
         findsOneWidget,
       );
     });

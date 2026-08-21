@@ -23,7 +23,7 @@ query per person or per transaction.
 | Search | `search_all()` | 8 rows |
 
 Indexes are in `db/migrations/0006_indexes.sql`. The accounting suite
-(`node db/tools/run-sql.mjs test`) runs 72 assertions and rolls itself back.
+(`node db/tools/run-sql.mjs test`) runs 82 assertions and rolls itself back.
 
 **Pagination is per screen, not global.** The person timeline is 30 rows a page and
 activity is 40. The people list is the one unbounded read, capped at 500 — see §4.

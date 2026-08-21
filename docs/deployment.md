@@ -33,8 +33,8 @@ Migrations are numbered and must run in sequence:
 
 ```bash
 cd db/tools && npm install && cd ../..
-node db/tools/run-sql.mjs migrate       # 0001 … 0008
-node db/tools/run-sql.mjs test          # 72 assertions, rolled back
+node db/tools/run-sql.mjs migrate       # 0001 … 0009
+node db/tools/run-sql.mjs test          # 82 assertions, rolled back
 node db/tools/smoke-api.mjs             # the real anon-key path
 ```
 

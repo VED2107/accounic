@@ -508,8 +508,14 @@ class PersonMenu extends ConsumerWidget {
           ],
         );
 
+    // The same test the server applies. `transactionCount` and `totalSettled`
+    // both exclude voided rows, and `delete_person()` now counts live rows only,
+    // so the two agree — which they did not before: a person whose transactions
+    // had all been voided reported zero here, was offered Delete, and was then
+    // refused by a server that was still counting the voided rows.
     final transactions = page.balance.transactionCount;
-    final deletable = transactions == 0;
+    final settled = page.balance.totalSettled;
+    final deletable = transactions == 0 && settled == 0;
 
     return PopupMenuButton<String>(
       tooltip: 'More',
@@ -583,10 +589,13 @@ class PersonMenu extends ConsumerWidget {
             AppIcons.delete,
             'Delete',
             tone: deletable ? palette.payable : palette.inkFaint,
-            note: deletable
-                ? null
-                : '$transactions ${transactions == 1 ? 'transaction' : 'transactions'} '
+            note: switch (deletable) {
+              true => null,
+              false when transactions > 0 =>
+                '$transactions ${transactions == 1 ? 'transaction' : 'transactions'} '
                     'on this account — archive instead',
+              false => 'A settlement is still recorded here — archive instead',
+            },
           ),
         ),
       ],

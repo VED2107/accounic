@@ -43,7 +43,7 @@ Each now has a widget test pinning it — see README §4.
 
 ## 2. Database — `db/` (complete)
 
-Eight migrations, applied in order to the live Supabase project.
+Nine migrations, applied in order to the live Supabase project.
 
 | File | Contents |
 |---|---|
@@ -207,7 +207,7 @@ Offline sync (`context.md` §22 — the repository layer is structured for it), 
 | 10 | Flutter Android app | done |
 | 11 | Flutter Windows app | done |
 | 12 | Shared API/data contracts | done — `types.ts` + `models.dart` |
-| 13 | Tests | done — 72 SQL, 33 API, 23 web, 61 Dart |
+| 13 | Tests | done — 82 SQL, 33 API, 23 web, 65 Dart |
 | 14 | Seed/demo data | done |
 | 15 | Env config example | done — `web/.env.local.example` |
 | 16 | Deployment instructions | done — `docs/deployment.md` |
