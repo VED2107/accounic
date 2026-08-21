@@ -22,7 +22,13 @@ import { staggerStyle } from '@/components/motion/reveal';
 import { SubmitRow } from '@/components/ledger/transaction-sheet';
 import { CloseIcon, PlusIcon, ProfileIcon, SearchIcon } from '@/components/icons';
 import { initials } from '@/lib/names';
-import { adminCreateUser, adminDeleteUser, adminResetPassword, adminSetUserActive } from '@/lib/admin-actions';
+import {
+  adminCreateUser,
+  adminDeleteUser,
+  adminResetPassword,
+  adminSetUserActive,
+  adminSetUserAdmin,
+} from '@/lib/admin-actions';
 import { relativeTime } from '@/lib/dates';
 import type { ActionResult, AdminUser } from '@/lib/types';
 
@@ -43,7 +49,10 @@ export function UserTable({
   const [search, setSearch] = useState(query);
   const [createOpen, setCreateOpen] = useState(false);
   const [resetting, setResetting] = useState<AdminUser | null>(null);
-  const [confirming, setConfirming] = useState<{ user: AdminUser; kind: 'toggle' | 'delete' } | null>(
+  const [confirming, setConfirming] = useState<{
+    user: AdminUser;
+    kind: 'toggle' | 'delete' | 'admin';
+  } | null>(
     null,
   );
   const [error, setError] = useState<string | null>(null);
@@ -164,6 +173,13 @@ export function UserTable({
                       <Button
                         size="sm"
                         variant="secondary"
+                        onClick={() => setConfirming({ user, kind: 'admin' })}
+                      >
+                        {user.is_admin ? 'Revoke admin' : 'Make admin'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
                         onClick={() => setConfirming({ user, kind: 'toggle' })}
                       >
                         {user.is_active ? 'Disable' : 'Enable'}
@@ -219,6 +235,30 @@ export function UserTable({
           confirming?.user.is_active
             ? 'They will be signed out of their data immediately — the database refuses their requests, not just the interface. Their records are kept and come back if you enable them again.'
             : 'They will be able to sign in and reach their workspace again.'
+        }
+      />
+
+      <ConfirmDialog
+        open={confirming?.kind === 'admin'}
+        onClose={() => setConfirming(null)}
+        onConfirm={() =>
+          confirming &&
+          run(
+            () => adminSetUserAdmin(confirming.user.email, !confirming.user.is_admin),
+            confirming.user.is_admin ? 'Administrator access removed' : 'Administrator access granted',
+          )
+        }
+        tone={confirming?.user.is_admin ? 'danger' : 'primary'}
+        confirmLabel={confirming?.user.is_admin ? 'Revoke admin' : 'Make admin'}
+        title={
+          confirming?.user.is_admin
+            ? `Remove administrator access from ${confirming.user.name || confirming.user.email}?`
+            : `Make ${confirming?.user.name || confirming?.user.email} an administrator?`
+        }
+        body={
+          confirming?.user.is_admin
+            ? 'They keep their own ledger and their own data. They lose this page, and with it the ability to see or change anyone else’s account.'
+            : 'They gain this page: every account on the system, the ability to enable, disable and delete them, and to reset anyone’s password. Their own ledger is unaffected.'
         }
       />
 

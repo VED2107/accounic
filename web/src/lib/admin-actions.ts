@@ -115,6 +115,51 @@ export async function adminSetUserActive(
 }
 
 /**
+ * Grant or revoke the administrator role.
+ *
+ * Unlike the other admin RPCs, `grant_admin` and `revoke_admin` are granted to
+ * `service_role` **only** — `authenticated` is explicitly revoked in
+ * `0007_admin.sql`. So this is one of the few operations that genuinely cannot
+ * be performed by a client holding nothing but the anon key, and it has to run
+ * through the service-role client here on the server.
+ *
+ * The RPC keeps its own guard against removing the last administrator; the
+ * self-check below is separate, so an admin cannot strand themselves even while
+ * others remain.
+ */
+export async function adminSetUserAdmin(
+  email: string,
+  isAdmin: boolean,
+): Promise<ActionResult<null>> {
+  const denied = await assertAdmin();
+  if (denied) return denied;
+
+  const me = await getMe();
+  if (me && me.email.toLowerCase() === email.toLowerCase() && !isAdmin) {
+    return {
+      ok: false,
+      error: 'You cannot remove your own administrator access.',
+    };
+  }
+
+  const admin = createAdminClient();
+  const { error } = await admin.rpc(isAdmin ? 'grant_admin' : 'revoke_admin', {
+    p_email: email,
+  });
+  if (error) {
+    return fail(
+      error,
+      isAdmin
+        ? 'That user could not be made an administrator.'
+        : 'That user could not have administrator access removed.',
+    );
+  }
+
+  revalidatePath('/admin');
+  return ok(null);
+}
+
+/**
  * Permanent deletion. Cascades through profiles → people → transactions →
  * settlements, so it destroys that user's entire ledger. Disabling is the
  * default path in the UI; this exists for a genuine removal request

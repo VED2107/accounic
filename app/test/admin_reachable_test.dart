@@ -87,6 +87,37 @@ void main() {
       expect(find.text('Someone Else'), findsOneWidget);
     });
 
+    testWidgets('offers the admin-role control disabled, with the reason',
+        (tester) async {
+      // `grant_admin` and `revoke_admin` are granted to `service_role` alone —
+      // `authenticated` is revoked in 0007_admin.sql — and this client holds
+      // the anon key with no server to put a service-role call behind. The
+      // control used to be live and simply failed every time it was used. It is
+      // shown inactive with the reason instead, the same rule the person menu
+      // follows (docs/decisions.md §29, §31).
+      await pumpAdmin(tester, isAdmin: true);
+
+      await tester.tap(find.byType(PopupMenuButton<String>).first);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Make administrator'), findsOneWidget);
+      final entry = tester.widget<PopupMenuItem<String>>(
+        find.widgetWithText(PopupMenuItem<String>, 'Make administrator'),
+      );
+      expect(entry.enabled, isFalse);
+      expect(
+        find.text('Administrator roles are changed in the web app'),
+        findsOneWidget,
+      );
+
+      // Disabling an account is the one thing this client really can do.
+      expect(find.text('Disable account'), findsOneWidget);
+      final disable = tester.widget<PopupMenuItem<String>>(
+        find.widgetWithText(PopupMenuItem<String>, 'Disable account'),
+      );
+      expect(disable.enabled, isTrue);
+    });
+
     testWidgets('refuses a non-admin rather than rendering an empty screen',
         (tester) async {
       await pumpAdmin(tester, isAdmin: false);

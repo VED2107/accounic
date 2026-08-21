@@ -482,3 +482,49 @@ One exception is deliberate: the person timeline row keeps its `AnimatedContaine
 its tint also tracks whether the row is expanded, which *is* a state change touch produces.
 
 Full measurements in `docs/performance.md`.
+
+---
+
+## 31. Parity is capability, not code — and the service-role line decides it
+
+The two clients should let you do the same things. Comparing them by the RPCs
+they call showed an identical surface — all nineteen, both sides — so the gaps
+were never in the data layer. They were in what each screen offered, and they
+ran in both directions.
+
+Everything outside administration was already at parity: the people list has the
+same four filters, the timeline rows have the same three actions, the profile has
+the same five fields including the password. Administration was the whole of the
+difference, and the reason is the **service-role key**.
+
+`grant_admin` and `revoke_admin` are granted to `service_role` alone;
+`authenticated` is explicitly revoked in `0007_admin.sql`. Verified against the
+live database:
+
+```sql
+select has_function_privilege('authenticated', 'public.grant_admin(text)', 'execute');
+-- false
+```
+
+The Flutter client was calling them anyway, with the anon key and the user's JWT
+— the `authenticated` role. **The control could never have worked.** It was not a
+missing feature on the web side; it was a broken feature on the Flutter side that
+looked like one, because the failure only appeared after the confirmation dialog.
+
+So the resolution runs the other way from the obvious one:
+
+- **The web gains the real capability.** It has a server, so `adminSetUserAdmin`
+  goes through the service-role client — the same place `adminCreateUser`,
+  `adminResetPassword` and `adminDeleteUser` already live.
+- **Flutter's control is shown disabled, naming the web app**, by §29's rule. Not
+  removed: an administrator looking for it should find out where it went rather
+  than wonder whether they imagined it.
+
+The line that decides this, and it is not going to move: **a distributable binary
+cannot hold the service-role key.** Anyone can extract it from an APK or an
+installer, and it bypasses RLS entirely. Any operation needing that key belongs to
+the server-rendered web app and can never be reached from Flutter — creating a
+user, resetting a password, deleting an account, changing administrator rights.
+
+That is the one permanent asymmetry between the clients. Everything else is at
+parity and should stay there.

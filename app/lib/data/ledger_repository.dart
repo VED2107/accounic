@@ -355,20 +355,6 @@ class LedgerRepository {
     }
   }
 
-  Future<void> setAdmin(String email, bool isAdmin) async {
-    try {
-      await _client.rpc(isAdmin ? 'grant_admin' : 'revoke_admin', params: {'p_email': email});
-    } catch (error, stack) {
-      throw Failure.from(
-        error,
-        isAdmin
-            ? 'That user could not be made an administrator.'
-            : 'That administrator could not be stepped down.',
-        stack,
-      );
-    }
-  }
-
   Future<void> updateProfile({
     required String name,
     String? phone,

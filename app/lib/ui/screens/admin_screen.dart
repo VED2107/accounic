@@ -16,16 +16,20 @@ import '../widgets/common.dart';
 /// Administration (context.md §25), the Flutter half of the web app's `/admin`.
 ///
 /// Deliberately small and deliberately plain, like the web one: a few system
-/// counters, a searchable directory of accounts, and the two switches an
-/// administrator actually needs — enable/disable an account, and grant or
-/// revoke administrator rights. There is no way to open another user's books;
-/// admins manage accounts, not ledgers, and RLS would refuse anyway.
+/// counters, a searchable directory of accounts, and the one switch this client
+/// can actually operate — enabling and disabling an account. There is no way to
+/// open another user's books; admins manage accounts, not ledgers, and RLS would
+/// refuse anyway.
 ///
-/// **Two web actions are missing on purpose.** Creating a user and resetting a
-/// password go through Supabase's admin API, which needs the service-role key.
-/// A distributable binary cannot hold that key — anyone could extract it and
-/// bypass RLS entirely — so those two stay on the server-rendered web app,
-/// where the key never leaves the machine. See docs/decisions.md §21.
+/// **Everything else on the web /admin page is missing on purpose, and cannot
+/// be added here.** Creating a user, resetting a password, deleting an account
+/// and changing administrator rights all require the service-role key:
+/// `grant_admin` and `revoke_admin` are granted to `service_role` alone, with
+/// `authenticated` explicitly revoked in `0007_admin.sql`. A distributable
+/// binary cannot hold that key — anyone could extract it and bypass RLS
+/// entirely — and this client has no server to put the call behind. So those
+/// operations live on the server-rendered web app, where the key never leaves
+/// the machine. See docs/decisions.md §21 and §31.
 class AdminScreen extends ConsumerStatefulWidget {
   const AdminScreen({super.key});
 
@@ -63,34 +67,6 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
       ref.invalidate(systemInfoProvider);
       if (mounted) {
         showMessage(context, active ? '${user.name} can sign in again.' : '${user.name} is disabled.');
-      }
-    } catch (error) {
-      if (mounted) showMessage(context, '$error', error: true);
-    }
-  }
-
-  Future<void> _setAdmin(AdminUser user, bool isAdmin) async {
-    final confirmed = await confirm(
-      context,
-      title: isAdmin ? 'Make ${user.name} an administrator?' : 'Step ${user.name} down?',
-      body: isAdmin
-          ? 'They will be able to manage every account — but still not read anyone’s ledger.'
-          : 'They keep their own ledger and lose access to administration.',
-      confirmLabel: isAdmin ? 'Grant' : 'Revoke',
-      destructive: !isAdmin,
-      icon: AppIcons.admin,
-    );
-    if (!confirmed || !mounted) return;
-
-    try {
-      await ref.read(ledgerRepositoryProvider).setAdmin(user.email, isAdmin);
-      ref.invalidate(adminUsersProvider);
-      ref.invalidate(systemInfoProvider);
-      if (mounted) {
-        showMessage(
-          context,
-          isAdmin ? '${user.name} is an administrator.' : '${user.name} is no longer an administrator.',
-        );
       }
     } catch (error) {
       if (mounted) showMessage(context, '$error', error: true);
@@ -217,7 +193,6 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                                 isSelf: user.id == me?.id,
                                 divider: index < page.users.length - 1,
                                 onSetActive: (active) => _setActive(user, active),
-                                onSetAdmin: (isAdmin) => _setAdmin(user, isAdmin),
                               ),
                           ],
                         ),
@@ -413,14 +388,12 @@ class _UserRow extends StatelessWidget {
     required this.isSelf,
     required this.divider,
     required this.onSetActive,
-    required this.onSetAdmin,
   });
 
   final AdminUser user;
   final bool isSelf;
   final bool divider;
   final ValueChanged<bool> onSetActive;
-  final ValueChanged<bool> onSetAdmin;
 
   @override
   Widget build(BuildContext context) {
@@ -525,7 +498,6 @@ class _UserRow extends StatelessWidget {
                     user: user,
                     hovered: hovered,
                     onSetActive: onSetActive,
-                    onSetAdmin: onSetAdmin,
                   ),
               ],
             ),
@@ -543,25 +515,39 @@ class _AccountMenu extends StatelessWidget {
     required this.user,
     required this.hovered,
     required this.onSetActive,
-    required this.onSetAdmin,
   });
 
   final AdminUser user;
   final bool hovered;
   final ValueChanged<bool> onSetActive;
-  final ValueChanged<bool> onSetAdmin;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.money;
 
-    Widget item(IconData icon, String label, {Color? tone}) => Row(
+    Widget item(IconData icon, String label, {Color? tone, String? note}) => Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(icon, size: AppIconSize.sm, color: tone ?? palette.inkMuted),
             const SizedBox(width: AppSpacing.md),
-            Text(
-              label,
-              style: TextStyle(fontSize: 13.5, color: tone ?? context.colors.onSurface),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(fontSize: 13.5, color: tone ?? context.colors.onSurface),
+                  ),
+                  if (note != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      note,
+                      style: TextStyle(fontSize: 11.5, height: 1.35, color: palette.inkFaint),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ],
         );
@@ -594,8 +580,6 @@ class _AccountMenu extends StatelessWidget {
       onSelected: (value) => switch (value) {
         'disable' => onSetActive(false),
         'enable' => onSetActive(true),
-        'grant' => onSetAdmin(true),
-        'revoke' => onSetAdmin(false),
         _ => null,
       },
       itemBuilder: (context) => [
@@ -609,10 +593,23 @@ class _AccountMenu extends StatelessWidget {
             value: 'enable',
             child: item(AppIcons.success, 'Enable account', tone: palette.receivable),
           ),
-        if (user.isAdmin)
-          PopupMenuItem(value: 'revoke', child: item(AppIcons.admin, 'Revoke administrator'))
-        else
-          PopupMenuItem(value: 'grant', child: item(AppIcons.admin, 'Make administrator')),
+        // Shown, disabled, with the reason — the same rule the person menu
+        // follows (docs/decisions.md §29). `grant_admin` and `revoke_admin` are
+        // granted to `service_role` alone; `authenticated` is explicitly revoked
+        // in 0007_admin.sql. This client holds the anon key and has no server to
+        // put a service-role call behind, so the operation is not merely
+        // unavailable here — it is impossible here, and the web app is where it
+        // lives.
+        PopupMenuItem(
+          value: 'admin-role',
+          enabled: false,
+          child: item(
+            AppIcons.admin,
+            user.isAdmin ? 'Revoke administrator' : 'Make administrator',
+            tone: palette.inkFaint,
+            note: 'Administrator roles are changed in the web app',
+          ),
+        ),
       ],
     );
   }
