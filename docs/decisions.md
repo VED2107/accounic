@@ -440,3 +440,45 @@ Both halves are fixed and both are pinned:
 The general rule the fallback broke: **never let a transport failure inherit a
 domain-specific error message.** A request that did not arrive tells you nothing about what
 was in it.
+
+---
+
+## 29. Delete is disabled, never absent
+
+A person can only be deleted while they have no financial history. The guard is right and
+the server enforces it — `delete_person()` raises rather than dropping transactions.
+
+The client used to express that by *removing* the Delete entry from the menu. That reads
+as the feature being broken rather than as the action being unavailable, and it left no
+route to the thing the user should do instead. Delete is now always listed, greyed, with
+the count that blocks it and Archive named as the way out.
+
+The general rule: an action that is unavailable for a reason the user can act on should be
+shown with the reason. Hiding it only works when the action is meaningless in that context,
+not when it is meaningful and blocked.
+
+---
+
+## 30. Hover costs nothing on a device that cannot hover
+
+The hover affordances — a row that tints, a chevron that nudges — are built from
+`AnimatedContainer` and `AnimatedSlide`. Both create an `AnimationController` and a
+`Ticker` whether or not their value will ever change.
+
+On a phone their value can never change, because there is no pointer to enter the region.
+The people query returns up to 500 rows, so this was a thousand controllers built to
+serve an event the hardware cannot produce, on top of the 500 entrance animations from
+`Stagger`. That, and not painting, is what made the Android build janky.
+
+`Motion.pointerHovers` gates it. `Hoverable`, `HoverFill` and `HoverSlide` build the plain
+widget on Android and iOS and the animated one everywhere else, so the desktop experience
+is untouched and the phone stops paying for it.
+
+The related decision is that `Stagger` now animates only the rows inside its cap. Past the
+cap every row already shared a single delay, so the sequence was over — those controllers
+existed to make a row below the fold arrive at the same instant as row eight.
+
+One exception is deliberate: the person timeline row keeps its `AnimatedContainer`, because
+its tint also tracks whether the row is expanded, which *is* a state change touch produces.
+
+Full measurements in `docs/performance.md`.

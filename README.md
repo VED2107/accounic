@@ -1,6 +1,9 @@
-# Ledger
+# Accounic
 
 A small, fast, personal accounting system. Three clients, one backend, one database.
+
+Current release: **[v1.0.4](https://github.com/VED2107/accounic/releases/latest)** —
+Windows installer, Windows portable zip, and an Android APK.
 
 Answers four questions and little else (`context.md` §35):
 
@@ -159,11 +162,25 @@ with a network error.
 | RLS / authorisation | (same command) | cross-tenant reads and writes, privilege escalation, disabled accounts, anon |
 | End-to-end API | `node db/tools/smoke-api.mjs` | the real anon-key path: sign-in, RPCs, isolation |
 | Web units | `cd web && npm test` | money parsing, formatting, balance meaning |
-| Flutter units | `cd app && flutter test` | the same money cases, plus model/contract parsing |
+| Flutter units | `cd app && flutter test` | the same money cases, model/contract parsing, and the UI regressions below |
 | Types | `cd web && npm run typecheck` · `cd app && flutter analyze` | strict TS, zero analyzer issues |
 
 The money suites in `web` and `app` deliberately assert the *same* cases. If they
 ever disagree, a user is seeing two different balances on two devices.
+
+The Flutter suite also pins the failures that a green analyzer cannot see. Every one
+of these shipped at least once, and none of them was catchable without rendering the
+widget at a real size:
+
+| Suite | Catches |
+|---|---|
+| `android_manifest_test.dart` | the INTERNET permission going missing from the release build |
+| `auth_errors_test.dart` | a transport failure being reported as bad credentials |
+| `admin_reachable_test.dart` | Administration failing at phone width, and non-admins not being refused |
+| `dashboard_screen_test.dart` | the dashboard body failing layout and rendering blank |
+| `sheet_cancel_test.dart` | Cancel doing nothing on a sheet whose route is not `Route<bool>` |
+| `person_actions_test.dart` | Delete vanishing from the menu, and the person form going two-up on a phone |
+| `motion_cost_test.dart` | a controller per list row coming back — see [`docs/performance.md`](./docs/performance.md) |
 
 ---
 
@@ -184,9 +201,10 @@ web/
 app/
   lib/core/                 config, money, dates, theme, failures
   lib/data/                 models + repositories (the only Supabase callers)
-  lib/ui/                   screens, sheets, widgets
-  test/                     money and contract tests
-docs/                       security, performance, deployment
+  lib/ui/                   screens, sheets, widgets, motion
+  windows/installer/        Inno Setup script for the Windows installer
+  test/                     money, contracts, and the UI regressions above
+docs/                       security, performance, deployment, decisions, direction
 ```
 
 ---
@@ -196,8 +214,9 @@ docs/                       security, performance, deployment
 - [`docs/PROGRESS.md`](./docs/PROGRESS.md) — build status, file inventory, and what is left
 - [`docs/decisions.md`](./docs/decisions.md) — why the non-obvious choices went the way they did
 - [`docs/security.md`](./docs/security.md) — isolation model, admin separation, threat notes
-- `docs/performance.md` — not yet written; measured numbers are in `PROGRESS.md` §6
-- `docs/deployment.md` — not yet written
+- [`docs/performance.md`](./docs/performance.md) — measured numbers, and what made the client slow
+- [`docs/deployment.md`](./docs/deployment.md) — migrations, Vercel, and how the binaries are cut
+- [`docs/accounting-direction.md`](./docs/accounting-direction.md) — what credit and debit mean here
 
 ---
 

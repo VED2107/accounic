@@ -3,15 +3,28 @@
 Status of the Accounic build against `context.md`. This is the file to read first when
 picking the work back up.
 
-**Last updated:** 2026-08-20 (third session)
+**Last updated:** 2026-08-21 (fourth session)
+**Current release:** [v1.0.4](https://github.com/VED2107/accounic/releases/latest)
 **Overall:** Phases 1–4 complete and verified against the live database. Phase 5
-(performance) measured but not tuned. Phase 6 (hardening) partly done.
+(performance) measured and the client half tuned — see `docs/performance.md`. Phase 6
+(hardening) partly done.
 
-Since the first session: the Accounic branding and a full design system are wired into the
-**web** client, which is verified in a browser at desktop and phone widths. The
-credit/debit direction semantics were corrected across both clients (see
-`docs/accounting-direction.md`). The **Flutter** client has had the same treatment applied
-to its code but **does not render correctly yet** — see §9.
+Both clients are finished and verified by looking at them, not only by testing them. The
+web client is browser-verified at desktop and phone widths; the Flutter client renders
+correctly on Windows and Android and is screen-verified. The credit/debit direction
+semantics are correct across both (see `docs/accounting-direction.md`).
+
+Everything found since v1.0.0 was found on a **phone**, and none of it was catchable by
+`flutter analyze` or a passing test suite:
+
+| Release | Fixed |
+|---|---|
+| 1.0.1 | auth errors that named the wrong cause |
+| 1.0.2 | the missing INTERNET permission; Administration unusable at phone width |
+| 1.0.3 | Delete hidden rather than explained; the person form going two-up on a phone |
+| 1.0.4 | ~1,500 animation controllers per screen, most of them serving hover on a touch device |
+
+Each now has a widget test pinning it — see README §4.
 
 ---
 
@@ -23,7 +36,7 @@ to its code but **does not render correctly yet** — see §9.
 | 2 — Core accounting | people, transactions, credit/debit, balances, settlements, history | **Done, verified** |
 | 3 — Web | login, dashboard, people, person detail, add, settle, profile, admin | **Done, verified in browser** |
 | 4 — Flutter | shared models, auth, screens, settle, desktop + Android adaptation | **Done, both binaries built** |
-| 5 — Performance | indexes, query optimisation, caching, pagination, optimistic mutations | **Measured, not tuned** — see §6 |
+| 5 — Performance | indexes, query optimisation, caching, pagination, optimistic mutations | **Measured; client tuned in 1.0.4** — see `docs/performance.md` |
 | 6 — Hardening | security audit, RLS tests, integrity tests, error handling, edge cases, prod config | **Mostly done** — see §7 |
 
 ---
@@ -95,9 +108,10 @@ All run against the user's live Supabase project, not mocks.
 | `cd web && npm test` | 23 pass |
 | `cd web && npx next build` | succeeds, 9 routes |
 | `cd app && flutter analyze` | no issues |
-| `cd app && flutter test` | 28 pass |
-| `flutter build windows --release` | `ledger.exe` built |
-| `flutter build apk --debug` | `app-debug.apk` built |
+| `cd app && flutter test` | 61 pass |
+| `flutter build windows --release` | `accounic.exe` built |
+| `flutter build apk --release` | `app-release.apk` built, 24.3 MB |
+| Installer | silent-installed and the installed binary launched |
 | Browser walkthrough | login → dashboard → person → settle ₹5,000; ₹17,000 → ₹12,000, FIFO chip ₹6,500 → ₹1,500 left |
 
 **Bugs found and fixed during that walkthrough** (neither was caught by typecheck, build or
@@ -110,7 +124,11 @@ unit tests):
 
 ---
 
-## 6. Performance — measured, not tuned
+## 6. Performance — measured, client tuned
+
+The full write-up, including what made the Flutter client janky on Android and the
+before/after counts, is in [`docs/performance.md`](./performance.md). The database
+numbers below are unchanged.
 
 `node db/tools/bench.mjs 30`, server time (planning + execution) on the seeded workspace:
 
@@ -139,15 +157,14 @@ at realistic scale (10k+ transactions), where the `person_balances` lateral join
 - [x] Flutter: app title, `pubspec.yaml` name (`accounic`), mark drawn in
       `ui/widgets/brand.dart`, Accounic palette in `core/theme.dart`
 - [x] Flutter: `assets/brand/` registered; Poppins bundled in `assets/fonts/`
-- [ ] Android label in `AndroidManifest.xml`; Windows product name in `Runner.rc`
-- [ ] Rename the Windows binary — still builds as `ledger.exe`
-      (`app/windows/runner/CMakeLists.txt` → `BINARY_NAME`)
-- [ ] README and remaining prose: Ledger → Accounic
+- [x] Android label in `AndroidManifest.xml`; Windows product name in `Runner.rc`
+- [x] Windows binary builds as `accounic.exe`
+- [x] README and remaining prose: Ledger → Accounic
 
 ### 7.2 Documentation
 
-- [ ] `docs/performance.md` — README links it; the numbers in §6 above go here
-- [ ] `docs/deployment.md` — README links it; Vercel + Supabase, APK signing, Windows packaging
+- [x] `docs/performance.md` — measured numbers, and what made the Flutter client slow
+- [x] `docs/deployment.md` — migrations, Vercel, both binaries, and how a release is cut
 - [x] `docs/security.md`
 - [x] `README.md`
 
@@ -156,8 +173,10 @@ at realistic scale (10k+ transactions), where the `person_balances` lateral join
 - [x] `cd web && npm run build` — clean; 103 kB shared first-load JS, largest route 190 kB
 - [ ] Delete the demo seed users (`demo@example.com`, `friend@example.com`) before real use
 - [ ] Decide on rate limiting (currently none at the application layer)
-- [ ] Accept the Android licences (`flutter doctor --android-licenses`) for release APK signing
-- [ ] Release APK is unsigned — needs a keystore for distribution
+- [ ] Release APK is **debug-signed**, not unsigned — `android/app/build.gradle.kts` points
+      its release build at `signingConfigs.getByName("debug")`. Fine for sideloading, wrong
+      for the Play Store. Needs a keystore and a gitignored `key.properties`, and losing
+      that keystore permanently blocks updates to installed copies.
 
 ### 7.4 Repository
 
@@ -188,11 +207,11 @@ Offline sync (`context.md` §22 — the repository layer is structured for it), 
 | 10 | Flutter Android app | done |
 | 11 | Flutter Windows app | done |
 | 12 | Shared API/data contracts | done — `types.ts` + `models.dart` |
-| 13 | Tests | done — 72 SQL, 33 API, 23 web, 28 Dart |
+| 13 | Tests | done — 72 SQL, 33 API, 23 web, 61 Dart |
 | 14 | Seed/demo data | done |
 | 15 | Env config example | done — `web/.env.local.example` |
-| 16 | Deployment instructions | **outstanding** |
-| 17 | Performance notes | measured; **write-up outstanding** |
+| 16 | Deployment instructions | done — `docs/deployment.md` |
+| 17 | Performance notes | done — `docs/performance.md` |
 | 18 | Security notes | done — `docs/security.md` |
 
 
@@ -287,14 +306,21 @@ directory with totals and a direction filter, person hero with settle/credit/deb
 activity summary strip and day grouping, quarter-step amount entry, and a settlement
 success state.
 
-`flutter analyze` is clean and all 32 tests pass, but the app does not render:
+**This was resolved in v1.0.0 and is kept only as the record of how it was found.** The
+cause was a stretch `Row` inside a scroll view failing layout silently — not the animation
+primitives suspected below. The reasoning that led there is in `docs/decisions.md` §22–§26,
+and `test/dashboard_screen_test.dart` now pins it.
+
+At the time: `flutter analyze` was clean and all 32 tests passed, but the app did not
+render:
 
 > **On Windows, the app launches, signs in and draws the rail, the brand and the sidebar
 > correctly — and the entire dashboard content area is blank.** No cards, no skeleton, no
 > empty state, no error note. The app bar renders ("Dashboard"), so the Scaffold is fine
 > and the body is not painting.
 
-Not yet diagnosed. The likely suspects, in order:
+The suspects considered at the time, in order — **all three were wrong**, which is the
+useful part of this record:
 
 1. `Reveal` / `Stagger` in `ui/motion.dart` — they wrap children in `flutter_animate`
    `.fadeIn()`. If the animation never runs, `both`-style fill leaves the child at opacity
@@ -316,15 +342,20 @@ flutter run -d windows \
 Run it **attached** (not the detached `.exe`) so the console shows exceptions — the
 detached binary was how this was first seen, and it swallowed whatever was thrown.
 
-Also outstanding on Flutter:
+Also outstanding on Flutter at the time — **all closed by the v1.0.0 rebuild**, which put
+every screen on one design system (`core/layout.dart`, `core/icons.dart`,
+`ui/widgets/app_page.dart`, `ui/widgets/forms.dart`):
 
-- [ ] Profile screen still has the pre-Accounic layout
-- [ ] Person timeline rows not restyled to match the web's
-- [ ] Search sheet only partly restyled
-- [ ] Android emulator: the Pixel_8 AVD hangs on a black screen with the default GPU;
-      it boots with `-gpu swiftshader_indirect -no-snapshot-load`. The app was never
-      confirmed running on Android — only on Windows.
-- [ ] No screenshots taken on a phone-width layout yet
+- [x] Profile screen still had the pre-Accounic layout
+- [x] Person timeline rows not restyled to match the web's
+- [x] Search sheet only partly restyled
+- [x] Phone-width layouts verified — by widget tests at real phone metrics, and by the
+      1.0.2–1.0.4 fixes that came out of using the APK on a device
+
+Still true: **no Android emulator runs on this machine.** The Pixel_8 AVD hangs on a black
+screen with the default GPU and needs `-gpu swiftshader_indirect -no-snapshot-load`.
+Android verification is therefore widget tests at phone metrics plus sideloading the APK —
+never an automated run on a device.
 
 ### 9.4 Also done this session
 
