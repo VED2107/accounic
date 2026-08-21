@@ -482,8 +482,7 @@ class _PersonTile extends StatelessWidget {
     return Column(
       children: [
         Hoverable(
-          builder: (context, hovered) => AnimatedContainer(
-            duration: Motion.fast,
+          builder: (context, hovered) => HoverFill(
             color: hovered ? palette.sunken : Colors.transparent,
             child: InkWell(
               onTap: () => context.push('/people/${person.personId}'),
@@ -535,9 +534,7 @@ class _PersonTile extends StatelessWidget {
                     const SizedBox(width: AppSpacing.md),
                     NetBadge(netMinor: person.netBalance, currency: currency),
                     const SizedBox(width: AppSpacing.xs),
-                    AnimatedSlide(
-                      duration: Motion.fast,
-                      curve: Motion.enter,
+                    HoverSlide(
                       offset: Offset(hovered ? 0.2 : 0, 0),
                       child: Icon(
                         AppIcons.forward,

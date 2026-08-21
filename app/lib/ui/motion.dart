@@ -51,6 +51,22 @@ class Motion {
   static const staggerStep = Duration(milliseconds: 40);
   static const staggerCap = 8;
 
+  /// True where a pointer can actually hover.
+  ///
+  /// The hover affordances cost two implicit animations per row — a fill and a
+  /// chevron nudge — and each of those is an `AnimationController` and a
+  /// `Ticker`. On a touch screen not one of them can ever fire, so on a 500-row
+  /// ledger that is a thousand controllers built to serve an event the device
+  /// cannot produce. Widgets that decorate hover check this and build the plain
+  /// thing instead.
+  static bool get pointerHovers => switch (defaultTargetPlatform) {
+        TargetPlatform.android ||
+        TargetPlatform.iOS ||
+        TargetPlatform.fuchsia =>
+          false,
+        _ => true,
+      };
+
   /// True when the platform asks for reduced motion, or when the app is being
   /// driven by a test.
   static bool of(BuildContext context) =>
@@ -109,20 +125,29 @@ class Stagger extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         for (final (index, child) in children.indexed)
-          child
-              .animate()
-              .fadeIn(
-                delay: delay + Motion.stagger(index),
-                duration: Motion.micro,
-                curve: Motion.enter,
-              )
-              .moveY(
-                begin: 6,
-                end: 0,
-                delay: delay + Motion.stagger(index),
-                duration: Motion.component,
-                curve: Motion.enter,
-              ),
+          // Past the cap every row already shared one delay, so the stagger was
+          // over — but each was still paying for an Animate, a controller and a
+          // ticker. On the people list, which fetches up to 500 rows, that was
+          // 500 controllers to choreograph the eight the user can see. Rows past
+          // the cap are below the fold when the screen settles; they render
+          // plain.
+          if (index > Motion.staggerCap)
+            child
+          else
+            child
+                .animate()
+                .fadeIn(
+                  delay: delay + Motion.stagger(index),
+                  duration: Motion.micro,
+                  curve: Motion.enter,
+                )
+                .moveY(
+                  begin: 6,
+                  end: 0,
+                  delay: delay + Motion.stagger(index),
+                  duration: Motion.component,
+                  curve: Motion.enter,
+                ),
       ],
     );
   }
@@ -299,11 +324,50 @@ class _HoverableState extends State<Hoverable> {
 
   @override
   Widget build(BuildContext context) {
+    if (!Motion.pointerHovers) return widget.builder(context, false);
+
     return MouseRegion(
       cursor: widget.cursor,
       onEnter: (_) => _set(true),
       onExit: (_) => _set(false),
       child: widget.builder(context, _hovered),
+    );
+  }
+}
+
+/// A background tint that eases in under a hovering pointer, and is a plain
+/// [ColoredBox] on a device with no pointer.
+///
+/// [AnimatedContainer] builds its controller whether or not its value will ever
+/// change, so on a touch screen it is a per-row ticker animating nothing.
+class HoverFill extends StatelessWidget {
+  const HoverFill({super.key, required this.color, required this.child});
+
+  final Color color;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!Motion.pointerHovers) return ColoredBox(color: color, child: child);
+    return AnimatedContainer(duration: Motion.fast, color: color, child: child);
+  }
+}
+
+/// A child nudged aside by a hovering pointer, and left where it is otherwise.
+class HoverSlide extends StatelessWidget {
+  const HoverSlide({super.key, required this.offset, required this.child});
+
+  final Offset offset;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!Motion.pointerHovers) return child;
+    return AnimatedSlide(
+      duration: Motion.fast,
+      curve: Motion.enter,
+      offset: offset,
+      child: child,
     );
   }
 }

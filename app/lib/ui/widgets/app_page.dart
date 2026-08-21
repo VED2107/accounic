@@ -70,16 +70,20 @@ class AppPage extends StatelessWidget {
     final compact = context.isCompact;
     final gutter = context.gutter;
 
-    Widget content = ListView(
+    // One child holding a Column of everything is a ListView that is not a
+    // ListView: a single item is always in view, so every section on the page
+    // is built, laid out and kept alive whether or not it is anywhere near the
+    // screen. Handing the sections over individually is what makes the viewport
+    // do its job.
+    Widget content = ListView.builder(
       controller: scrollController,
       padding: EdgeInsets.fromLTRB(gutter, compact ? AppSpacing.sm : AppSpacing.lg, gutter,
           bottomPadding + MediaQuery.paddingOf(context).bottom),
-      children: [
-        _Constrain(
-          width: width,
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
-        ),
-      ],
+      itemCount: children.length,
+      itemBuilder: (context, index) => _Constrain(
+        width: width,
+        child: children[index],
+      ),
     );
 
     if (onRefresh != null) {

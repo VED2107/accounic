@@ -431,9 +431,9 @@ class _UserRow extends StatelessWidget {
       children: [
         Hoverable(
           cursor: SystemMouseCursors.basic,
-          builder: (context, hovered) => AnimatedContainer(
-            duration: Motion.fast,
+          builder: (context, hovered) => HoverFill(
             color: hovered ? palette.sunken : Colors.transparent,
+            child: Padding(
             padding: const EdgeInsets.fromLTRB(
               AppSpacing.lg,
               AppSpacing.md,
@@ -528,6 +528,7 @@ class _UserRow extends StatelessWidget {
                     onSetAdmin: onSetAdmin,
                   ),
               ],
+            ),
             ),
           ),
         ),
