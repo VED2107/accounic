@@ -65,6 +65,8 @@ abstract final class AppIcons {
   static const IconData person = LucideIcons.user;
   static const IconData business = LucideIcons.building2;
   static const IconData phone = LucideIcons.phone;
+  static const IconData email = LucideIcons.mail;
+  static const IconData address = LucideIcons.mapPin;
   static const IconData currency = LucideIcons.coins;
   static const IconData date = LucideIcons.calendar;
   static const IconData note = LucideIcons.fileText;

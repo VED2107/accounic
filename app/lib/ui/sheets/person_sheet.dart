@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/failure.dart';
+import '../../core/icons.dart';
+import '../../core/layout.dart';
 import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../providers.dart';
+import '../widgets/forms.dart';
 import 'sheet_scaffold.dart';
 
 /// Create or edit a person / business (context.md §5).
@@ -101,27 +104,48 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
 
   @override
   Widget build(BuildContext context) {
+    // Phone and email share a line only where a line is wide enough to hold two
+    // fields. On a phone that split leaves roughly 150px each, which is narrower
+    // than the values they hold — a number wraps and an address truncates.
+    final compact = context.isCompact;
+
+    final phone = AppTextField(
+      label: 'Phone',
+      controller: _phone,
+      icon: AppIcons.phone,
+      keyboardType: TextInputType.phone,
+      textInputAction: TextInputAction.next,
+      maxLength: 32,
+      hint: '+91 98200 11223',
+    );
+
+    final email = AppTextField(
+      label: 'Email',
+      controller: _email,
+      icon: AppIcons.email,
+      keyboardType: TextInputType.emailAddress,
+      textInputAction: TextInputAction.next,
+      hint: 'Optional',
+    );
+
     return SheetScaffold(
       title: _isEdit ? 'Edit details' : 'Add person or business',
+      icon: _isEdit ? AppIcons.edit : AppIcons.addPerson,
       error: _error,
       busy: _saving,
       primaryLabel: _isEdit ? 'Save changes' : 'Add person',
       onPrimary: _save,
       children: [
-        _Labelled(
+        AppTextField(
           label: 'Name',
-          child: TextField(
-            controller: _name,
-            autofocus: true,
-            textCapitalization: TextCapitalization.words,
-            maxLength: 120,
-            decoration: const InputDecoration(
-              hintText: 'Rahul Traders',
-              counterText: '',
-            ),
-          ),
+          controller: _name,
+          autofocus: true,
+          icon: AppIcons.person,
+          textInputAction: TextInputAction.next,
+          maxLength: 120,
+          hint: 'Rahul Traders',
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSpacing.lg),
 
         _Labelled(
           label: 'Type',
@@ -135,66 +159,46 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
                     onTap: () => setState(() => _type = option),
                   ),
                 ),
-                if (option != PartyType.values.last) const SizedBox(width: 10),
+                if (option != PartyType.values.last)
+                  const SizedBox(width: AppSpacing.sm + 2),
               ],
             ],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSpacing.lg),
 
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: _Labelled(
-                label: 'Phone',
-                child: TextField(
-                  controller: _phone,
-                  keyboardType: TextInputType.phone,
-                  maxLength: 32,
-                  decoration: const InputDecoration(
-                    hintText: '+91 98200 11223',
-                    counterText: '',
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _Labelled(
-                label: 'Email',
-                child: TextField(
-                  controller: _email,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(hintText: 'Optional'),
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
+        if (compact) ...[
+          phone,
+          const SizedBox(height: AppSpacing.lg),
+          email,
+        ] else
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: phone),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(child: email),
+            ],
+          ),
+        const SizedBox(height: AppSpacing.lg),
 
-        _Labelled(
+        AppTextField(
           label: 'Address',
-          child: TextField(
-            controller: _address,
-            maxLength: 500,
-            decoration: const InputDecoration(hintText: 'Optional', counterText: ''),
-          ),
+          controller: _address,
+          icon: AppIcons.address,
+          textInputAction: TextInputAction.next,
+          maxLength: 500,
+          hint: 'Optional',
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSpacing.lg),
 
-        _Labelled(
+        AppTextField(
           label: 'Notes',
-          child: TextField(
-            controller: _notes,
-            maxLines: 3,
-            maxLength: 2000,
-            decoration: const InputDecoration(
-              hintText: 'Payment terms, reference numbers, anything worth remembering.',
-              counterText: '',
-            ),
-          ),
+          controller: _notes,
+          icon: AppIcons.note,
+          maxLines: 3,
+          maxLength: 2000,
+          hint: 'Payment terms, reference numbers, anything worth remembering.',
         ),
       ],
     );
@@ -212,8 +216,15 @@ class _Labelled extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 6),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: context.money.inkMuted,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
         child,
       ],
     );
@@ -229,19 +240,21 @@ class _Choice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.money;
+
     return Material(
-      color: selected ? context.colors.primaryContainer : context.colors.surface,
-      borderRadius: BorderRadius.circular(10),
+      color: selected ? palette.accentSoft : palette.sunken,
+      borderRadius: AppRadius.fieldAll,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: AppRadius.fieldAll,
         child: Container(
-          height: 44,
+          height: 46,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: AppRadius.fieldAll,
             border: Border.all(
-              color: selected ? context.colors.primary : context.colors.outline,
+              color: selected ? palette.accentLine : palette.line,
               width: selected ? 1.5 : 1,
             ),
           ),
@@ -250,7 +263,7 @@ class _Choice extends StatelessWidget {
             style: TextStyle(
               fontWeight: FontWeight.w600,
               fontSize: 14,
-              color: selected ? context.colors.primary : context.colors.onSurface,
+              color: selected ? context.colors.primary : palette.inkMuted,
             ),
           ),
         ),

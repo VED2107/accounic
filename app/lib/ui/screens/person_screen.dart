@@ -454,8 +454,13 @@ class _Action extends StatelessWidget {
   }
 }
 
-/// Edit, archive, delete. Delete only exists while deleting is possible, so it
-/// is never offered and then refused.
+/// Edit, archive, delete.
+///
+/// Delete is always listed. Hiding it while the account has history meant the
+/// menu simply had no Delete in it, which reads as the action being broken
+/// rather than as being unavailable — and it left the person no route to the
+/// thing they should do instead. It is shown greyed with the count that blocks
+/// it and the alternative named, so the menu answers the question it raises.
 class PersonMenu extends ConsumerWidget {
   const PersonMenu({super.key, required this.page});
 
@@ -466,16 +471,45 @@ class PersonMenu extends ConsumerWidget {
     final person = page.person;
     final palette = context.money;
 
-    Widget item(IconData icon, String label, {Color? tone}) => Row(
+    Widget item(IconData icon, String label, {Color? tone, String? note}) => Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: AppIconSize.sm, color: tone ?? palette.inkMuted),
+            Padding(
+              padding: EdgeInsets.only(top: note == null ? 0 : 1),
+              child: Icon(icon, size: AppIconSize.sm, color: tone ?? palette.inkMuted),
+            ),
             const SizedBox(width: AppSpacing.md),
-            Text(
-              label,
-              style: TextStyle(fontSize: 13.5, color: tone ?? context.colors.onSurface),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      color: tone ?? context.colors.onSurface,
+                    ),
+                  ),
+                  if (note != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      note,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        height: 1.35,
+                        color: palette.inkFaint,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ],
         );
+
+    final transactions = page.balance.transactionCount;
+    final deletable = transactions == 0;
 
     return PopupMenuButton<String>(
       tooltip: 'More',
@@ -542,11 +576,19 @@ class PersonMenu extends ConsumerWidget {
           value: person.isArchived ? 'restore' : 'archive',
           child: item(AppIcons.archive, person.isArchived ? 'Restore' : 'Archive'),
         ),
-        if (page.balance.transactionCount == 0)
-          PopupMenuItem(
-            value: 'delete',
-            child: item(AppIcons.delete, 'Delete', tone: palette.payable),
+        PopupMenuItem(
+          value: 'delete',
+          enabled: deletable,
+          child: item(
+            AppIcons.delete,
+            'Delete',
+            tone: deletable ? palette.payable : palette.inkFaint,
+            note: deletable
+                ? null
+                : '$transactions ${transactions == 1 ? 'transaction' : 'transactions'} '
+                    'on this account — archive instead',
           ),
+        ),
       ],
     );
   }
