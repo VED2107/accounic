@@ -132,116 +132,150 @@ class SheetScaffold extends StatelessWidget {
   Widget build(BuildContext context) {
     final compact = context.isCompact;
     final palette = context.money;
-    final insets = MediaQuery.viewInsetsOf(context).bottom;
+    final media = MediaQuery.of(context);
+    final insets = media.viewInsets.bottom;
+
+    // The height that is actually left once the keyboard has taken its share.
+    // Sizing against the full screen instead is what put the actions underneath
+    // the keyboard: the panel was allowed to be taller than the space it had, so
+    // its foot hung below the fold.
+    final available = media.size.height - insets;
+    final maxHeight = available * (compact ? 0.94 : 0.86);
+
+    // Cancel and the primary action are **outside** the scroll view.
+    //
+    // They used to be the last children inside it, which meant that whenever the
+    // fields were taller than the sheet — which on a phone with a keyboard open
+    // is always — the only way to reach Save was to scroll past every field. A
+    // control that has to be hunted for reads as a control that is not there.
+    // Pinned, they occupy the foot of the panel at every height, and the fields
+    // scroll behind them.
+    final footer = Padding(
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.xl,
+        AppSpacing.md,
+        AppSpacing.xl,
+        compact ? AppSpacing.xl : AppSpacing.xl,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // The error sits with the actions rather than up under the title, so
+          // a refused save is answered where the user is looking when it is
+          // refused. It animates open so the panel does not jump.
+          AnimatedSize(
+            duration: Motion.fast,
+            curve: Motion.enter,
+            alignment: Alignment.bottomCenter,
+            child: error == null
+                ? const SizedBox(width: double.infinity)
+                : Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                    child: ErrorNote(error!),
+                  ),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  // Pops *nothing*, never `false`. This chrome is shared by
+                  // sheets whose routes carry different result types — the
+                  // person sheet's is a `Route<Person>` — and popping a bool
+                  // into one of those throws a type error instead of closing,
+                  // which is exactly how Cancel came to do nothing at all.
+                  // Every caller already reads a null result as "cancelled".
+                  onPressed: busy ? null : () => Navigator.of(context).pop(),
+                  child: Text(cancelLabel),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                flex: 2,
+                child: _PrimaryButton(
+                  label: primaryLabel,
+                  busy: busy,
+                  color: primaryColor,
+                  onPressed: onPrimary,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
 
     final body = ConstrainedBox(
-      constraints: BoxConstraints(
-        maxWidth: maxWidth,
-        maxHeight: MediaQuery.sizeOf(context).height * (compact ? 0.92 : 0.86),
-      ),
-      child: SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(
-          AppSpacing.xl,
-          compact ? AppSpacing.xs : AppSpacing.xl,
-          AppSpacing.xl,
-          AppSpacing.xxl,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (icon != null) ...[
-                  Container(
-                    width: 36,
-                    height: 36,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: palette.sunken,
-                      borderRadius: BorderRadius.circular(11),
-                      border: Border.all(color: palette.line),
-                    ),
-                    child: Icon(icon, size: AppIconSize.md, color: palette.inkMuted),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                ],
-                Expanded(
-                  child: Column(
+      constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: maxHeight),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                AppSpacing.xl,
+                compact ? AppSpacing.xs : AppSpacing.xl,
+                AppSpacing.xl,
+                AppSpacing.sm,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(title, style: context.display(18)),
-                      if (subtitle != null) ...[
-                        const SizedBox(height: AppSpacing.xs),
-                        Text(
-                          subtitle!,
-                          style: TextStyle(
-                            fontSize: 13,
-                            height: 1.45,
-                            color: palette.inkMuted,
+                      if (icon != null) ...[
+                        Container(
+                          width: 36,
+                          height: 36,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: palette.sunken,
+                            borderRadius: BorderRadius.circular(11),
+                            border: Border.all(color: palette.line),
                           ),
+                          child: Icon(icon, size: AppIconSize.md, color: palette.inkMuted),
                         ),
+                        const SizedBox(width: AppSpacing.md),
                       ],
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(title, style: context.display(18)),
+                            if (subtitle != null) ...[
+                              const SizedBox(height: AppSpacing.xs),
+                              Text(
+                                subtitle!,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  height: 1.45,
+                                  color: palette.inkMuted,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      if (!compact)
+                        AppIconAction(
+                          icon: AppIcons.close,
+                          tooltip: 'Close',
+                          onPressed: busy ? null : () => Navigator.of(context).pop(),
+                        ),
                     ],
                   ),
-                ),
-                if (!compact)
-                  AppIconAction(
-                    icon: AppIcons.close,
-                    tooltip: 'Close',
-                    onPressed: busy ? null : () => Navigator.of(context).pop(),
-                  ),
-              ],
+                  const SizedBox(height: AppSpacing.xl),
+                  ...children,
+                ],
+              ),
             ),
-            const SizedBox(height: AppSpacing.xl),
-
-            // The error slot animates open rather than appearing, so a failed
-            // submit does not make the whole sheet jump.
-            AnimatedSize(
-              duration: Motion.fast,
-              curve: Motion.enter,
-              alignment: Alignment.topCenter,
-              child: error == null
-                  ? const SizedBox(width: double.infinity)
-                  : Padding(
-                      padding: const EdgeInsets.only(bottom: AppSpacing.lg),
-                      child: ErrorNote(error!),
-                    ),
-            ),
-
-            ...children,
-
-            const SizedBox(height: AppSpacing.xxl),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    // Pops *nothing*, never `false`. This chrome is shared by
-                    // sheets whose routes carry different result types — the
-                    // person sheet's is a `Route<Person>` — and popping a bool
-                    // into one of those throws a type error instead of closing,
-                    // which is exactly how Cancel came to do nothing at all.
-                    // Every caller already reads a null result as "cancelled".
-                    onPressed: busy ? null : () => Navigator.of(context).pop(),
-                    child: Text(cancelLabel),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  flex: 2,
-                  child: _PrimaryButton(
-                    label: primaryLabel,
-                    busy: busy,
-                    color: primaryColor,
-                    onPressed: onPrimary,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+          ),
+          footer,
+        ],
       ),
     );
 

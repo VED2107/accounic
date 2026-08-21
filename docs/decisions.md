@@ -573,3 +573,36 @@ that has been settled, so reaching a fully retracted account means reversing the
 settlement first — and `db/tests/03_delete_person.sql` walks exactly that path,
 because the first version of that test asserted a state the engine will not allow
 to exist.
+
+---
+
+## 33. A sheet's actions do not scroll
+
+Save and Cancel were the last children *inside* the sheet's scroll view, and the
+panel was sized against the full screen height rather than against what was left
+after the keyboard.
+
+On a phone that combination puts the actions underneath the keyboard. Measured on
+a 780pt screen with a 320pt keyboard — 460pt visible — they were laid out at
+y≈717. The person sheet autofocuses its name field, so the keyboard is up from
+the moment the sheet opens: this was the *normal* state of adding a person, not an
+edge case. The only way to reach Save was to scroll past every field, which reads
+as the buttons not being there at all.
+
+Two changes, both in the shared chrome so every sheet gets them:
+
+**The panel is sized against `size.height - viewInsets.bottom`.** Allowing it to
+be taller than the space it actually has is what let its foot hang below the fold.
+
+**The actions are pinned outside the scroll view**, in a footer at the panel's
+foot, with the fields scrolling behind them. A primary action that has to be
+hunted for is a primary action that is missing.
+
+The error note moved down to sit with them, so a refused save is answered where
+the user is looking when it is refused rather than up under the title, off screen
+past the fields.
+
+`app/test/sheet_actions_test.dart` asserts the property rather than the geometry —
+that both actions are inside the visible viewport — across four keyboard heights,
+for the shared chrome and for the person sheet specifically. Numbers can move
+without the test starting to lie.
