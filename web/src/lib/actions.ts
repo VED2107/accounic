@@ -113,6 +113,7 @@ export async function updatePerson(
 
   revalidatePath(`/people/${personId}`);
   revalidatePath('/people');
+  revalidatePath('/');
   return ok(data as Person);
 }
 
@@ -196,6 +197,7 @@ export async function updateTransaction(
   if (error) return fail(error, UNCHANGED.transaction);
 
   revalidatePath(`/people/${personId}`);
+  revalidatePath('/people');
   revalidatePath('/activity');
   revalidatePath('/');
   return ok(data as LedgerMutation);
@@ -216,6 +218,7 @@ export async function voidTransaction(
   }
 
   revalidatePath(`/people/${personId}`);
+  revalidatePath('/people');
   revalidatePath('/activity');
   revalidatePath('/');
   return ok(data as LedgerMutation);
@@ -269,6 +272,7 @@ export async function voidSettlement(
   }
 
   revalidatePath(`/people/${personId}`);
+  revalidatePath('/people');
   revalidatePath('/activity');
   revalidatePath('/');
   return ok(data as LedgerMutation);

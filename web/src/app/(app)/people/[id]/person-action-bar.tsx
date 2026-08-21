@@ -102,6 +102,10 @@ export function PersonActionBar({
         </div>
       </div>
 
+      {/* Always offered, never silently absent. Removing the control when there
+          is history reads as the action being broken rather than as it being
+          unavailable, and it names no alternative — so it is disabled instead,
+          carrying the count that blocks it and pointing at Archive. */}
       {balance.transaction_count === 0 ? (
         <button
           type="button"
@@ -110,7 +114,15 @@ export function PersonActionBar({
         >
           Delete this person
         </button>
-      ) : null}
+      ) : (
+        <p className="text-[0.75rem] text-ink-faint">
+          <span className="text-ink-muted">Delete this person</span>
+          {' — '}
+          {balance.transaction_count}{' '}
+          {balance.transaction_count === 1 ? 'transaction' : 'transactions'} on this
+          account. Archive them instead.
+        </p>
+      )}
 
       <TransactionSheet
         open={addType !== null}
