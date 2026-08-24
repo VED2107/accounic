@@ -47,7 +47,6 @@ class _SearchSheetState extends ConsumerState<_SearchSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final currency = ref.watch(currencyProvider);
     final async = ref.watch(searchProvider(_query));
     final trimmed = _query.trim();
 
@@ -134,7 +133,8 @@ class _SearchSheetState extends ConsumerState<_SearchSheet> {
                                       : Text(person.phone!,
                                           style: const TextStyle(fontSize: 12)),
                                   trailing: NetBadge(
-                                      netMinor: person.netBalance, currency: currency),
+                                      netMinor: person.netBalance,
+                                      currency: person.currency),
                                 ),
                             ],
                             if (results.transactions.isNotEmpty) ...[
@@ -155,7 +155,7 @@ class _SearchSheetState extends ConsumerState<_SearchSheet> {
                                     style: const TextStyle(fontSize: 12),
                                   ),
                                   trailing: Text(
-                                    formatMinor(txn.amountMinor, currency: currency),
+                                    formatMinor(txn.amountMinor, currency: txn.currency),
                                     style: TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w600,

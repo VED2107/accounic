@@ -28,7 +28,11 @@ export function ActivityRow({
   // "Receivable", not "incoming": what the row is coloured by is which way the
   // debt runs, which is the question the reader is actually asking.
   const receivable = entryIsReceivable(item.entry_type);
-  const kind = entryLabel(item.entry_kind, item.entry_type);
+  const kind = item.is_opening ? 'Opening balance' : entryLabel(item.entry_kind, item.entry_type);
+
+  // Each row carries its own currency, because a workspace-wide feed is exactly
+  // where two of them sit next to each other (upgrade §9).
+  const rowCurrency = item.currency ?? currency;
 
   const meta = [item.note, showDate ? friendlyDate(item.entry_date) : null]
     .filter(Boolean)
@@ -72,7 +76,7 @@ export function ActivityRow({
 
       <Money
         minor={item.amount_minor}
-        currency={currency}
+        currency={rowCurrency}
         tone={isSettlement ? 'neutral' : receivable ? 'receivable' : 'payable'}
         className="shrink-0 text-[0.875rem] font-semibold"
       />

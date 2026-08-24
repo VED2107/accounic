@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'data/auth_repository.dart';
 import 'data/ledger_repository.dart';
 import 'data/models.dart';
+import 'data/rates_repository.dart';
 
 /// Application state wiring (context.md §20).
 ///
@@ -25,6 +26,10 @@ final authRepositoryProvider = Provider<AuthRepository>(
 
 final ledgerRepositoryProvider = Provider<LedgerRepository>(
   (ref) => LedgerRepository(ref.watch(supabaseClientProvider)),
+);
+
+final ratesRepositoryProvider = Provider<RatesRepository>(
+  (ref) => RatesRepository(ref.watch(supabaseClientProvider)),
 );
 
 /// Auth changes drive routing. Seeded with the current session so the first
@@ -50,6 +55,21 @@ final currencyProvider = Provider<String>((ref) {
         data: (me) => me?.currency ?? 'INR',
         orElse: () => 'INR',
       );
+});
+
+/// The rate for one currency pair (upgrade §5).
+///
+/// Kept alive rather than auto-disposed: the answer is good for hours, and a
+/// sheet that reopens should not pay for a second lookup. A pair with no rate
+/// resolves to null, which every caller reads as "cannot convert" — never as
+/// zero.
+final rateProvider =
+    FutureProvider.autoDispose.family<RateQuote?, ({String from, String to})>((ref, pair) {
+  ref.keepAlive();
+  if (pair.from.isEmpty || pair.to.isEmpty || pair.from == pair.to) {
+    return Future.value(pair.from.isEmpty ? null : RateQuote.identity(pair.from));
+  }
+  return ref.watch(ratesRepositoryProvider).rate(pair.from, pair.to);
 });
 
 final dashboardProvider = FutureProvider.autoDispose<Dashboard>((ref) {

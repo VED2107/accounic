@@ -24,3 +24,7 @@ Screenshot*.png
 
 # Packaged desktop artifacts (built by app/windows/installer/accounic.iss).
 app/build/installer/
+
+# Data-safety snapshots: they hold real person ids and real balances, so they
+# are evidence for a migration, not repository contents (db/tools/snapshot.mjs).
+db/tools/snapshot-*.json

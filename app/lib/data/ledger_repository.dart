@@ -143,6 +143,12 @@ class LedgerRepository {
   /* Writes                                                                  */
   /* ---------------------------------------------------------------------- */
 
+  /// Creates a person, optionally in their own currency and optionally with an
+  /// opening balance (upgrade §1, §4).
+  ///
+  /// The opening balance goes through the same conversion path as a
+  /// transaction, so "they owe me ₹5,000" on a dirham account records the rupee
+  /// figure, the rate, and the dirham amount the database derived from them.
   Future<Person> createPerson({
     required String name,
     PartyType type = PartyType.person,
@@ -150,6 +156,13 @@ class LedgerRepository {
     String? email,
     String? address,
     String? notes,
+    String? currency,
+    OpeningDirection opening = OpeningDirection.none,
+    int? openingAmountMinor,
+    int? openingEnteredMinor,
+    String? openingEnteredCurrency,
+    int? openingRateE9,
+    String? openingRateSource,
   }) async {
     try {
       final data = await _client.rpc('create_person', params: {
@@ -159,6 +172,13 @@ class LedgerRepository {
         'p_email': email,
         'p_address': address,
         'p_notes': notes,
+        'p_currency': currency,
+        'p_opening_direction': opening.wire,
+        'p_opening_amount_minor': openingAmountMinor,
+        'p_opening_entered_minor': openingEnteredMinor,
+        'p_opening_entered_currency': openingEnteredCurrency,
+        'p_opening_rate_e9': openingRateE9,
+        'p_opening_rate_source': openingRateSource,
       });
       return Person.fromJson(Map<String, dynamic>.from(data as Map));
     } catch (error, stack) {
@@ -166,6 +186,12 @@ class LedgerRepository {
     }
   }
 
+  /// Updates a person.
+  ///
+  /// Changing [currency] on an account that already holds entries restates them
+  /// and is refused unless [restateConfirmed] is set, because it moves numbers
+  /// the user has already seen. Every restated row keeps what was originally
+  /// entered, so nothing is lost (upgrade §1).
   Future<Person> updatePerson({
     required String personId,
     required String name,
@@ -174,6 +200,9 @@ class LedgerRepository {
     String? email,
     String? address,
     String? notes,
+    String? currency,
+    bool restateConfirmed = false,
+    int? restateRateE9,
   }) async {
     try {
       final data = await _client.rpc('update_person', params: {
@@ -184,6 +213,9 @@ class LedgerRepository {
         'p_email': email,
         'p_address': address,
         'p_notes': notes,
+        'p_currency': currency,
+        'p_restate_confirmed': restateConfirmed,
+        'p_restate_rate_e9': restateRateE9,
       });
       return Person.fromJson(Map<String, dynamic>.from(data as Map));
     } catch (error, stack) {
@@ -212,12 +244,23 @@ class LedgerRepository {
     }
   }
 
+  /// Records a transaction.
+  ///
+  /// When the user typed in a currency other than the account's, the *entered*
+  /// figure and the rate travel and the database derives the account amount
+  /// from them — the client never sends a converted number it worked out
+  /// itself, which is what keeps the three clients agreeing to the last minor
+  /// unit (upgrade §2, §5).
   Future<LedgerMutation> createTransaction({
     required String personId,
     required TxnType type,
-    required int amountMinor,
     required String date,
+    int? amountMinor,
     String? description,
+    int? enteredAmountMinor,
+    String? enteredCurrency,
+    int? exchangeRateE9,
+    String? rateSource,
   }) async {
     try {
       final data = await _client.rpc('create_transaction', params: {
@@ -226,6 +269,10 @@ class LedgerRepository {
         'p_amount_minor': amountMinor,
         'p_date': date,
         'p_description': description,
+        'p_entered_amount_minor': enteredAmountMinor,
+        'p_entered_currency': enteredCurrency,
+        'p_exchange_rate_e9': exchangeRateE9,
+        'p_rate_source': rateSource,
       });
       return LedgerMutation.fromJson(Map<String, dynamic>.from(data as Map));
     } catch (error, stack) {
@@ -236,9 +283,13 @@ class LedgerRepository {
   Future<LedgerMutation> updateTransaction({
     required String transactionId,
     required TxnType type,
-    required int amountMinor,
     required String date,
+    int? amountMinor,
     String? description,
+    int? enteredAmountMinor,
+    String? enteredCurrency,
+    int? exchangeRateE9,
+    String? rateSource,
   }) async {
     try {
       final data = await _client.rpc('update_transaction', params: {
@@ -247,6 +298,10 @@ class LedgerRepository {
         'p_amount_minor': amountMinor,
         'p_date': date,
         'p_description': description,
+        'p_entered_amount_minor': enteredAmountMinor,
+        'p_entered_currency': enteredCurrency,
+        'p_exchange_rate_e9': exchangeRateE9,
+        'p_rate_source': rateSource,
       });
       return LedgerMutation.fromJson(Map<String, dynamic>.from(data as Map));
     } catch (error, stack) {
@@ -273,6 +328,42 @@ class LedgerRepository {
   /// When [transactionId] is supplied the direction is left null on purpose:
   /// the database derives it from that transaction's type, which removes a
   /// whole class of client mistakes (context.md §9).
+  /// Sets, replaces or clears a person's opening balance (upgrade §3).
+  ///
+  /// Replacing one retracts the previous entry rather than editing it, so the
+  /// correction shows in the history instead of quietly rewriting what the
+  /// account was opened with. That is the database's behaviour, not this
+  /// method's.
+  Future<void> setOpeningBalance({
+    required String personId,
+    required OpeningDirection direction,
+    int? amountMinor,
+    String? date,
+    int? enteredAmountMinor,
+    String? enteredCurrency,
+    int? exchangeRateE9,
+    String? rateSource,
+  }) async {
+    try {
+      await _client.rpc('set_person_opening_balance', params: {
+        'p_person_id': personId,
+        'p_direction': direction.wire,
+        'p_amount_minor': amountMinor,
+        'p_date': date,
+        'p_entered_amount_minor': enteredAmountMinor,
+        'p_entered_currency': enteredCurrency,
+        'p_rate_e9': exchangeRateE9,
+        'p_rate_source': rateSource,
+      });
+    } catch (error, stack) {
+      throw Failure.from(
+        error,
+        'That opening balance could not be saved. Your balance has not been changed.',
+        stack,
+      );
+    }
+  }
+
   Future<LedgerMutation> createSettlement({
     required String personId,
     required int amountMinor,

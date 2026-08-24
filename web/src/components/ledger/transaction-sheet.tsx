@@ -9,8 +9,11 @@ import { AmountInput } from '@/components/ledger/amount-input';
 import { PersonPicker, type PickedPerson } from '@/components/ledger/person-picker';
 import { ArrowDownIcon, ArrowUpIcon } from '@/components/icons';
 import { useToast } from '@/components/ui/toast';
+import { CurrencySelect } from '@/components/ledger/currency-select';
+import { ConversionFields, ConversionNote, useRate } from '@/components/ledger/conversion';
 import { createTransaction, updateTransaction } from '@/lib/actions';
 import { minorToInput } from '@/lib/money';
+import { FALLBACK_CURRENCY, normaliseCode } from '@/lib/currencies';
 import { TYPE_FOR_FLOW, isReceivable, txnEffect, txnMeaning } from '@/lib/direction';
 import { todayIso } from '@/lib/dates';
 import type { ActionResult, TxnType } from '@/lib/types';
@@ -21,6 +24,9 @@ interface EditableTransaction {
   amount_minor: number;
   transaction_date: string;
   description: string | null;
+  /** Present when the entry was made in another currency (upgrade §2). */
+  entered_amount_minor?: number | null;
+  entered_currency?: string | null;
 }
 
 /**
@@ -53,6 +59,18 @@ export function TransactionSheet({
   const [picked, setPicked] = useState<PickedPerson | null>(person ?? null);
   const [type, setType] = useState<TxnType>(defaultType ?? transaction?.type ?? 'credit');
 
+  // The account currency is the *person's*, not the workspace's. `currency` is
+  // the fallback for the moment before anyone has been picked.
+  const accountCurrency =
+    normaliseCode(picked?.currency ?? person?.currency ?? currency) || FALLBACK_CURRENCY;
+
+  // What the user is typing in. Defaults to the account's, and is offered as a
+  // choice only because the common real case — "I gave Ahmed ₹1,000" against a
+  // dirham account — is exactly the one where they differ.
+  const [entryCurrency, setEntryCurrency] = useState(accountCurrency);
+  const [amountMinor, setAmountMinor] = useState<number | null>(null);
+  const rate = useRate(entryCurrency, accountCurrency);
+
   const action =
     mode === 'edit' && person
       ? updateTransaction.bind(null, person.id)
@@ -67,7 +85,14 @@ export function TransactionSheet({
     if (!open) return;
     setPicked(person ?? null);
     setType(defaultType ?? transaction?.type ?? 'credit');
+    setAmountMinor(null);
   }, [open, person, transaction, defaultType]);
+
+  // Following the account keeps the ordinary case free of decisions: pick a
+  // dirham account and you are typing dirhams until you say otherwise.
+  useEffect(() => {
+    setEntryCurrency(normaliseCode(transaction?.entered_currency ?? accountCurrency));
+  }, [accountCurrency, transaction]);
 
   // `state` from useActionState stays `ok` for the life of the component, so an
   // effect keyed on it alone fires again every time anything else in this
@@ -125,11 +150,41 @@ export function TransactionSheet({
         <TypeToggle value={type} onChange={setType} />
         <input type="hidden" name="type" value={type} />
 
-        <AmountInput
-          currency={currency}
-          autoFocus={mode === 'edit' || Boolean(person)}
-          defaultValue={transaction ? minorToInput(transaction.amount_minor) : ''}
-          error={fieldError('amount')}
+        <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
+          <AmountInput
+            currency={entryCurrency}
+            autoFocus={mode === 'edit' || Boolean(person)}
+            defaultValue={
+              transaction
+                ? minorToInput(
+                    transaction.entered_amount_minor ?? transaction.amount_minor,
+                    transaction.entered_currency ?? accountCurrency,
+                  )
+                : ''
+            }
+            error={fieldError('amount')}
+            onValidChange={setAmountMinor}
+          />
+          <CurrencySelect
+            name="entry_currency_visible"
+            label="In"
+            value={entryCurrency}
+            onChange={setEntryCurrency}
+            hint={entryCurrency === accountCurrency ? 'Account currency' : undefined}
+            className="sm:w-56"
+          />
+        </div>
+
+        <ConversionNote
+          amountMinor={amountMinor}
+          from={entryCurrency}
+          to={accountCurrency}
+          state={rate}
+        />
+        <ConversionFields
+          entryCurrency={entryCurrency}
+          accountCurrency={accountCurrency}
+          state={rate}
         />
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -155,7 +210,7 @@ export function TransactionSheet({
         </div>
 
         <SubmitRow
-          disabled={mode === 'create' && !picked}
+          disabled={(mode === 'create' && !picked) || rate.unavailable || rate.loading}
           label={mode === 'edit' ? 'Save changes' : 'Save transaction'}
           onCancel={onClose}
         />

@@ -134,12 +134,15 @@ class SheetScaffold extends StatelessWidget {
     final palette = context.money;
     final media = MediaQuery.of(context);
     final insets = media.viewInsets.bottom;
+    // The gesture bar and the notch. A sheet that ends exactly at the screen
+    // edge puts its primary action under the Android navigation pill.
+    final safeBottom = media.padding.bottom;
 
     // The height that is actually left once the keyboard has taken its share.
     // Sizing against the full screen instead is what put the actions underneath
     // the keyboard: the panel was allowed to be taller than the space it had, so
     // its foot hung below the fold.
-    final available = media.size.height - insets;
+    final available = media.size.height - insets - safeBottom;
     final maxHeight = available * (compact ? 0.94 : 0.86);
 
     // Cancel and the primary action are **outside** the scroll view.
@@ -155,7 +158,9 @@ class SheetScaffold extends StatelessWidget {
         AppSpacing.xl,
         AppSpacing.md,
         AppSpacing.xl,
-        compact ? AppSpacing.xl : AppSpacing.xl,
+        // With the keyboard up the OS already reserves the gesture area, so
+        // adding it again leaves a visible dead band under the buttons.
+        AppSpacing.xl + (compact && insets == 0 ? safeBottom * 0.5 : 0),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -178,15 +183,22 @@ class SheetScaffold extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: OutlinedButton(
+                child: SizedBox(
+                  // 48dp: the Material minimum for a touch target, and this
+                  // sits in the thumb zone directly above the keyboard. The
+                  // default OutlinedButton is 36dp high, which is a miss
+                  // waiting to happen next to a destructive neighbour.
+                  height: 48,
                   // Pops *nothing*, never `false`. This chrome is shared by
                   // sheets whose routes carry different result types — the
                   // person sheet's is a `Route<Person>` — and popping a bool
                   // into one of those throws a type error instead of closing,
                   // which is exactly how Cancel came to do nothing at all.
                   // Every caller already reads a null result as "cancelled".
-                  onPressed: busy ? null : () => Navigator.of(context).pop(),
-                  child: Text(cancelLabel),
+                  child: OutlinedButton(
+                    onPressed: busy ? null : () => Navigator.of(context).pop(),
+                    child: Text(cancelLabel),
+                  ),
                 ),
               ),
               const SizedBox(width: AppSpacing.md),
@@ -213,6 +225,11 @@ class SheetScaffold extends StatelessWidget {
         children: [
           Flexible(
             child: SingleChildScrollView(
+              // Dragging the fields dismisses the keyboard, which is the
+              // gesture every other Android form answers to. Without it the
+              // only way out of the keyboard is the system back button, and a
+              // form that traps the keyboard reads as a form that is stuck.
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               padding: EdgeInsets.fromLTRB(
                 AppSpacing.xl,
                 compact ? AppSpacing.xs : AppSpacing.xl,
@@ -279,11 +296,28 @@ class SheetScaffold extends StatelessWidget {
       ),
     );
 
-    if (!compact) return body;
+    // Tapping anything that is not a field puts the keyboard away. Opaque
+    // rather than deferToChild so the empty space between fields counts, and
+    // translucent hit testing so the fields themselves still receive their
+    // taps.
+    final dismissible = GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+      child: body,
+    );
 
-    return Padding(
+    if (!compact) return dismissible;
+
+    // AnimatedPadding rather than Padding: the keyboard opens over about
+    // 250ms, and a sheet that jumps to its final position in one frame while
+    // the keyboard is still sliding up reads as a glitch. It also means the
+    // sheet visibly settles back down when the keyboard is dismissed, instead
+    // of appearing to be stuck at keyboard height.
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      curve: Motion.enter,
       padding: EdgeInsets.only(bottom: insets),
-      child: Align(alignment: Alignment.bottomCenter, child: body),
+      child: Align(alignment: Alignment.bottomCenter, child: dismissible),
     );
   }
 }

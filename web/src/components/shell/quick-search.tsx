@@ -163,7 +163,10 @@ export function QuickSearch({
                               </span>
                             ) : null}
                           </span>
-                          <NetBadge netMinor={person.net_balance} currency={currency} />
+                          <NetBadge
+                            netMinor={person.net_balance}
+                            currency={person.currency ?? currency}
+                          />
                         </button>
                       </li>
                     ))}

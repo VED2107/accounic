@@ -123,12 +123,37 @@ the device. It sat at `1.0.0+1` through three releases before this was noticed.
 
 ---
 
+## 5b. Before any migration: take a snapshot
+
+A migration that loses a row is the one failure this product cannot come back from, so
+"nothing was deleted" is a comparison rather than a claim:
+
+```bash
+node db/tools/snapshot.mjs before     # counts, ids, and every person's net balance
+node db/tools/run-sql.mjs file db/migrations/00NN_….sql
+node db/tools/snapshot.mjs after
+node db/tools/snapshot.mjs diff       # exits non-zero if anything moved
+```
+
+`diff` fails on a count that dropped, a person id that disappeared, or a net balance that
+changed. Run it before tagging, and read it before believing a release is safe.
+
+The currency feature also has an end-to-end check that runs as an ordinary signed-in user
+over real HTTP and cleans up after itself:
+
+```bash
+node db/tools/smoke-currency.mjs      # creates a throwaway user, then deletes it
+```
+
+---
+
 ## 6. Cutting a release
 
 `app/build/installer/` is gitignored. Artifacts are release assets, not repository
 contents.
 
 1. `cd app && flutter analyze && flutter test` — both must be clean.
+0. `node db/tools/snapshot.mjs diff` — clean, if a migration went out with this release (§5b).
 2. Bump `version:` in `app/pubspec.yaml`, commit as `chore(release): X.Y.Z`.
 3. Build both binaries (§4, §5).
 4. Compile the installer and the portable zip (§4).

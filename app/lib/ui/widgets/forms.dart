@@ -40,6 +40,8 @@ class AppTextField extends StatefulWidget {
     this.onChanged,
     this.onSubmitted,
     this.trailing,
+    this.focusNode,
+    this.textCapitalization = TextCapitalization.none,
   });
 
   final String label;
@@ -63,12 +65,20 @@ class AppTextField extends StatefulWidget {
   final ValueChanged<String>? onSubmitted;
   final Widget? trailing;
 
+  /// Supplied by forms that hand focus from one field to the next, so the
+  /// keyboard's Next key goes somewhere instead of doing nothing.
+  final FocusNode? focusNode;
+  final TextCapitalization textCapitalization;
+
   @override
   State<AppTextField> createState() => _AppTextFieldState();
 }
 
 class _AppTextFieldState extends State<AppTextField> {
-  final _focus = FocusNode();
+  /// Only owned when the caller did not supply one — disposing a node the
+  /// parent still holds would take the whole form down with it.
+  FocusNode? _owned;
+  FocusNode get _focus => widget.focusNode ?? (_owned ??= FocusNode());
   bool _focused = false;
 
   @override
@@ -83,7 +93,7 @@ class _AppTextFieldState extends State<AppTextField> {
 
   @override
   void dispose() {
-    _focus.dispose();
+    _owned?.dispose();
     super.dispose();
   }
 
@@ -165,6 +175,7 @@ class _AppTextFieldState extends State<AppTextField> {
                     inputFormatters: widget.inputFormatters,
                     onChanged: widget.onChanged,
                     onSubmitted: widget.onSubmitted,
+                    textCapitalization: widget.textCapitalization,
                     style: const TextStyle(fontSize: 14.5),
                     cursorColor: context.colors.primary,
                     cursorWidth: 1.5,

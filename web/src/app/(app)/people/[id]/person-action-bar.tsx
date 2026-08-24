@@ -24,11 +24,15 @@ export function PersonActionBar({
   balance,
   openTransactions,
   currency,
+  baseCurrency,
 }: {
   person: Person;
   balance: PersonBalance;
   openTransactions: OpenTransaction[];
+  /** The account's currency — every figure in this bar is denominated in it. */
   currency: string;
+  /** The workspace currency, the default for a person who has not named one. */
+  baseCurrency: string;
 }) {
   const router = useRouter();
   const [addType, setAddType] = useState<TxnType | null>(null);
@@ -148,7 +152,12 @@ export function PersonActionBar({
         currency={currency}
       />
 
-      <PersonForm open={editOpen} onClose={() => setEditOpen(false)} person={person} />
+      <PersonForm
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        person={person}
+        baseCurrency={baseCurrency}
+      />
 
       <ConfirmDialog
         open={confirm === 'archive'}

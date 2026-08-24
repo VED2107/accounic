@@ -12,6 +12,7 @@ import { initials } from '@/lib/names';
 import { PersonActionBar } from './person-action-bar';
 import { Timeline } from './timeline';
 import { balanceTone, formatMinor } from '@/lib/money';
+import { currencyLabel } from '@/lib/currencies';
 import { personBalanceSeries } from '@/lib/series';
 import { fullDate } from '@/lib/dates';
 import { ArrowRightIcon } from '@/components/icons';
@@ -58,7 +59,10 @@ export default async function PersonPage({
   ]);
   if (!data) notFound();
 
-  const currency = me?.currency ?? 'INR';
+  // The account's own currency, not the workspace's: every figure on this page
+  // is denominated in what this person is billed in (upgrade §10).
+  const currency = data.currency ?? me?.currency ?? 'INR';
+  const baseCurrency = data.base_currency ?? me?.currency ?? 'INR';
   const { person, balance, timeline, timeline_total: total, open_transactions: openTxns } = data;
   const tone = balanceTone(balance.net_balance);
   const hasMore = (pageIndex + 1) * PAGE_SIZE < total;
@@ -90,6 +94,11 @@ export default async function PersonPage({
               {person.name}
             </h1>
             {person.is_archived ? <Badge tone="muted">Archived</Badge> : null}
+            {/* Stated always, not only when it differs from the base: "how much
+                is this in?" is the first question on a multi-currency ledger,
+                and a badge that appears and disappears is a worse answer than
+                one that is simply always there. */}
+            <Badge tone="muted">{currency}</Badge>
           </div>
           <p className="mt-1 truncate text-[0.8125rem] text-ink-muted">
             <span className="capitalize">{person.type}</span>
@@ -133,6 +142,26 @@ export default async function PersonPage({
                     ? `You owe ${firstName}`
                     : 'Everything is settled'}
               </p>
+
+              {/* The same position in the workspace's currency. Shown only when
+                  there is another currency to show, and labelled as an
+                  approximation at today's rate, because that is what it is —
+                  nothing settles against this figure. */}
+              {currency !== baseCurrency && balance.net_balance !== 0 ? (
+                <p className="mt-1.5 text-[0.8125rem] text-ink-faint">
+                  {balance.net_balance_base === null
+                    ? `No ${currency} → ${baseCurrency} rate yet`
+                    : `≈ ${formatMinor(Math.abs(balance.net_balance_base), baseCurrency)} at today’s rate`}
+                </p>
+              ) : null}
+
+              {balance.opening_minor !== 0 ? (
+                <p className="mt-1 text-[0.75rem] text-ink-faint">
+                  Includes an opening balance of{' '}
+                  {formatMinor(Math.abs(balance.opening_minor), currency)}{' '}
+                  {balance.opening_minor > 0 ? 'in your favour' : 'against you'}
+                </p>
+              ) : null}
             </div>
 
             {series ? (
@@ -156,6 +185,7 @@ export default async function PersonPage({
               balance={balance}
               openTransactions={openTxns}
               currency={currency}
+              baseCurrency={baseCurrency}
             />
           </div>
 
@@ -245,6 +275,7 @@ export default async function PersonPage({
         ) : tab === 'details' ? (
           <Card className="divide-y divide-line">
             <Detail label="Type" value={person.type} className="capitalize" />
+            <Detail label="Currency" value={currencyLabel(currency)} />
             <Detail label="Phone" value={person.phone ?? '—'} />
             <Detail label="Email" value={person.email ?? '—'} />
             <Detail label="Transactions" value={String(balance.transaction_count)} />

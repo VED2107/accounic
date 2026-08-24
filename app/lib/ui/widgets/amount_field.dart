@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/currencies.dart';
 import '../../core/money.dart';
 import '../../core/theme.dart';
 
@@ -39,7 +40,11 @@ class AmountField extends StatefulWidget {
 
 class _AmountFieldState extends State<AmountField> {
   late final TextEditingController _controller =
-      TextEditingController(text: widget.initial == null ? '' : minorToInput(widget.initial!));
+      TextEditingController(
+    text: widget.initial == null
+        ? ''
+        : minorToInput(widget.initial!, currency: widget.currency),
+  );
   String? _error;
 
   @override
@@ -63,7 +68,9 @@ class _AmountFieldState extends State<AmountField> {
       return;
     }
 
-    final minor = parseAmountToMinor(raw);
+    // Parsed against the currency being *typed* in: ¥1000 has no decimals and
+    // KWD 1.234 has three (upgrade §19).
+    final minor = parseAmountToMinor(raw, currency: widget.currency);
     if (minor == null || minor <= 0) {
       setState(() => _error = 'Enter a valid amount');
       widget.onChanged(null);
@@ -84,7 +91,7 @@ class _AmountFieldState extends State<AmountField> {
     final max = widget.maxMinor;
     if (max == null) return;
     final target = share == 1 ? max : (max * share).round();
-    _controller.text = minorToInput(target);
+    _controller.text = minorToInput(target, currency: widget.currency);
     _handle(_controller.text);
   }
 
@@ -103,7 +110,10 @@ class _AmountFieldState extends State<AmountField> {
           autofocus: widget.autofocus,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
+            // A zero-decimal currency has no decimal point to type.
+            FilteringTextInputFormatter.allow(
+              decimalsFor(widget.currency) == 0 ? RegExp(r'[\d,]') : RegExp(r'[\d.,]'),
+            ),
             LengthLimitingTextInputFormatter(16),
           ],
           onChanged: _handle,

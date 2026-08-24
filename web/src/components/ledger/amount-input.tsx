@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useId, useState } from 'react';
-import { currencySymbol, parseAmountToMinor, formatMinor } from '@/lib/money';
+import { currencySymbol, parseAmountToMinor, formatMinor, minorToInput } from '@/lib/money';
 import { cn } from '@/components/ui/primitives';
 
 const QUICK_SHARES = [0.25, 0.5, 0.75, 1] as const;
@@ -44,15 +44,19 @@ export function AmountInput({
   const [value, setValue] = useState(defaultValue);
   const symbol = currencySymbol(currency);
 
+  // How many decimals are acceptable is a property of the currency being typed
+  // in, not a constant: ¥1000 has none and KWD 1.234 has three (upgrade §19).
+  const parse = (text: string) => parseAmountToMinor(text, currency);
+
   // Settling against a different transaction changes the ceiling; a value left
   // over from the previous one would silently be out of range.
   useEffect(() => {
     setValue(defaultValue);
-    onValidChange?.(defaultValue.trim() === '' ? null : parseAmountToMinor(defaultValue));
+    onValidChange?.(defaultValue.trim() === '' ? null : parseAmountToMinor(defaultValue, currency));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [defaultValue]);
+  }, [defaultValue, currency]);
 
-  const minor = value.trim() === '' ? null : parseAmountToMinor(value);
+  const minor = value.trim() === '' ? null : parse(value);
   const overMax = minor !== null && max !== undefined && minor > max;
   const localError =
     value.trim() !== '' && minor === null
@@ -64,7 +68,7 @@ export function AmountInput({
 
   function set(next: string) {
     setValue(next);
-    onValidChange?.(next.trim() === '' ? null : parseAmountToMinor(next));
+    onValidChange?.(next.trim() === '' ? null : parse(next));
   }
 
   return (
@@ -107,7 +111,7 @@ export function AmountInput({
               <button
                 key={share}
                 type="button"
-                onClick={() => set((target / 100).toFixed(target % 100 === 0 ? 0 : 2))}
+                onClick={() => set(minorToInput(target, currency))}
                 aria-pressed={active}
                 className={cn(
                   'rounded-full border px-3 py-1 text-[0.75rem] font-medium',

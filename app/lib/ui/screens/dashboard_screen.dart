@@ -278,6 +278,26 @@ class PositionCard extends ConsumerWidget {
                           color: tone == BalanceTone.settled ? palette.inkFaint : color,
                         ),
                       ),
+                      // Totals across currencies are only as complete as the
+                      // rates behind them. Saying how many accounts could not be
+                      // converted is more honest than quietly leaving them out
+                      // of a headline figure (upgrade §9).
+                      if (summary.currencyCount > 1) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          'Converted to $currency',
+                          style: TextStyle(fontSize: 11.5, color: palette.inkFaint),
+                        ),
+                      ],
+                      if (summary.unconvertedPeople > 0) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          '${summary.unconvertedPeople} '
+                          '${summary.unconvertedPeople == 1 ? 'account is' : 'accounts are'} '
+                          'not included — no exchange rate yet',
+                          style: TextStyle(fontSize: 11.5, color: palette.payable),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -635,7 +655,7 @@ class PersonRow extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: AppSpacing.md),
-                    NetBadge(netMinor: person.netBalance, currency: currency),
+                    NetBadge(netMinor: person.netBalance, currency: person.currency),
                     const SizedBox(width: AppSpacing.xs),
                     AnimatedSlide(
                       duration: Motion.fast,
@@ -754,7 +774,9 @@ class ActivityRow extends StatelessWidget {
                     const SizedBox(width: AppSpacing.md),
                     MoneyText(
                       item.amountMinor,
-                      currency: currency,
+                      // Each entry in its own currency: a workspace-wide feed is
+                      // exactly where two of them sit side by side (upgrade §9).
+                      currency: item.currency,
                       tone: item.isSettlement
                           ? MoneyTone.neutral
                           : item.isReceivable

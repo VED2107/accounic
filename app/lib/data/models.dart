@@ -7,6 +7,7 @@
 /// defensively: PostgREST sends bigint as a JSON number, but a numeric that
 /// slipped through as a string would otherwise become a silent `0`.
 library;
+import '../core/currencies.dart';
 import '../core/direction.dart';
 
 int _int(Object? value) => switch (value) {
@@ -67,6 +68,28 @@ enum SettlementDirection {
       value == 'out' ? SettlementDirection.moneyOut : SettlementDirection.moneyIn;
 
   String get wire => this == SettlementDirection.moneyIn ? 'in' : 'out';
+}
+
+/// Which way an opening balance runs, in the user's words (upgrade §3).
+///
+/// Stated as a sentence rather than as a transaction type because "credit" is
+/// exactly the word people get backwards — see docs/accounting-direction.md.
+enum OpeningDirection {
+  none,
+  theyOweMe,
+  iOweThem;
+
+  String get wire => switch (this) {
+        OpeningDirection.none => 'none',
+        OpeningDirection.theyOweMe => 'they_owe_me',
+        OpeningDirection.iOweThem => 'i_owe_them',
+      };
+
+  String get label => switch (this) {
+        OpeningDirection.none => 'No opening balance',
+        OpeningDirection.theyOweMe => 'They owe me',
+        OpeningDirection.iOweThem => 'I owe them',
+      };
 }
 
 enum SettlementStatus {
@@ -136,6 +159,7 @@ class Person {
     this.email,
     this.address,
     this.notes,
+    this.currency,
   });
 
   final String id;
@@ -146,6 +170,10 @@ class Person {
   final String? email;
   final String? address;
   final String? notes;
+
+  /// The account currency. Null means the owner's base currency, which is what
+  /// every person created before this feature meant (upgrade §1).
+  final String? currency;
   final bool isArchived;
 
   factory Person.fromJson(Map<String, dynamic> json) => Person(
@@ -157,6 +185,7 @@ class Person {
         email: _str(json['email']),
         address: _str(json['address']),
         notes: _str(json['notes']),
+        currency: _str(json['currency']),
         isArchived: json['is_archived'] as bool? ?? false,
       );
 }
@@ -168,6 +197,8 @@ class PersonBalance {
     required this.name,
     required this.type,
     required this.isArchived,
+    required this.currency,
+    required this.baseCurrency,
     required this.totalCredit,
     required this.totalDebit,
     required this.settledIn,
@@ -179,6 +210,8 @@ class PersonBalance {
     required this.transactionCount,
     this.phone,
     this.lastActivityAt,
+    this.netBalanceBase,
+    this.openingMinor = 0,
   });
 
   final String personId;
@@ -194,6 +227,18 @@ class PersonBalance {
   final int outstandingReceivable;
   final int outstandingPayable;
   final int netBalance;
+
+  /// The same position in the owner's base currency, or null when no rate has
+  /// been cached for that pair. Null means "not known" and is never treated as
+  /// zero (upgrade §9).
+  final int? netBalanceBase;
+
+  /// The opening balance as a signed figure: positive when they owe the user.
+  final int openingMinor;
+
+  /// The currency every figure above is denominated in.
+  final String currency;
+  final String baseCurrency;
   final int transactionCount;
   final String? lastActivityAt;
 
@@ -213,6 +258,13 @@ class PersonBalance {
         netBalance: _int(json['net_balance']),
         transactionCount: _int(json['transaction_count']),
         lastActivityAt: _str(json['last_activity_at']),
+        currency: (json['currency'] as String?) ?? kFallbackCurrency,
+        baseCurrency: (json['base_currency'] as String?) ??
+            (json['currency'] as String?) ??
+            kFallbackCurrency,
+        netBalanceBase:
+            json['net_balance_base'] == null ? null : _int(json['net_balance_base']),
+        openingMinor: _int(json['opening_minor']),
       );
 
   bool get hasOutstanding => outstandingReceivable > 0 || outstandingPayable > 0;
@@ -225,6 +277,9 @@ class OwnerSummary {
     required this.netPosition,
     required this.peopleWithBalance,
     required this.peopleCount,
+    this.baseCurrency = kFallbackCurrency,
+    this.unconvertedPeople = 0,
+    this.currencyCount = 1,
   });
 
   final int totalReceivable;
@@ -233,12 +288,23 @@ class OwnerSummary {
   final int peopleWithBalance;
   final int peopleCount;
 
+  /// Every total above is converted into this currency.
+  final String baseCurrency;
+
+  /// Accounts left out of the totals because no rate is known for them. Said
+  /// out loud on the dashboard rather than quietly under-reporting.
+  final int unconvertedPeople;
+  final int currencyCount;
+
   factory OwnerSummary.fromJson(Map<String, dynamic> json) => OwnerSummary(
         totalReceivable: _int(json['total_receivable']),
         totalPayable: _int(json['total_payable']),
         netPosition: _int(json['net_position']),
         peopleWithBalance: _int(json['people_with_balance']),
         peopleCount: _int(json['people_count']),
+        baseCurrency: (json['base_currency'] as String?) ?? kFallbackCurrency,
+        unconvertedPeople: _int(json['unconverted_people']),
+        currencyCount: _int(json['currency_count']),
       );
 }
 
@@ -255,6 +321,10 @@ class TimelineEntry {
     this.remainingMinor,
     this.status,
     this.txnType,
+    this.isOpening = false,
+    this.enteredAmountMinor,
+    this.enteredCurrency,
+    this.exchangeRateE9,
   });
 
   final String id;
@@ -268,6 +338,15 @@ class TimelineEntry {
   final int? remainingMinor;
   final SettlementStatus? status;
   final TxnType? txnType;
+
+  /// A balance carried in from before the account existed (upgrade 3).
+  final bool isOpening;
+
+  /// What was actually handed over, when that was not the account's currency.
+  /// Frozen at entry: a later rate move never touches it (upgrade 8).
+  final int? enteredAmountMinor;
+  final String? enteredCurrency;
+  final int? exchangeRateE9;
 
   factory TimelineEntry.fromJson(Map<String, dynamic> json) {
     final kind = json['entry_kind'] as String?;
@@ -284,6 +363,12 @@ class TimelineEntry {
       settledMinor: json['settled_minor'] == null ? null : _int(json['settled_minor']),
       remainingMinor: json['remaining_minor'] == null ? null : _int(json['remaining_minor']),
       status: SettlementStatus.parse(json['status']),
+      isOpening: json['is_opening'] as bool? ?? false,
+      enteredAmountMinor:
+          json['entered_amount_minor'] == null ? null : _int(json['entered_amount_minor']),
+      enteredCurrency: _str(json['entered_currency']),
+      exchangeRateE9:
+          json['exchange_rate_e9'] == null ? null : _int(json['exchange_rate_e9']),
     );
   }
 
@@ -293,9 +378,11 @@ class TimelineEntry {
   /// Which way the debt runs — what the row is coloured by.
   bool get isReceivable => isSettlement ? isIncoming : (txnType?.isReceivable ?? true);
 
-  String get label => isSettlement
-      ? (isIncoming ? 'Settlement received' : 'Settlement paid')
-      : (txnType?.label ?? '');
+  String get label => isOpening
+      ? 'Opening balance'
+      : isSettlement
+          ? (isIncoming ? 'Settlement received' : 'Settlement paid')
+          : (txnType?.label ?? '');
 }
 
 class OpenTransaction {
@@ -307,6 +394,7 @@ class OpenTransaction {
     required this.remainingMinor,
     required this.settledMinor,
     this.description,
+    this.isOpening = false,
   });
 
   final String id;
@@ -316,6 +404,7 @@ class OpenTransaction {
   final String? description;
   final int remainingMinor;
   final int settledMinor;
+  final bool isOpening;
 
   factory OpenTransaction.fromJson(Map<String, dynamic> json) => OpenTransaction(
         id: json['id'] as String,
@@ -325,6 +414,7 @@ class OpenTransaction {
         description: _str(json['description']),
         remainingMinor: _int(json['remaining_minor']),
         settledMinor: _int(json['settled_minor']),
+        isOpening: json['is_opening'] as bool? ?? false,
       );
 }
 
@@ -336,6 +426,8 @@ class PersonPage {
     required this.timeline,
     required this.timelineTotal,
     required this.openTransactions,
+    required this.currency,
+    required this.baseCurrency,
   });
 
   final Person person;
@@ -343,6 +435,12 @@ class PersonPage {
   final List<TimelineEntry> timeline;
   final int timelineTotal;
   final List<OpenTransaction> openTransactions;
+
+  /// The account's own currency: what every figure on the screen is in.
+  final String currency;
+
+  /// The workspace currency, for the equivalent shown beside the position.
+  final String baseCurrency;
 
   factory PersonPage.fromJson(Map<String, dynamic> json) => PersonPage(
         person: Person.fromJson(json['person'] as Map<String, dynamic>),
@@ -356,6 +454,10 @@ class PersonPage {
           for (final entry in (json['open_transactions'] as List? ?? []))
             OpenTransaction.fromJson(entry as Map<String, dynamic>),
         ],
+        currency: (json['currency'] as String?) ?? kFallbackCurrency,
+        baseCurrency: (json['base_currency'] as String?) ??
+            (json['currency'] as String?) ??
+            kFallbackCurrency,
       );
 }
 
@@ -370,6 +472,11 @@ class ActivityItem {
     required this.entryDate,
     this.note,
     this.settlementIncoming = false,
+    this.currency = kFallbackCurrency,
+    this.isOpening = false,
+    this.enteredAmountMinor,
+    this.enteredCurrency,
+    this.exchangeRateE9,
   });
 
   final String id;
@@ -385,6 +492,14 @@ class ActivityItem {
   final String entryDate;
   final String? note;
 
+  /// The currency this row is denominated in: the person's, not the owner's.
+  /// A workspace-wide feed is exactly where two of them sit side by side.
+  final String currency;
+  final bool isOpening;
+  final int? enteredAmountMinor;
+  final String? enteredCurrency;
+  final int? exchangeRateE9;
+
   factory ActivityItem.fromJson(Map<String, dynamic> json) {
     final type = json['entry_type'] as String?;
     return ActivityItem(
@@ -397,12 +512,21 @@ class ActivityItem {
       entryDate: (json['entry_date'] as String?) ?? '',
       note: _str(json['note']),
       settlementIncoming: type == 'in',
+      currency: (json['currency'] as String?) ?? kFallbackCurrency,
+      isOpening: json['is_opening'] as bool? ?? false,
+      enteredAmountMinor:
+          json['entered_amount_minor'] == null ? null : _int(json['entered_amount_minor']),
+      enteredCurrency: _str(json['entered_currency']),
+      exchangeRateE9:
+          json['exchange_rate_e9'] == null ? null : _int(json['exchange_rate_e9']),
     );
   }
 
-  String get label => isSettlement
-      ? (settlementIncoming ? 'Settlement received' : 'Settlement paid')
-      : (isReceivable ? MoneyFlow.ownerToPerson.label : MoneyFlow.personToOwner.label);
+  String get label => isOpening
+      ? 'Opening balance'
+      : isSettlement
+          ? (settlementIncoming ? 'Settlement received' : 'Settlement paid')
+          : (isReceivable ? MoneyFlow.ownerToPerson.label : MoneyFlow.personToOwner.label);
 }
 
 class TodayTotals {
@@ -435,6 +559,7 @@ class Dashboard {
     required this.peopleWithBalance,
     required this.currency,
     required this.name,
+    required this.baseCurrency,
   });
 
   final OwnerSummary summary;
@@ -442,6 +567,10 @@ class Dashboard {
   final List<ActivityItem> recentActivity;
   final List<PersonBalance> peopleWithBalance;
   final String currency;
+
+  /// What the headline totals are converted into. The same as [currency] today,
+  /// and named separately because they answer different questions.
+  final String baseCurrency;
   final String name;
 
   factory Dashboard.fromJson(Map<String, dynamic> json) {
@@ -449,7 +578,10 @@ class Dashboard {
     return Dashboard(
       summary: OwnerSummary.fromJson(json['summary'] as Map<String, dynamic>),
       today: TodayTotals.fromJson(json['today'] as Map<String, dynamic>),
-      currency: (profile['currency'] as String?) ?? 'INR',
+      currency: (profile['currency'] as String?) ?? kFallbackCurrency,
+      baseCurrency: (json['base_currency'] as String?) ??
+          (profile['currency'] as String?) ??
+          kFallbackCurrency,
       name: (profile['name'] as String?) ?? '',
       recentActivity: [
         for (final entry in (json['recent_activity'] as List? ?? []))

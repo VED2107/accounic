@@ -34,9 +34,23 @@ export interface Person {
   email: string | null;
   address: string | null;
   notes: string | null;
+  /** NULL means the owner's base currency — see db/migrations/0010. */
+  currency: string | null;
   is_archived: boolean;
   created_at: string;
   updated_at: string;
+}
+
+/** Which way an opening balance runs, in the user's words (upgrade §3). */
+export type OpeningDirection = 'none' | 'they_owe_me' | 'i_owe_them';
+
+/** Conversion provenance, carried by any row entered in another currency. */
+export interface Conversion {
+  entered_amount_minor: number | null;
+  entered_currency: string | null;
+  exchange_rate_e9: number | null;
+  exchange_rate_at?: string | null;
+  exchange_rate_source?: string | null;
 }
 
 /** public.person_balances — the authoritative per-person position. */
@@ -48,6 +62,9 @@ export interface PersonBalance {
   phone: string | null;
   email: string | null;
   is_archived: boolean;
+  /** The account currency for this person, already resolved. */
+  currency: string;
+  base_currency: string;
   total_credit: number;
   total_debit: number;
   settled_in: number;
@@ -56,13 +73,18 @@ export interface PersonBalance {
   outstanding_receivable: number;
   outstanding_payable: number;
   net_balance: number;
+  /** The same net position in the base currency, or null when no rate is known. */
+  net_balance_base: number | null;
   transaction_count: number;
+  /** The opening balance as a signed figure: positive when they owe the user. */
+  opening_minor: number;
   last_activity_at: string | null;
 }
 
 /** public.owner_summary — dashboard headline numbers. */
 export interface OwnerSummary {
   owner_id: string;
+  base_currency: string;
   total_receivable: number;
   total_payable: number;
   net_position: number;
@@ -71,6 +93,9 @@ export interface OwnerSummary {
   gross_credit: number;
   gross_debit: number;
   gross_settled: number;
+  /** People whose currency has no cached rate, and are therefore not in the totals. */
+  unconverted_people: number;
+  currency_count: number;
 }
 
 export interface TimelineEntry {
@@ -85,6 +110,12 @@ export interface TimelineEntry {
   is_void: boolean;
   related_transaction_id: string | null;
   created_at: string;
+  is_opening: boolean;
+  entered_amount_minor: number | null;
+  entered_currency: string | null;
+  exchange_rate_e9: number | null;
+  exchange_rate_at: string | null;
+  exchange_rate_source: string | null;
   /** Present only on transaction entries. */
   settled_minor: number | null;
   remaining_minor: number | null;
@@ -97,6 +128,7 @@ export interface OpenTransaction {
   amount_minor: number;
   transaction_date: string;
   description: string | null;
+  is_opening: boolean;
   remaining_minor: number;
   settled_minor: number;
 }
@@ -105,6 +137,8 @@ export interface OpenTransaction {
 export interface PersonPage {
   person: Person;
   balance: PersonBalance;
+  currency: string;
+  base_currency: string;
   timeline: TimelineEntry[];
   timeline_total: number;
   open_transactions: OpenTransaction[];
@@ -120,13 +154,22 @@ export interface ActivityItem {
   entry_date: string;
   note: string | null;
   created_at: string;
+  /** The currency this row is denominated in — the person's, not the owner's. */
+  currency: string;
+  is_opening?: boolean;
+  entered_amount_minor?: number | null;
+  entered_currency?: string | null;
+  exchange_rate_e9?: number | null;
 }
 
 export interface DashboardPeopleRow {
   person_id: string;
   name: string;
   type: PartyType;
+  currency: string;
+  base_currency: string;
   net_balance: number;
+  net_balance_base: number | null;
   outstanding_receivable: number;
   outstanding_payable: number;
   last_activity_at: string | null;
@@ -135,6 +178,7 @@ export interface DashboardPeopleRow {
 /** public.dashboard() */
 export interface Dashboard {
   profile: Pick<Me, 'id' | 'name' | 'email' | 'phone' | 'business_name' | 'avatar_url' | 'currency'>;
+  base_currency: string;
   summary: OwnerSummary;
   today: { credit: number; debit: number; settled: number; count: number };
   recent_activity: ActivityItem[];
@@ -149,6 +193,9 @@ export interface SearchResults {
     type: PartyType;
     phone: string | null;
     net_balance: number;
+    net_balance_base: number | null;
+    currency: string;
+    base_currency: string;
     is_archived: boolean;
   }>;
   transactions: Array<{
@@ -159,6 +206,7 @@ export interface SearchResults {
     amount_minor: number;
     transaction_date: string;
     description: string | null;
+    currency: string;
   }>;
 }
 

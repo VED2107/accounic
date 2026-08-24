@@ -55,6 +55,7 @@ export function QuickActions({ currency }: { currency: string }) {
       <PersonForm
         open={sheet === 'person'}
         onClose={() => setSheet(null)}
+        baseCurrency={currency}
         onCreated={(person) => router.push(`/people/${person.id}`)}
       />
       <QuickSearch open={sheet === 'search'} onClose={() => setSheet(null)} currency={currency} />

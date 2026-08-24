@@ -18,6 +18,7 @@ import '../sheets/sheet_scaffold.dart';
 import '../sheets/transaction_sheet.dart';
 import '../widgets/app_page.dart';
 import '../widgets/common.dart';
+import '../widgets/currency_field.dart';
 
 /// Person / business account — the screen the product is really about
 /// (context.md §6, §16).
@@ -33,12 +34,11 @@ class PersonScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(personPageProvider(personId));
-    final currency = ref.watch(currencyProvider);
     final page = async.valueOrNull;
 
     return AppPage(
       title: page?.person.name ?? 'Account',
-      subtitle: page == null ? null : _subtitle(page.person),
+      subtitle: page == null ? null : _subtitle(page.person, page.currency),
       width: ContentWidth.standard,
       bottomPadding: context.isCompact ? 48 : 48,
       leading: _BackButton(),
@@ -53,14 +53,18 @@ class PersonScreen extends ConsumerWidget {
               onRetry: () => ref.invalidate(personPageProvider(personId)),
             ),
           ],
-        AsyncData(:final value) => _body(context, value, currency),
+        // Every figure on this screen is in the *account's* currency. The
+        // workspace currency is only used for the equivalent under the
+        // position, and as the fallback while the page is still loading.
+        AsyncData(:final value) => _body(context, value, value.currency),
         _ => const [_PersonSkeleton()],
       },
     );
   }
 
-  static String _subtitle(Person person) => [
+  static String _subtitle(Person person, String currency) => [
         person.type.label,
+        currency,
         if (person.phone != null) person.phone!,
         if (person.isArchived) 'Archived',
       ].join(' · ');
@@ -72,7 +76,7 @@ class PersonScreen extends ConsumerWidget {
       // On a phone the app bar has only room for the name, so the identity row
       // is repeated here where the avatar and the metadata actually fit.
       if (context.isCompact) ...[
-        Reveal(child: _Identity(person: page.person)),
+        Reveal(child: _Identity(person: page.person, currency: page.currency)),
         const SizedBox(height: AppSpacing.lg),
       ],
 
@@ -169,9 +173,13 @@ class _BackButton extends StatelessWidget {
 }
 
 class _Identity extends StatelessWidget {
-  const _Identity({required this.person});
+  const _Identity({required this.person, required this.currency});
 
   final Person person;
+
+  /// The account's currency, stated in the identity line rather than left to be
+  /// inferred from a symbol (upgrade §10).
+  final String currency;
 
   @override
   Widget build(BuildContext context) {
@@ -195,7 +203,7 @@ class _Identity extends StatelessWidget {
               ),
               const SizedBox(height: 2),
               Text(
-                PersonScreen._subtitle(person),
+                PersonScreen._subtitle(person, currency),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontSize: 13, color: context.money.inkMuted),
@@ -294,6 +302,28 @@ class _PositionCard extends StatelessWidget {
                     ),
                   ],
                 ),
+                // The same position in the workspace's currency, and the
+                // opening balance if there is one. Both are context rather than
+                // figures anything settles against, so they sit under the
+                // headline in the quiet colour (upgrade §10).
+                if (page.currency != page.baseCurrency && balance.netBalance != 0) ...[
+                  const SizedBox(height: AppSpacing.xs + 2),
+                  Text(
+                    balance.netBalanceBase == null
+                        ? 'No ${page.currency} → ${page.baseCurrency} rate yet'
+                        : '≈ ${formatMinor(balance.netBalanceBase!.abs(), currency: page.baseCurrency)} at today’s rate',
+                    style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
+                  ),
+                ],
+                if (balance.openingMinor != 0) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    'Includes an opening balance of '
+                    '${formatMinor(balance.openingMinor.abs(), currency: currency)} '
+                    '${balance.openingMinor > 0 ? 'in your favour' : 'against you'}',
+                    style: TextStyle(fontSize: 11.5, color: palette.inkFaint),
+                  ),
+                ],
                 const SizedBox(height: AppSpacing.lg + 2),
                 _ActionRow(page: page),
               ],
@@ -322,7 +352,11 @@ class _ActionRow extends ConsumerWidget {
     final saved = await showTransactionSheet(
       context,
       ref,
-      person: PersonRef(page.person.id, page.person.name),
+      person: PersonRef(
+        page.person.id,
+        page.person.name,
+        currency: page.currency,
+      ),
       defaultType: TxnType.forFlow(flow),
     );
     if (saved && context.mounted) showMessage(context, 'Transaction recorded.');
@@ -754,6 +788,19 @@ class _TimelineTileState extends ConsumerState<TimelineTile> {
                                 style: TextStyle(fontSize: 12, color: palette.inkFaint),
                               ),
                             ],
+                            // What was actually handed over, when that was not
+                            // this account's currency. The converted figure is
+                            // on the right; this is the half that must never be
+                            // hidden (upgrade §11).
+                            if (entry.enteredCurrency != null) ...[
+                              const SizedBox(height: 2),
+                              ConvertedFrom(
+                                enteredMinor: entry.enteredAmountMinor,
+                                enteredCurrency: entry.enteredCurrency,
+                                rateE9: entry.exchangeRateE9,
+                                accountCurrency: widget.currency,
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -891,7 +938,11 @@ class _RowActions extends ConsumerWidget {
                             final saved = await showTransactionSheet(
                               context,
                               ref,
-                              person: PersonRef(page.person.id, page.person.name),
+                              person: PersonRef(
+                                page.person.id,
+                                page.person.name,
+                                currency: page.currency,
+                              ),
                               transaction: EditableTransaction(
                                 id: entry.id,
                                 type: entry.txnType ?? TxnType.credit,

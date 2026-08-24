@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { parseAmountToMinor } from '@/lib/money';
+import { isSupportedCurrency, normaliseCode } from '@/lib/currencies';
 
 /**
  * Centralised input validation (context.md §32).
@@ -18,6 +19,60 @@ const trimmedOptional = (max: number) =>
     .transform((v) => (v === '' ? null : v))
     .nullable()
     .optional();
+
+/**
+ * A currency code, validated against the one list every client shares.
+ *
+ * Optional throughout: a person without one is on the owner's base currency,
+ * which is exactly what every person created before this feature meant.
+ */
+export const currencyCode = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[A-Z]{3}$/, 'Use a three letter currency code, for example INR')
+  .refine(isSupportedCurrency, 'That currency is not supported');
+
+export const optionalCurrencyCode = z
+  .union([z.literal(''), currencyCode])
+  .transform((v) => (v === '' ? null : v))
+  .nullable()
+  .optional();
+
+/**
+ * Parse a money field for a *named* currency (upgrade §19).
+ *
+ * The zod schemas below cannot do this themselves: how many decimals are
+ * allowed depends on a different field in the same form, and getting it wrong
+ * means either rejecting ¥1000 or accepting ₹1.234. The action reads the
+ * currency first and then calls this.
+ */
+export function parseAmountField(
+  value: string,
+  currency: string,
+): { ok: true; minor: number } | { ok: false; error: string } {
+  const text = (value ?? '').trim();
+  if (text === '') return { ok: false, error: 'Enter an amount' };
+
+  const minor = parseAmountToMinor(text, currency);
+  if (minor === null) {
+    const code = normaliseCode(currency);
+    return {
+      ok: false,
+      error: `Enter a valid ${code} amount, for example 1500`,
+    };
+  }
+  if (minor <= 0) return { ok: false, error: 'Amount must be more than zero' };
+  if (minor > 9_223_372_036_854) return { ok: false, error: 'That amount is too large' };
+  return { ok: true, minor };
+}
+
+/** A rate as sent by the client: an integer scaled by 1e9, or nothing. */
+export const rateE9 = z
+  .union([z.literal(''), z.coerce.number().int().positive()])
+  .transform((v) => (v === '' ? null : (v as number)))
+  .nullable()
+  .optional();
 
 /** A money field arrives as text and leaves as integer minor units. */
 export const amountMinor = z
@@ -57,6 +112,20 @@ export const signInSchema = z.object({
 export const personSchema = z.object({
   name: z.string().trim().min(1, 'Enter a name').max(120, 'That name is too long'),
   type: z.enum(['person', 'business']),
+  currency: optionalCurrencyCode,
+  // Opening balance (upgrade §3, §4). The amount stays text here and is parsed
+  // against the chosen currency by the action.
+  opening_direction: z.enum(['none', 'they_owe_me', 'i_owe_them']).default('none'),
+  opening_amount: z.string().trim().optional(),
+  opening_currency: optionalCurrencyCode,
+  opening_rate_e9: rateE9,
+  // Changing the currency of an account that already holds entries restates
+  // them, so the form has to say so and send this back.
+  restate_confirmed: z
+    .union([z.literal('on'), z.literal('true'), z.literal('')])
+    .transform((v) => v === 'on' || v === 'true')
+    .optional(),
+  restate_rate_e9: rateE9,
   phone: trimmedOptional(32),
   email: z
     .union([z.literal(''), z.string().trim().email('Enter a valid email address')])
@@ -70,7 +139,14 @@ export const personSchema = z.object({
 export const transactionSchema = z.object({
   person_id: uuid,
   type: z.enum(['credit', 'debit']),
-  amount: amountMinor,
+  /** Raw text: parsed against `entry_currency`, which may not be the account's. */
+  amount: z.string().trim().min(1, 'Enter an amount'),
+  /** The currency the user typed in. Defaults to the account currency. */
+  entry_currency: optionalCurrencyCode,
+  /** The account currency, sent by the form so validation matches the server. */
+  account_currency: optionalCurrencyCode,
+  rate_e9: rateE9,
+  rate_source: trimmedOptional(60),
   date: isoDate,
   description: trimmedOptional(500),
 });
@@ -81,7 +157,11 @@ export const transactionEditSchema = transactionSchema.omit({ person_id: true })
 
 export const settlementSchema = z.object({
   person_id: uuid,
-  amount: amountMinor,
+  amount: z.string().trim().min(1, 'Enter an amount'),
+  entry_currency: optionalCurrencyCode,
+  account_currency: optionalCurrencyCode,
+  rate_e9: rateE9,
+  rate_source: trimmedOptional(60),
   direction: z.enum(['in', 'out']).optional(),
   transaction_id: z.union([uuid, z.literal('')]).optional(),
   date: isoDate,
@@ -92,11 +172,7 @@ export const profileSchema = z.object({
   name: z.string().trim().min(1, 'Enter your name').max(120),
   phone: trimmedOptional(32),
   business_name: trimmedOptional(120),
-  currency: z
-    .string()
-    .trim()
-    .toUpperCase()
-    .regex(/^[A-Z]{3}$/, 'Use a three letter currency code, for example INR'),
+  currency: currencyCode,
 });
 
 export const adminCreateUserSchema = z.object({

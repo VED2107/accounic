@@ -2,7 +2,7 @@
 
 A small, fast, personal accounting system. Three clients, one backend, one database.
 
-Current release: **[v1.0.4](https://github.com/VED2107/accounic/releases/latest)** —
+Current release: **[v1.1.0](https://github.com/VED2107/accounic/releases/latest)** —
 Windows installer, Windows portable zip, and an Android APK.
 
 Answers four questions and little else (`context.md` §35):
@@ -58,13 +58,24 @@ and parse input — they never derive a balance.
 | Tenant isolation | `db/migrations/0005_rls.sql` | RLS on all four tables, forced |
 | Admin operations | `db/migrations/0007_admin.sql` + `web/src/lib/admin-actions.ts` | service-role never leaves the server |
 | Money representation | `money.ts` / `money.dart` | integer minor units, mirrored line for line |
+| Currency definitions | `shared/currencies.json` | one source; `db/tools/sync-currencies.mjs` generates the SQL seed, the TS and the Dart |
+| Currency conversion | `db/migrations/0010_currency.sql` | `convert_amount_minor()`; clients preview, the database decides |
+| Exchange rates | `web/src/lib/rates.ts` · `app/lib/data/rates_repository.dart` | open.er-api.com, Frankfurter behind it, cached per owner |
 
 ---
 
 ## 2. The accounting model
 
-Amounts are **integer minor units** (paise for INR). `₹100.50` is stored as `10050`.
-No float, anywhere, ever, in the money path.
+Amounts are **integer minor units**. `₹100.50` is stored as `10050`. How many minor
+units make a major one is a property of the currency, not a constant: the yen has none
+(`¥1,000` is `1000`) and the Kuwaiti dinar has three. No float, anywhere, ever, in the
+money path.
+
+Each person has their own **account currency**, defaulting to the workspace's. Every row
+of theirs is denominated in it; an amount entered in another currency is converted at the
+door and the row keeps what was actually handed over — the original amount, its currency,
+the rate, when it was taken and where it came from. A later rate move never touches a
+recorded transaction (`docs/decisions.md` §34–§37).
 
 ```
 total_credit           = Σ credit transactions       (not void)
@@ -102,9 +113,9 @@ Apply the migrations in order — they are numbered and must run in sequence:
 
 ```bash
 cd db/tools && npm install && cd ../..
-node db/tools/run-sql.mjs migrate       # 0001 … 0008
+node db/tools/run-sql.mjs migrate       # 0001 … 0012
 node db/tools/run-sql.mjs seed          # optional demo data
-node db/tools/run-sql.mjs test          # 72 assertions, rolled back
+node db/tools/run-sql.mjs test          # 128 assertions, rolled back
 ```
 
 The runner reads `DATABASE_URL` from the environment or from `web/.env.local`.
@@ -159,6 +170,9 @@ with a network error.
 | Suite | Command | Covers |
 |---|---|---|
 | Accounting engine | `node db/tools/run-sql.mjs test` | §33 arithmetic, FIFO allocation, integrity guards |
+| Currency engine | (same command) | per-person currency, opening balances, conversion, restatement, historical rates |
+| Currency over HTTP | `node db/tools/smoke-currency.mjs` | the whole feature as a signed-in user, on a throwaway account it deletes |
+| Data safety | `node db/tools/snapshot.mjs before` · `… after` · `… diff` | counts, ids and every person's net balance, before and after a migration |
 | RLS / authorisation | (same command) | cross-tenant reads and writes, privilege escalation, disabled accounts, anon |
 | End-to-end API | `node db/tools/smoke-api.mjs` | the real anon-key path: sign-in, RPCs, isolation |
 | Web units | `cd web && npm test` | money parsing, formatting, balance meaning |
@@ -181,6 +195,8 @@ widget at a real size:
 | `sheet_cancel_test.dart` | Cancel doing nothing on a sheet whose route is not `Route<bool>` |
 | `person_actions_test.dart` | Delete vanishing from the menu, and the person form going two-up on a phone |
 | `motion_cost_test.dart` | a controller per list row coming back — see [`docs/performance.md`](./docs/performance.md) |
+| `person_form_keyboard_test.dart` | the person form becoming unusable with the keyboard up: actions under the keyboard, no way to dismiss it, Next going nowhere, targets under 44pt |
+| `currencies_test.dart` | the Dart currency list drifting from `shared/currencies.json`, and conversion disagreeing with the web and the database |
 
 ---
 
@@ -190,7 +206,7 @@ widget at a real size:
 context.md                  the specification
 mindmap.md                  visual map of the same
 db/
-  migrations/0001…0008.sql  schema, engine, RLS, indexes, admin
+  migrations/0001…0012.sql  schema, engine, RLS, indexes, admin, currency
   seed.sql                  two isolated demo workspaces
   tests/                    accounting + RLS suites (self-rolling-back)
   tools/                    SQL runner and API smoke test
@@ -204,6 +220,8 @@ app/
   lib/ui/                   screens, sheets, widgets, motion
   windows/installer/        Inno Setup script for the Windows installer
   test/                     money, contracts, and the UI regressions above
+shared/
+  currencies.json           the one currency definition every client is generated from
 docs/                       security, performance, deployment, decisions, direction
 ```
 
@@ -225,6 +243,11 @@ docs/                       security, performance, deployment, decisions, direct
 CRM · payroll · inventory · HR · tax/GST · invoicing · expense management ·
 banking integrations · payment gateways · social login · public signup ·
 push/email infrastructure · a reporting engine · full offline sync.
+
+**Offline is about rates, not about writes.** Exchange rates are cached per owner and a
+missing rate never blocks a save. Recording a transaction still needs the network, because
+every balance is computed by the database and there is no local write queue — see
+`context.md` §22.
 
 The data layer is structured so offline sync can be added later without a rewrite
 (`context.md` §22) — but v1 optimises for correctness, speed and a simple

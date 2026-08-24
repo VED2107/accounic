@@ -65,7 +65,7 @@ export default async function PeoplePage({
             ? 'No one here yet'
             : `${all.length} ${all.length === 1 ? 'account' : 'accounts'} in this workspace`
         }
-        action={<AddPersonButton />}
+        action={<AddPersonButton baseCurrency={currency} />}
       />
 
       {all.length > 0 ? (
@@ -105,7 +105,7 @@ export default async function PeoplePage({
               icon={<PeopleIcon />}
               title="No people yet"
               description="Add your first person or business to start tracking money."
-              action={<AddPersonButton />}
+              action={<AddPersonButton baseCurrency={currency} />}
             />
           )
         ) : (
@@ -175,7 +175,9 @@ function PersonRow({ person, currency }: { person: PersonBalance; currency: stri
         </span>
       </span>
 
-      <NetBadge netMinor={person.net_balance} currency={currency} />
+      {/* Each account is shown in its own currency; the workspace total above
+          is the only converted figure on this page (upgrade §9). */}
+      <NetBadge netMinor={person.net_balance} currency={person.currency ?? currency} />
       <ArrowRightIcon className="size-4 shrink-0 text-ink-faint/60 transition-transform duration-[var(--dur)] ease-[var(--ease)] group-hover:translate-x-0.5 group-hover:text-ink-muted" />
     </Link>
   );

@@ -606,3 +606,104 @@ past the fields.
 that both actions are inside the visible viewport — across four keyboard heights,
 for the shared chrome and for the person sheet specifically. Numbers can move
 without the test starting to lie.
+
+---
+
+## 34. A person's currency is the account's currency, and `amount_minor` never changed meaning
+
+Multi-currency could have been built two ways.
+
+**Per-row currency**, where every transaction carries its own, and a person's balance is a
+set of positions rather than a number. It models reality most directly and it breaks
+everything downstream: `person_balances` stops returning one row per person, the
+over-settlement guards have to group by currency as well as direction, `settle_account()`
+has to ask which currency it is settling, and every screen that reads a net balance has to
+learn to read several.
+
+**Per-account currency**, where a person is denominated in one currency and every row of
+theirs is in it. The engine is untouched — `amount_minor` still means "minor units, in this
+account's currency", which is exactly what it meant when there was only one currency in the
+product — and every balance that computed to a number before `0010_currency.sql` computes to
+the same number after it. That is checked, not asserted: `db/tools/snapshot.mjs` fingerprints
+every person's net balance before and after.
+
+The second is what shipped, and the reason is the first line of the upgrade brief: existing
+data must not change. An engine rewrite is the most likely way to break that, and this
+feature did not need one.
+
+What a cross-currency entry then means is *conversion at the door*: the user types ₹1,000
+against Ahmed's dirham account, and the row stores AED 41.60 as the amount plus the rupee
+figure, the rate, the timestamp and the source it came from. Nothing is lost, the balance
+stays in one currency, and the original is on the row forever.
+
+The database does the conversion, never a client. Three clients doing the same arithmetic is
+three chances to round differently, and the day web says AED 41.60 and Android says AED 41.61
+is the day the product stops being believable. The clients send what was typed and the rate
+they were shown; `resolve_amount_minor()` decides what that is worth.
+
+## 35. Changing an account's currency restates it, and says so first
+
+The brief asked for currency to be editable and preferred that a change affect only future
+transactions. Under §34 that is not available: if old rows stay in rupees while the account
+says dirhams, `person_balances` sums rupees and dirhams into one integer and reports a number
+that means nothing.
+
+The three honest options were: refuse the change once there is history; keep per-currency
+positions (§34, rejected); or restate the account.
+
+Restating is what shipped. `update_person()` refuses the first attempt and explains what will
+happen — that refusal *is* the confirmation dialog, and nothing has been written when it
+appears. On the second attempt every row is converted at a rate the user confirmed, and every
+row keeps `entered_amount_minor`, `entered_currency` and the rate it was restated at, so the
+original figures survive and the restatement can be read back.
+
+Two details that are not obvious:
+
+* Voided rows are restated too. They affect no balance, but a retraction denominated in a
+  currency its transaction is no longer in makes the timeline unreadable. The immutability
+  guard in `0005_rls.sql` refuses to edit a voided row, so `restate_person_currency()` sets a
+  transaction-local `accounic.restating` marker that the guard honours. Nothing else sets it,
+  and it dies with the transaction.
+* Rounding each row independently can leave a fully settled account settled by one minor unit
+  more than it was charged, which the deferred over-settlement trigger would refuse at commit
+  — correctly. The difference is absorbed into the newest settlement on that side, which is
+  the only place it can go without inventing money.
+
+## 36. The rate source is open.er-api.com, with Frankfurter behind it
+
+Frankfurter is the obvious choice — ECB reference rates, free, no key, impeccable provenance
+— and it cannot be the primary source here, because the ECB does not publish the dirham. Nor
+the riyal, nor the Kuwaiti dinar. The Gulf currencies are the ones this product was asked to
+support by name, and a rate source that cannot price them is not a rate source for this
+product.
+
+`open.er-api.com` (the open endpoint of ExchangeRate-API) publishes 160-odd currencies, needs
+no key and no account, and updates daily. It is first. Frankfurter is second, for when the
+first is unreachable and both currencies are ones the ECB covers. Neither is paid, which was
+a requirement rather than a preference.
+
+The rules that matter more than the source:
+
+* A rate is fetched at most once every twelve hours per base currency. Everything else comes
+  from `public.exchange_rates`, which is **per owner** — a global table would let any signed-in
+  user poison the rate every other user's conversions are computed from — and is therefore
+  shared across that user's web, Windows and Android clients. A rate fetched on the phone this
+  morning is on the desktop this afternoon.
+* A missing rate never loses a transaction. It blocks *conversion*, and the answer offered is
+  "enter the amount in the account's currency", which always works and is never a failed save.
+* A cached rate is used when the network is not there, and is labelled as cached — and as
+  stale when it is more than a day old. A number whose age is hidden is worse than no number.
+
+## 37. What a minor unit is depends on the currency
+
+`amount_minor` was safe to treat as hundredths for as long as the product had one currency.
+It is not any more: the yen has no minor unit at all, and the Kuwaiti dinar has three. ¥1,000
+is `1000`, ₹1,000 is `100000`, and a conversion between them that assumes 100 is wrong by two
+orders of magnitude.
+
+So `decimals` is part of the currency definition, and the definition lives in exactly one
+place — `shared/currencies.json` — from which `node db/tools/sync-currencies.mjs` generates
+the seed in `0010_currency.sql`, `web/src/lib/currencies.ts` and `app/lib/core/currencies.dart`.
+A test on each side fails if its copy drifts from the JSON, and the same conversion cases are
+asserted in all three suites. Three runtimes convert money here; the only defence against them
+disagreeing is that they are generated from one file and tested against the same numbers.

@@ -157,6 +157,15 @@ export function SettleSheet({
           <input type="hidden" name="person_id" value={balance.person_id} />
           <input type="hidden" name="direction" value={direction} />
           <input type="hidden" name="transaction_id" value={transactionId} />
+          {/*
+            A settlement is recorded in the account's own currency: the ceiling
+            it is checked against is an account-currency figure, and offering a
+            second currency here would mean checking a converted amount against
+            a limit that moves with the rate. The amount that was actually
+            handed over in another currency belongs in the note.
+          */}
+          <input type="hidden" name="entry_currency" value={currency} />
+          <input type="hidden" name="account_currency" value={currency} />
 
           {bothSides ? (
             <fieldset className="space-y-1.5">

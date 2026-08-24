@@ -10,8 +10,10 @@ import '../../data/ledger_repository.dart';
 import '../../data/models.dart';
 import '../../providers.dart';
 import '../motion.dart';
+import '../../core/currencies.dart';
 import '../widgets/amount_field.dart';
 import '../widgets/common.dart';
+import '../widgets/currency_field.dart';
 import 'sheet_scaffold.dart';
 
 /// Fast transaction entry (context.md §14).
@@ -40,9 +42,13 @@ Future<bool> showTransactionSheet(
 }
 
 class PersonRef {
-  const PersonRef(this.id, this.name);
+  const PersonRef(this.id, this.name, {this.currency});
   final String id;
   final String name;
+
+  /// The account currency. Null falls back to the workspace's, which is what a
+  /// person with none stored means (upgrade 1).
+  final String? currency;
 }
 
 class EditableTransaction {
@@ -52,6 +58,8 @@ class EditableTransaction {
     required this.amountMinor,
     required this.date,
     this.description,
+    this.enteredAmountMinor,
+    this.enteredCurrency,
   });
 
   final String id;
@@ -59,6 +67,12 @@ class EditableTransaction {
   final int amountMinor;
   final String date;
   final String? description;
+
+  /// What was originally typed, when that was not the account's currency. An
+  /// edit reopens on those figures rather than on the converted ones, so a
+  /// correction is made to what the user actually remembers (upgrade 2).
+  final int? enteredAmountMinor;
+  final String? enteredCurrency;
 }
 
 class _TransactionSheet extends ConsumerStatefulWidget {
@@ -83,6 +97,10 @@ class _TransactionSheetState extends ConsumerState<_TransactionSheet> {
   bool _saving = false;
   String? _error;
 
+  /// The currency the user is typing in. Follows the account until they say
+  /// otherwise, because the ordinary case should cost no decisions.
+  String? _entryCurrency;
+
   bool get _isEdit => widget.transaction != null;
   bool get _canSave => _amount != null && _person != null && !_saving;
 
@@ -94,6 +112,13 @@ class _TransactionSheetState extends ConsumerState<_TransactionSheet> {
 
   Future<void> _save() async {
     if (!_canSave) return;
+
+    final account = _accountCurrency;
+    final entry = _entryCurrency ?? account;
+    // The keyboard has nothing left to contribute, and the result of this press
+    // is behind it.
+    FocusManager.instance.primaryFocus?.unfocus();
+
     setState(() {
       _saving = true;
       _error = null;
@@ -103,21 +128,45 @@ class _TransactionSheetState extends ConsumerState<_TransactionSheet> {
       final repository = ref.read(ledgerRepositoryProvider);
       final note = _note.text.trim().isEmpty ? null : _note.text.trim();
 
+      // A cross-currency entry sends what was typed and the rate; the database
+      // derives the account amount from them. The client never sends a
+      // converted number it worked out itself (upgrade 2, 5).
+      final foreign = entry != account;
+      final rate =
+          foreign ? await ref.read(ratesRepositoryProvider).rate(entry, account) : null;
+
+      if (foreign && rate == null) {
+        setState(() {
+          _saving = false;
+          _error = 'No $entry to $account rate is available. Enter the amount in '
+              '$account instead — nothing has been saved.';
+        });
+        return;
+      }
+
       if (_isEdit) {
         await repository.updateTransaction(
           transactionId: widget.transaction!.id,
           type: _type,
-          amountMinor: _amount!,
+          amountMinor: foreign ? null : _amount,
           date: _date,
           description: note,
+          enteredAmountMinor: foreign ? _amount : null,
+          enteredCurrency: foreign ? entry : null,
+          exchangeRateE9: rate?.rateE9,
+          rateSource: rate?.source,
         );
       } else {
         await repository.createTransaction(
           personId: _person!.id,
           type: _type,
-          amountMinor: _amount!,
+          amountMinor: foreign ? null : _amount,
           date: _date,
           description: note,
+          enteredAmountMinor: foreign ? _amount : null,
+          enteredCurrency: foreign ? entry : null,
+          exchangeRateE9: rate?.rateE9,
+          rateSource: rate?.source,
         );
       }
 
@@ -131,9 +180,17 @@ class _TransactionSheetState extends ConsumerState<_TransactionSheet> {
     }
   }
 
+  /// The account's currency, which is the person's — not the workspace's.
+  String get _accountCurrency {
+    final person = _person?.currency;
+    if (person != null && person.isNotEmpty) return normaliseCode(person);
+    return normaliseCode(ref.read(currencyProvider));
+  }
+
   @override
   Widget build(BuildContext context) {
-    final currency = ref.watch(currencyProvider);
+    final account = _accountCurrency;
+    final entry = _entryCurrency ?? account;
 
     return SheetScaffold(
       title: _isEdit ? 'Edit transaction' : 'Add transaction',
@@ -146,7 +203,12 @@ class _TransactionSheetState extends ConsumerState<_TransactionSheet> {
         if (!_isEdit) ...[
           PersonPickerField(
             value: _person,
-            onChanged: (person) => setState(() => _person = person),
+            onChanged: (person) => setState(() {
+              _person = person;
+              // Picking a dirham account means typing dirhams until the user
+              // says otherwise.
+              _entryCurrency = null;
+            }),
           ),
           const SizedBox(height: 18),
         ],
@@ -155,11 +217,26 @@ class _TransactionSheetState extends ConsumerState<_TransactionSheet> {
         const SizedBox(height: 18),
 
         AmountField(
-          currency: currency,
+          currency: entry,
           autofocus: _person != null,
-          initial: widget.transaction?.amountMinor,
+          initial: widget.transaction?.enteredAmountMinor ?? widget.transaction?.amountMinor,
           onChanged: (minor) => setState(() => _amount = minor),
         ),
+        const SizedBox(height: 12),
+
+        CurrencyField(
+          label: 'Entered in',
+          value: entry,
+          onChanged: (next) => setState(() => _entryCurrency = next),
+          helper: entry == account
+              ? 'This account is kept in $account'
+              : 'Converted into $account when it is saved',
+        ),
+
+        if (entry != account) ...[
+          const SizedBox(height: 12),
+          ConversionNote(amountMinor: _amount, from: entry, to: account),
+        ],
         const SizedBox(height: 18),
 
         Row(
@@ -401,7 +478,7 @@ class _PersonPickerFieldState extends ConsumerState<PersonPickerField> {
     try {
       final person = await ref.read(ledgerRepositoryProvider).createPerson(name: name);
       ref.refreshLedger();
-      widget.onChanged(PersonRef(person.id, person.name));
+      widget.onChanged(PersonRef(person.id, person.name, currency: person.currency));
     } on Failure catch (failure) {
       if (mounted) showMessage(context, failure.message, error: true);
     } finally {
@@ -411,7 +488,6 @@ class _PersonPickerFieldState extends ConsumerState<PersonPickerField> {
 
   @override
   Widget build(BuildContext context) {
-    final currency = ref.watch(currencyProvider);
     final selected = widget.value;
 
     if (selected != null) {
@@ -503,9 +579,13 @@ class _PersonPickerFieldState extends ConsumerState<PersonPickerField> {
                   subtitle: option.phone == null
                       ? null
                       : Text(option.phone!, style: const TextStyle(fontSize: 12)),
-                  trailing: NetBadge(netMinor: option.netBalance, currency: currency),
+                  trailing: NetBadge(netMinor: option.netBalance, currency: option.currency),
                   onTap: () =>
-                      widget.onChanged(PersonRef(option.personId, option.name)),
+                      widget.onChanged(PersonRef(
+                        option.personId,
+                        option.name,
+                        currency: option.currency,
+                      )),
                 ),
               if (_query.trim().isNotEmpty && !exactMatch)
                 ListTile(

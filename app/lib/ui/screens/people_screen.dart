@@ -532,7 +532,9 @@ class _PersonTile extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: AppSpacing.md),
-                    NetBadge(netMinor: person.netBalance, currency: currency),
+                    // Each account is shown in its own currency; the totals
+                    // at the top are the only converted figures here.
+                    NetBadge(netMinor: person.netBalance, currency: person.currency),
                     const SizedBox(width: AppSpacing.xs),
                     HoverSlide(
                       offset: Offset(hovered ? 0.2 : 0, 0),

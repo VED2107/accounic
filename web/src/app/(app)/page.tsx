@@ -148,7 +148,18 @@ export default async function DashboardPage() {
                 </p>
                 <p className="mt-1.5 text-[0.8125rem] text-ink-muted">
                   {net > 0 ? 'In your favour' : net < 0 ? 'Against you' : 'Everything is settled'}
+                  {summary.currency_count > 1 ? ` · in ${currency}` : ''}
                 </p>
+                {/* Totals across currencies are only as complete as the rates
+                    behind them. Saying how many accounts could not be converted
+                    is more honest than quietly leaving them out (upgrade §9). */}
+                {summary.unconverted_people > 0 ? (
+                  <p className="mt-1 text-[0.75rem] text-payable">
+                    {summary.unconverted_people}{' '}
+                    {summary.unconverted_people === 1 ? 'account is' : 'accounts are'} not
+                    included — no exchange rate yet
+                  </p>
+                ) : null}
               </div>
               <div className="w-24 shrink-0 sm:w-36">
                 <Sparkline id="net" points={trends.net.points} tone="accent" />
@@ -503,7 +514,7 @@ function BalanceRow({ person, currency }: { person: DashboardPeopleRow; currency
           {person.last_activity_at ? friendlyDate(person.last_activity_at) : 'No activity yet'}
         </span>
       </span>
-      <NetBadge netMinor={person.net_balance} currency={currency} />
+      <NetBadge netMinor={person.net_balance} currency={person.currency ?? currency} />
       <ArrowRightIcon className="size-4 shrink-0 text-ink-faint/60 transition-transform duration-[var(--dur)] ease-[var(--ease)] group-hover:translate-x-0.5 group-hover:text-ink-muted" />
     </Link>
   );

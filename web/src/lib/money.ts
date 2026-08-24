@@ -10,9 +10,21 @@
  * Number.MAX_SAFE_INTEGER (9.007e15 minor units ≈ ₹90 trillion) and the
  * amount_minor CHECK constraint caps a single row well under that, so `number`
  * is safe here — asserted by assertSafeMinor().
+ *
+ * How many minor units make a major one is a property of the currency, not a
+ * constant: the yen has none and the Gulf dinars have three. Every function
+ * here takes the currency for that reason (upgrade §19).
  */
 
-/** Minor units per major unit. Every currency this app supports uses 2. */
+import { decimalsFor, minorPerMajor } from '@/lib/currencies';
+
+/**
+ * Minor units per major unit for a two-decimal currency.
+ *
+ * Kept because most of this product is denominated in one and a literal reads
+ * better than a lookup in those places. Anything handling a *named* currency
+ * must ask minorPerMajor(code) instead.
+ */
 export const MINOR_PER_MAJOR = 100;
 
 const CURRENCY_LOCALE: Record<string, string> = {
@@ -24,6 +36,44 @@ const CURRENCY_LOCALE: Record<string, string> = {
   AUD: 'en-AU',
   CAD: 'en-CA',
   SGD: 'en-SG',
+  JPY: 'ja-JP',
+  CNY: 'zh-CN',
+  CHF: 'de-CH',
+  SAR: 'ar-SA',
+  QAR: 'ar-QA',
+  KWD: 'ar-KW',
+  BHD: 'ar-BH',
+  OMR: 'ar-OM',
+  JOD: 'ar-JO',
+  PKR: 'en-PK',
+  BDT: 'bn-BD',
+  LKR: 'si-LK',
+  NPR: 'ne-NP',
+  MYR: 'ms-MY',
+  THB: 'th-TH',
+  IDR: 'id-ID',
+  PHP: 'en-PH',
+  VND: 'vi-VN',
+  KRW: 'ko-KR',
+  ZAR: 'en-ZA',
+  NGN: 'en-NG',
+  KES: 'en-KE',
+  EGP: 'ar-EG',
+  TRY: 'tr-TR',
+  RUB: 'ru-RU',
+  BRL: 'pt-BR',
+  MXN: 'es-MX',
+  SEK: 'sv-SE',
+  NOK: 'nb-NO',
+  DKK: 'da-DK',
+  PLN: 'pl-PL',
+  CZK: 'cs-CZ',
+  HUF: 'hu-HU',
+  RON: 'ro-RO',
+  ILS: 'he-IL',
+  TWD: 'zh-TW',
+  HKD: 'zh-HK',
+  NZD: 'en-NZ',
 };
 
 export function localeFor(currency: string): string {
@@ -43,13 +93,17 @@ export function assertSafeMinor(minor: number): number {
 /**
  * Parse user input into minor units.
  *
- * Accepts "1,234.5", "₹1234", " 1 234.56 ". Rejects anything with more than two
- * decimal places rather than silently rounding away the user's money.
- * Returns null when the input is not a usable amount.
+ * Accepts "1,234.5", "₹1234", " 1 234.56 ". Rejects more decimal places than the
+ * currency actually has, rather than silently rounding away the user's money —
+ * which for the yen means rejecting a decimal point at all. Returns null when
+ * the input is not a usable amount.
  */
-export function parseAmountToMinor(input: string): number | null {
+export function parseAmountToMinor(input: string, currency = 'INR'): number | null {
+  const decimals = decimalsFor(currency);
+  const units = minorPerMajor(currency);
+
   const cleaned = input
-    .replace(/[\s,  ]/g, '')
+    .replace(/[\s  ,]/g, '')
     .replace(/[^\d.\-]/g, '');
 
   if (cleaned === '' || cleaned === '-' || cleaned === '.') return null;
@@ -60,34 +114,39 @@ export function parseAmountToMinor(input: string): number | null {
   if (!/^\d*(\.\d*)?$/.test(unsigned)) return null;
 
   const [whole = '', fraction = ''] = unsigned.split('.');
-  if (fraction.length > 2) return null;
+  if (fraction.length > decimals) return null;
   if (whole === '' && fraction === '') return null;
 
-  const paddedFraction = fraction.padEnd(2, '0');
-  const minor = Number(whole || '0') * MINOR_PER_MAJOR + Number(paddedFraction || '0');
+  const paddedFraction = decimals === 0 ? '' : fraction.padEnd(decimals, '0');
+  const minor = Number(whole || '0') * units + Number(paddedFraction || '0');
   if (!Number.isSafeInteger(minor)) return null;
 
   return negative ? -minor : minor;
 }
 
 /** Minor units → a plain editable string, e.g. 1050050 → "10500.50". */
-export function minorToInput(minor: number): string {
+export function minorToInput(minor: number, currency = 'INR'): string {
   assertSafeMinor(minor);
+  const units = minorPerMajor(currency);
+  const decimals = decimalsFor(currency);
   const negative = minor < 0;
   const abs = Math.abs(minor);
-  const whole = Math.trunc(abs / MINOR_PER_MAJOR);
-  const fraction = abs % MINOR_PER_MAJOR;
-  const body = fraction === 0 ? String(whole) : `${whole}.${String(fraction).padStart(2, '0')}`;
+  const whole = Math.trunc(abs / units);
+  const fraction = abs % units;
+  const body =
+    fraction === 0 ? String(whole) : `${whole}.${String(fraction).padStart(decimals, '0')}`;
   return negative ? `-${body}` : body;
 }
 
 export interface FormatOptions {
-  /** Drop ".00" on whole amounts. Default true — the dashboard reads better. */
+  /** Drop the fraction on whole amounts. Default true — the dashboard reads better. */
   compactDecimals?: boolean;
   /** Render the currency symbol. Default true. */
   withSymbol?: boolean;
   /** Always show a leading + or −. Default false. */
   signed?: boolean;
+  /** Append the ISO code, e.g. "AED 41.60 AED". Off by default; see MoneyExact. */
+  withCode?: boolean;
 }
 
 /** Minor units → display string, e.g. 1050050 → "₹10,500.50". */
@@ -96,23 +155,33 @@ export function formatMinor(
   currency = 'INR',
   options: FormatOptions = {},
 ): string {
-  const { compactDecimals = true, withSymbol = true, signed = false } = options;
+  const {
+    compactDecimals = true,
+    withSymbol = true,
+    signed = false,
+    withCode = false,
+  } = options;
   assertSafeMinor(minor);
 
+  const code = currency.toUpperCase();
+  const units = minorPerMajor(code);
+  const maxDecimals = decimalsFor(code);
   const abs = Math.abs(minor);
-  const hasFraction = abs % MINOR_PER_MAJOR !== 0;
-  const digits = compactDecimals && !hasFraction ? 0 : 2;
+  const hasFraction = abs % units !== 0;
+  const digits = compactDecimals && !hasFraction ? 0 : maxDecimals;
 
-  const formatted = new Intl.NumberFormat(localeFor(currency), {
+  const formatted = new Intl.NumberFormat(localeFor(code), {
     style: withSymbol ? 'currency' : 'decimal',
-    currency,
+    currency: code,
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
-  }).format(abs / MINOR_PER_MAJOR);
+  }).format(abs / units);
 
-  if (signed && minor !== 0) return `${minor > 0 ? '+' : '−'}${formatted}`;
-  if (minor < 0) return `−${formatted}`;
-  return formatted;
+  const body = withCode ? `${formatted} ${code}` : formatted;
+
+  if (signed && minor !== 0) return `${minor > 0 ? '+' : '−'}${body}`;
+  if (minor < 0) return `−${body}`;
+  return body;
 }
 
 /** The bare symbol for a currency, for use in input prefixes. */

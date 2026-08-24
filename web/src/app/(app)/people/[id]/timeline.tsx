@@ -7,6 +7,7 @@ import { staggerStyle } from '@/components/motion/reveal';
 import { ConfirmDialog } from '@/components/ui/modal';
 import { Money } from '@/components/money';
 import { TransactionSheet } from '@/components/ledger/transaction-sheet';
+import { ConvertedFrom } from '@/components/ledger/conversion';
 import { SettleSheet } from '@/components/ledger/settle-sheet';
 import { ArrowDownIcon, ArrowUpIcon, SettleIcon, WalletIcon } from '@/components/icons';
 import { voidSettlement, voidTransaction } from '@/lib/actions';
@@ -136,7 +137,9 @@ export function Timeline({
                       <span className="min-w-0 flex-1">
                         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                           <span className="text-[0.8125rem] font-medium text-ink">
-                            {entryLabel(entry.entry_kind, entry.entry_type)}
+                            {entry.is_opening
+                              ? 'Opening balance'
+                              : entryLabel(entry.entry_kind, entry.entry_type)}
                           </span>
                           {entry.is_void ? (
                             <StatusChip tone="void">Voided</StatusChip>
@@ -152,6 +155,18 @@ export function Timeline({
                           <span className="mt-0.5 block truncate text-[0.75rem] text-ink-faint">
                             {entry.note}
                           </span>
+                        ) : null}
+                        {/* What was actually handed over, when that was not this
+                            account's currency. The converted figure is on the
+                            right; this is the half that must never be hidden. */}
+                        {entry.entered_currency ? (
+                          <ConvertedFrom
+                            className="mt-0.5 block truncate"
+                            enteredMinor={entry.entered_amount_minor}
+                            enteredCurrency={entry.entered_currency}
+                            rateE9={entry.exchange_rate_e9}
+                            accountCurrency={currency}
+                          />
                         ) : null}
                       </span>
 

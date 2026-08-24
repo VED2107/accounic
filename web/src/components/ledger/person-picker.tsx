@@ -10,6 +10,8 @@ import { Avatar, Spinner, cn } from '@/components/ui/primitives';
 export interface PickedPerson {
   id: string;
   name: string;
+  /** The account currency, so the sheet knows what it is recording into. */
+  currency?: string | null;
 }
 
 /**
@@ -30,7 +32,13 @@ export function PersonPicker({
 }) {
   const [query, setQuery] = useState('');
   const [options, setOptions] = useState<
-    Array<{ person_id: string; name: string; phone: string | null; net_balance: number }>
+    Array<{
+      person_id: string;
+      name: string;
+      phone: string | null;
+      net_balance: number;
+      currency?: string | null;
+    }>
   >([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -49,7 +57,7 @@ export function PersonPicker({
         ? supabase.rpc('search_all', { p_query: trimmed, p_limit: 6 })
         : supabase
             .from('person_balances')
-            .select('person_id, name, phone, net_balance')
+            .select('person_id, name, phone, net_balance, currency')
             .eq('is_archived', false)
             .order('last_activity_at', { ascending: false, nullsFirst: false })
             .limit(6);
@@ -85,8 +93,8 @@ export function PersonPicker({
       setError('That person could not be created. Please try again.');
       return;
     }
-    const created = data as { id: string; name: string };
-    onChange({ id: created.id, name: created.name });
+    const created = data as { id: string; name: string; currency: string | null };
+    onChange({ id: created.id, name: created.name, currency: created.currency });
   }
 
   if (value) {
@@ -99,6 +107,11 @@ export function PersonPicker({
           </Avatar>
           <span className="min-w-0 flex-1 truncate text-[0.875rem] font-medium text-ink">
             {value.name}
+            {value.currency && value.currency !== currency ? (
+              <span className="ml-2 rounded-full border border-line bg-surface px-1.5 py-0.5 text-[0.6875rem] font-medium text-ink-muted">
+                {value.currency}
+              </span>
+            ) : null}
           </span>
           <button
             type="button"
@@ -147,7 +160,13 @@ export function PersonPicker({
           <li key={option.person_id}>
             <button
               type="button"
-              onClick={() => onChange({ id: option.person_id, name: option.name })}
+              onClick={() =>
+                onChange({
+                  id: option.person_id,
+                  name: option.name,
+                  currency: option.currency ?? null,
+                })
+              }
               className={cn(
                 'flex w-full items-center gap-3 border-b border-line px-3 py-2.5 text-left last:border-0',
                 'transition-colors duration-[var(--dur)] ease-[var(--ease)] hover:bg-sunken',
@@ -164,7 +183,7 @@ export function PersonPicker({
                   </span>
                 ) : null}
               </span>
-              <NetBadge netMinor={option.net_balance} currency={currency} />
+              <NetBadge netMinor={option.net_balance} currency={option.currency ?? currency} />
             </button>
           </li>
         ))}

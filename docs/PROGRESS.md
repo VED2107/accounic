@@ -3,8 +3,8 @@
 Status of the Accounic build against `context.md`. This is the file to read first when
 picking the work back up.
 
-**Last updated:** 2026-08-21 (fourth session)
-**Current release:** [v1.0.4](https://github.com/VED2107/accounic/releases/latest)
+**Last updated:** 2026-08-24 (fifth session)
+**Current release:** [v1.1.0](https://github.com/VED2107/accounic/releases/latest)
 **Overall:** Phases 1–4 complete and verified against the live database. Phase 5
 (performance) measured and the client half tuned — see `docs/performance.md`. Phase 6
 (hardening) partly done.
@@ -23,6 +23,8 @@ Everything found since v1.0.0 was found on a **phone**, and none of it was catch
 | 1.0.2 | the missing INTERNET permission; Administration unusable at phone width |
 | 1.0.3 | Delete hidden rather than explained; the person form going two-up on a phone |
 | 1.0.4 | ~1,500 animation controllers per screen, most of them serving hover on a touch device |
+| 1.0.5–1.0.7 | delete refusing a person whose history was all retracted; Save and Cancel sitting under the keyboard |
+| 1.1.0 | multi-currency, opening balances, and the rest of the keyboard story on the person form |
 
 Each now has a widget test pinning it — see README §4.
 
@@ -55,6 +57,10 @@ Nine migrations, applied in order to the live Supabase project.
 | `0006_indexes.sql` | composite and trigram indexes for every access pattern |
 | `0007_admin.sql` | `admin_list_users()`, `admin_set_user_active()`, `admin_system_info()`, `me()`, `grant_admin()` / `revoke_admin()` |
 | `0008_activity.sql` | `activity_page()` paginated feed, `activity_summary()` buckets |
+| `0009_delete_person_voided.sql` | `delete_person()` agreeing with the view about what "has transactions" means |
+| `0010_currency.sql` | `currencies` reference table, `people.currency`, conversion provenance on every ledger row, `is_opening`, the per-owner `exchange_rates` cache, `convert_amount_minor()`, and the engine views rebuilt to carry currency |
+| `0011_currency_mutations.sql` | the write path: currency and opening balance on `create_person()`, restatement on `update_person()`, conversion arguments on every money RPC, `set_person_opening_balance()` |
+| `0012_currency_reads.sql` | `dashboard()`, `person_page()`, `search_all()`, `activity_page()` and `activity_summary()` made currency-aware |
 
 Supporting files: `db/seed.sql` (two isolated demo workspaces),
 `db/tests/01_accounting_engine.sql`, `db/tests/02_rls_isolation.sql`,
@@ -360,3 +366,63 @@ never an automated run on a device.
 ### 9.4 Also done this session
 
 - `vedchauhan2107@gmail.com` was granted admin (a row in `public.app_admins`).
+
+---
+
+## 10. Fifth session — multi-currency, opening balances, and the keyboard (v1.1.0)
+
+### 10.1 What shipped
+
+| Area | What changed |
+|---|---|
+| Database | three additive migrations (`0010`–`0012`). No table dropped, no row rewritten, no id regenerated |
+| Currency | a currency per person, defaulting to the workspace's; `shared/currencies.json` is the single definition, generated into SQL, TypeScript and Dart |
+| Conversion | entered amount, currency, rate, timestamp and source stored on every converted row; the database does the arithmetic, the clients preview it |
+| Opening balances | a flagged transaction, so the existing engine computes it correctly by construction; replacing one retracts the old rather than editing it |
+| Rates | open.er-api.com with Frankfurter behind it, cached per owner in `exchange_rates`, refreshed at most every 12 hours, never blocking a save |
+| Android | the person form rebuilt around the keyboard: pinned actions, live inset padding, drag- and tap-to-dismiss, chained focus, 48dp targets |
+| Web / Windows / Android | the same data model and the same RPCs; nothing platform-specific in the accounting path |
+
+### 10.2 Verification evidence
+
+All against the user's live Supabase project.
+
+| Check | Result |
+|---|---|
+| `node db/tools/snapshot.mjs before` / `after` / `diff` | every count, every person id and every net balance unchanged across the migration |
+| `node db/tools/run-sql.mjs test` | 128 assertions pass (82 existing + 46 new currency assertions) |
+| `node db/tools/smoke-currency.mjs` | 23/23 over real HTTP as an ordinary signed-in user |
+| `cd web && npx tsc --noEmit` | clean |
+| `cd web && npm test` | 44 pass (23 money + 21 currency) |
+| `cd web && npx next build` | succeeds, 9 routes |
+| `cd app && flutter analyze` | no issues |
+| `cd app && flutter test` | 100 pass |
+| `flutter build windows --release` | `accounic.exe` built |
+| `flutter build apk --release` | `app-release.apk` built, 24.5 MB |
+| Windows binary | launched and screenshot: signs in, renders the activity feed against the new RPCs |
+| Rate sources | both reachable and returning; `open.er-api.com` publishes 166 currencies including AED, Frankfurter 29 and not AED |
+
+### 10.3 Two things worth keeping
+
+**The engine did not change.** `amount_minor` still means "minor units, in this account's
+currency" — which is what it meant when there was one currency — so every balance computed
+before the migration computes identically after it. `snapshot.mjs` exists to prove that
+rather than assert it, and it is the check to run before any future migration.
+
+**Currency change restates, and says so first.** The database refuses the first attempt and
+explains what will happen; that refusal *is* the confirmation step, and nothing has been
+written when the user sees it. See `docs/decisions.md` §35 for why the "only affects future
+transactions" option is not available under this data model.
+
+### 10.4 Known limitations
+
+- **Writes still need the network.** Rates are cached and degrade gracefully; transactions
+  are not queued offline, because every balance is computed by the database and there is no
+  local write queue. Unchanged from v1.0 (`context.md` §22).
+- **The release APK is still debug-signed** — see `docs/deployment.md` §5.
+- **`db/tools/smoke-api.mjs` cannot finish** on this database: it signs in as
+  `friend@example.com` from `db/seed.sql`, which is not present in the live project. Its
+  first ~30 checks pass; the cross-tenant half needs `run-sql.mjs seed` first, which would
+  add demo rows to a production database. Not run for that reason.
+- **No Android emulator on this machine.** Android verification remains widget tests at real
+  phone metrics plus sideloading the APK.
