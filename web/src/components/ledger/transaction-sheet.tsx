@@ -10,13 +10,13 @@ import { PersonPicker, type PickedPerson } from '@/components/ledger/person-pick
 import { ArrowDownIcon, ArrowUpIcon } from '@/components/icons';
 import { useToast } from '@/components/ui/toast';
 import { CurrencySelect } from '@/components/ledger/currency-select';
-import { ConversionFields, ConversionNote, useRate } from '@/components/ledger/conversion';
+import { ConversionFields, ConversionPanel, useRate } from '@/components/ledger/conversion';
 import { createTransaction, updateTransaction } from '@/lib/actions';
 import { minorToInput } from '@/lib/money';
 import { FALLBACK_CURRENCY, normaliseCode } from '@/lib/currencies';
 import { TYPE_FOR_FLOW, isReceivable, txnEffect, txnMeaning } from '@/lib/direction';
 import { todayIso } from '@/lib/dates';
-import type { ActionResult, TxnType } from '@/lib/types';
+import type { ActionResult, ConversionMode, TxnType } from '@/lib/types';
 
 interface EditableTransaction {
   id: string;
@@ -27,6 +27,9 @@ interface EditableTransaction {
   /** Present when the entry was made in another currency (upgrade §2). */
   entered_amount_minor?: number | null;
   entered_currency?: string | null;
+  /** Present when the converted figure was overridden by hand (upgrade §40). */
+  conversion_mode?: ConversionMode | null;
+  auto_converted_amount_minor?: number | null;
 }
 
 /**
@@ -187,11 +190,15 @@ export function TransactionSheet({
           />
         </div>
 
-        <ConversionNote
+        <ConversionPanel
           amountMinor={amountMinor}
           from={entryCurrency}
           to={accountCurrency}
           state={rate}
+          defaultMode={transaction?.conversion_mode === 'manual' ? 'manual' : 'automatic'}
+          defaultConvertedMinor={
+            transaction?.conversion_mode === 'manual' ? transaction.amount_minor : null
+          }
         />
         <ConversionFields
           entryCurrency={entryCurrency}

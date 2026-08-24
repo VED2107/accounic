@@ -213,6 +213,114 @@ try {
   check('and the balance is unchanged',
     switched.data?.balance?.net_balance === beforeSwitch.data?.balance?.net_balance);
 
+  // --- the actual converted amount, over the wire (upgrade §40) -------------
+  //
+  // The brief's case: an AED account, ₹1,000 handed over, a rate that makes it
+  // AED 41.60, and AED 40 actually given at the counter.
+  const manualPerson = await api.rpc('create_person', {
+    p_name: 'Manual Conversion',
+    p_currency: 'AED',
+  });
+
+  const manual = await api.rpc('create_transaction', {
+    p_person_id: manualPerson.data.id,
+    p_type: 'credit',
+    p_entered_amount_minor: 100000, // ₹1,000.00
+    p_entered_currency: 'INR',
+    p_exchange_rate_e9: 41600000,
+    p_rate_source: 'smoke',
+    p_converted_amount_minor: 4000, // AED 40.00 actually exchanged
+    p_conversion_mode: 'manual',
+  });
+  check(
+    'the ledger takes the amount that actually changed hands',
+    manual.data?.transaction?.amount_minor === 4000,
+    String(manual.data?.transaction?.amount_minor),
+  );
+  check(
+    'and keeps what the rate said, as the audit reference',
+    manual.data?.transaction?.auto_converted_amount_minor === 4160 &&
+      manual.data?.transaction?.conversion_mode === 'manual',
+    `${manual.data?.transaction?.auto_converted_amount_minor} / ${manual.data?.transaction?.conversion_mode}`,
+  );
+  check(
+    'the rupees and the rate survive the override',
+    manual.data?.transaction?.entered_amount_minor === 100000 &&
+      manual.data?.transaction?.entered_currency === 'INR' &&
+      manual.data?.transaction?.exchange_rate_e9 === 41600000,
+  );
+
+  // Editing the note must not restate a manual row at the stored rate.
+  const manualId = manual.data.transaction.id;
+  const noteEdit = await api.rpc('update_transaction', {
+    p_transaction_id: manualId,
+    p_type: 'credit',
+    p_description: 'note edited',
+  });
+  check(
+    'editing the note leaves the actual amount exactly where it was',
+    noteEdit.data?.transaction?.amount_minor === 4000 &&
+      noteEdit.data?.transaction?.conversion_mode === 'manual' &&
+      noteEdit.data?.transaction?.auto_converted_amount_minor === 4160,
+    String(noteEdit.data?.transaction?.amount_minor),
+  );
+
+  const backToAuto = await api.rpc('update_transaction', {
+    p_transaction_id: manualId,
+    p_type: 'credit',
+    p_description: 'note edited',
+    p_entered_amount_minor: 100000,
+    p_entered_currency: 'INR',
+    p_exchange_rate_e9: 41600000,
+    p_rate_source: 'smoke',
+    p_conversion_mode: 'automatic',
+  });
+  check(
+    'switching back to automatic restores the rate-derived amount',
+    backToAuto.data?.transaction?.amount_minor === 4160 &&
+      backToAuto.data?.transaction?.conversion_mode === 'automatic' &&
+      backToAuto.data?.transaction?.auto_converted_amount_minor === null,
+    String(backToAuto.data?.transaction?.amount_minor),
+  );
+
+  const manualPage = await api.rpc('person_page', { p_person_id: manualPerson.data.id });
+  check(
+    'the timeline every client reads carries the mode',
+    (manualPage.data?.timeline ?? []).some((e) => e.conversion_mode === 'automatic'),
+  );
+
+  const manualRefused = await api.rpc('create_transaction', {
+    p_person_id: manualPerson.data.id,
+    p_type: 'credit',
+    p_entered_amount_minor: 100000,
+    p_entered_currency: 'INR',
+    p_exchange_rate_e9: 41600000,
+    p_conversion_mode: 'manual',
+  });
+  check(
+    'manual mode with no actual amount is refused',
+    manualRefused.error !== null,
+    manualRefused.error?.message ?? 'it was allowed',
+  );
+
+  // An opening balance takes the override too.
+  const openingOverride = await api.rpc('set_person_opening_balance', {
+    p_person_id: manualPerson.data.id,
+    p_direction: 'they_owe_me',
+    p_entered_amount_minor: 100000,
+    p_entered_currency: 'INR',
+    p_rate_e9: 41600000,
+    p_rate_source: 'smoke',
+    p_converted_amount_minor: 4000,
+    p_conversion_mode: 'manual',
+  });
+  check(
+    'an opening balance records the actual converted amount',
+    openingOverride.data?.transaction?.amount_minor === 4000 &&
+      openingOverride.data?.transaction?.conversion_mode === 'manual',
+    String(openingOverride.data?.transaction?.amount_minor),
+  );
+
   // --- an old-style client still works --------------------------------------
   // Exactly the arguments v1.0.7 sends: no currency, no conversion.
   const legacy = await api.rpc('create_person', { p_name: 'Legacy', p_type: 'person' });

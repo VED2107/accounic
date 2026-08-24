@@ -17,6 +17,9 @@ import '../widgets/common.dart';
 Future<void> showSearchSheet(BuildContext context, WidgetRef ref) {
   return showModalBottomSheet<void>(
     context: context,
+    // Above the shell, so the bottom bar and the docked `+` are not drawn over
+    // the results. See showAppSheet.
+    useRootNavigator: true,
     isScrollControlled: true,
     useSafeArea: true,
     builder: (context) => const _SearchSheet(),

@@ -3,8 +3,8 @@
 Status of the Accounic build against `context.md`. This is the file to read first when
 picking the work back up.
 
-**Last updated:** 2026-08-24 (fifth session)
-**Current release:** [v1.1.1](https://github.com/VED2107/accounic/releases/latest)
+**Last updated:** 2026-08-25 (seventh session)
+**Current release:** [v1.1.2](https://github.com/VED2107/accounic/releases/latest)
 **Overall:** Phases 1–4 complete and verified against the live database. Phase 5
 (performance) measured and the client half tuned — see `docs/performance.md`. Phase 6
 (hardening) partly done.
@@ -484,3 +484,58 @@ Also in this release:
 **Verified:** 172 SQL assertions, 26 HTTP checks on a throwaway account, 51 web tests, 112
 Flutter tests, both binaries built, and the data-safety snapshot clean against the live
 database (4 users, 4 profiles, 16 people, 27 transactions, 16 settlements — unchanged).
+
+---
+
+## 12. Seventh session — the actual converted amount (v1.1.2)
+
+Automatic conversion is right about the market and sometimes wrong about the money. Ahmed's
+account is in dirhams, ₹1,000 is handed over, the rate says AED 44.20 — and the counter gives
+AED 43. Both figures are facts. This release records both, and lets the ledger take the one
+that actually changed hands.
+
+### 12.1 What shipped
+
+| Area | What changed |
+|---|---|
+| Database | one additive migration (`0014`). Two columns, one helper, five widened RPCs. **No historical row written** |
+| Model | `conversion_mode` (`automatic` \| `manual`) and `auto_converted_amount_minor`; NULL mode reads as automatic, so pre-1.1.2 rows need no backfill |
+| Ledger | `amount_minor` takes the manual figure when there is one — the balance is money that moved, not money quoted |
+| Audit | the entered amount, its currency, the rate, its timestamp and its source all survive an override untouched; the rate figure is kept beside it |
+| Edit | an edit that says nothing about currency preserves the override; switching back to automatic recomputes from the row's own rate |
+| Settlement | the over-settlement guard compares the **actual** amount with what is outstanding |
+| Opening balance | takes an override too, both on `create_person()` and on `set_person_opening_balance()` |
+| Web / Windows / Android | one panel per client: the automatic figure by default, `Use actual amount` beside it, and the automatic estimate kept on screen once overridden |
+| Android | the shell's bottom bar and docked `+` no longer sit on top of an open form — every modal is pushed on the root navigator |
+
+Full reasoning in `docs/decisions.md` §39 (the ledger records what changed hands) and §40
+(a form is not part of the shell it was opened from).
+
+### 12.2 Verification evidence
+
+All against the user's live Supabase project.
+
+| Check | Result |
+|---|---|
+| `node db/tools/snapshot.mjs before` / `after` / `diff` | clean — 21 people, 37 transactions, 17 settlements, every id and every net balance unchanged |
+| `node db/tools/run-sql.mjs test` | 210 assertions pass (172 existing + 38 new) |
+| `node db/tools/smoke-currency.mjs` | 34/34 over real HTTP as an ordinary signed-in user |
+| `cd web && npx tsc --noEmit` | clean |
+| `cd web && npm test` | 64 pass (51 existing + 13 conversion) |
+| `cd web && npx next build` | succeeds, 9 routes, 103 kB shared |
+| `cd app && flutter analyze` | no issues |
+| `cd app && flutter test` | 119 pass (112 existing + 7 new) |
+
+### 12.3 The two things worth keeping
+
+**The migration writes nothing.** `conversion_mode` NULL means automatic — which every row
+written before this release was — so there is no backfill, no historical amount touched and
+no id regenerated. `activity_feed` resolves the NULL, so no client has to know the column
+was ever added. This is the same device `people.ledger_currency` uses in `0013`.
+
+**The footer bug was structural.** `ShellRoute` builds the shell around its own nested
+navigator, and `showModalBottomSheet` defaults to the nearest one — so every sheet opened
+*inside* the shell's Scaffold, underneath its `bottomNavigationBar` and its docked `+`.
+One argument, `useRootNavigator: true`, fixes it in the three places that open a modal.
+Hiding the bar behind a flag would have been a second source of truth for "is a form open",
+and it would have drifted the first time a sheet was dismissed by a gesture.

@@ -4,6 +4,7 @@ import { cn } from '@/components/ui/primitives';
 import { ArrowDownIcon, ArrowUpIcon, SettleIcon } from '@/components/icons';
 import { friendlyDate } from '@/lib/dates';
 import { entryIsReceivable, entryLabel } from '@/lib/direction';
+import { ConvertedFrom } from '@/components/ledger/conversion';
 import type { ActivityItem } from '@/lib/types';
 
 /**
@@ -72,6 +73,20 @@ export function ActivityRow({
         <span className="block truncate text-[0.75rem] text-ink-faint">
           {meta ? `${kind} · ${meta}` : kind}
         </span>
+        {/* What was actually handed over, when that was not this account's
+            currency — and whether the figure beside it was the rate's or the
+            user's (upgrade §40). */}
+        {item.entered_currency ? (
+          <ConvertedFrom
+            className="block truncate"
+            enteredMinor={item.entered_amount_minor}
+            enteredCurrency={item.entered_currency}
+            rateE9={item.exchange_rate_e9}
+            accountCurrency={rowCurrency}
+            conversionMode={item.conversion_mode}
+            autoConvertedMinor={item.auto_converted_amount_minor}
+          />
+        ) : null}
       </span>
 
       <Money

@@ -22,6 +22,16 @@ import '../widgets/common.dart';
 
 /// Presents [builder] as a sheet or a centred panel, whichever the width calls
 /// for. Returns whatever the content pops with.
+///
+/// **Pushed on the ROOT navigator, not the shell's.** The four destinations and
+/// the docked add button belong to the application shell, and go_router builds
+/// that shell around its own nested navigator. A sheet pushed there opens
+/// *inside* the shell's Scaffold, which leaves the bottom bar and the `+` drawn
+/// over the form — a second, meaningless bottom action area under the one the
+/// form supplies itself, on the exact edge of the screen the thumb reaches for
+/// Save. Rooting the route puts the form above the whole shell, so the footer
+/// is gone while a form is open and back the moment it closes, with no state
+/// for anyone to keep in step (upgrade §41).
 Future<T?> showAppSheet<T>(
   BuildContext context,
   WidgetBuilder builder, {
@@ -32,6 +42,7 @@ Future<T?> showAppSheet<T>(
   if (compact) {
     return showModalBottomSheet<T>(
       context: context,
+      useRootNavigator: true,
       isScrollControlled: true,
       useSafeArea: true,
       isDismissible: dismissible,
@@ -42,6 +53,7 @@ Future<T?> showAppSheet<T>(
 
   return showGeneralDialog<T>(
     context: context,
+    useRootNavigator: true,
     barrierDismissible: dismissible,
     barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
     barrierColor: Colors.black.withValues(alpha: 0.55),
@@ -411,6 +423,8 @@ Future<bool> confirm(
 }) async {
   final result = await showGeneralDialog<bool>(
     context: context,
+    // Above the shell, like every other modal in the product.
+    useRootNavigator: true,
     barrierDismissible: true,
     barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
     barrierColor: Colors.black.withValues(alpha: 0.6),

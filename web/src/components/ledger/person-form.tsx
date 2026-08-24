@@ -7,7 +7,8 @@ import { ErrorNote, Field, Input, Textarea, cn } from '@/components/ui/primitive
 import { SubmitRow } from '@/components/ledger/transaction-sheet';
 import { CurrencySelect } from '@/components/ledger/currency-select';
 import {
-  ConversionNote,
+  ConversionFields,
+  ConversionPanel,
   useRate,
 } from '@/components/ledger/conversion';
 import { AmountInput } from '@/components/ledger/amount-input';
@@ -266,16 +267,18 @@ export function PersonForm({
                   />
                 </div>
 
-                <ConversionNote
+                <ConversionPanel
                   amountMinor={openingAmount}
                   from={openingCurrency}
                   to={currency}
                   state={openingRate}
+                  prefix="opening_"
                 />
-                <input
-                  type="hidden"
-                  name="opening_rate_e9"
-                  value={openingRate.rate?.rate_e9 ?? ''}
+                <ConversionFields
+                  entryCurrency={openingCurrency}
+                  accountCurrency={currency}
+                  state={openingRate}
+                  prefix="opening_"
                 />
 
                 <p className="text-[0.75rem] text-ink-faint">

@@ -820,6 +820,8 @@ class _TimelineTileState extends ConsumerState<TimelineTile> {
                                 enteredCurrency: entry.enteredCurrency,
                                 rateE9: entry.exchangeRateE9,
                                 accountCurrency: widget.currency,
+                                conversionMode: entry.conversionMode,
+                                autoConvertedMinor: entry.autoConvertedAmountMinor,
                               ),
                             ],
                           ],
@@ -971,6 +973,14 @@ class _RowActions extends ConsumerWidget {
                                 amountMinor: entry.amountMinor,
                                 date: entry.entryDate,
                                 description: entry.note,
+                                // An edit reopens on what was actually typed,
+                                // in the currency it was typed in — and on the
+                                // override when there is one, so re-saving
+                                // cannot silently restate the row.
+                                enteredAmountMinor: entry.enteredAmountMinor,
+                                enteredCurrency: entry.enteredCurrency,
+                                conversionMode: entry.conversionMode,
+                                autoConvertedAmountMinor: entry.autoConvertedAmountMinor,
                               ),
                             );
                             if (saved && context.mounted) {

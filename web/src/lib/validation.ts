@@ -119,6 +119,8 @@ export const personSchema = z.object({
   opening_amount: z.string().trim().optional(),
   opening_currency: optionalCurrencyCode,
   opening_rate_e9: rateE9,
+  opening_converted_amount: z.string().trim().optional(),
+  opening_conversion_mode: z.enum(['automatic', 'manual']).optional(),
   // Changing the currency of an account that already holds entries changes what
   // future entries default to and leaves every recorded one alone. The user is
   // told that before it happens, and the form sends the acknowledgement back.
@@ -147,6 +149,9 @@ export const transactionSchema = z.object({
   account_currency: optionalCurrencyCode,
   rate_e9: rateE9,
   rate_source: trimmedOptional(60),
+  /** The actual converted amount, when the user overrode the rate (upgrade §40). */
+  converted_amount: z.string().trim().optional(),
+  conversion_mode: z.enum(['automatic', 'manual']).optional(),
   date: isoDate,
   description: trimmedOptional(500),
 });
@@ -162,6 +167,9 @@ export const settlementSchema = z.object({
   account_currency: optionalCurrencyCode,
   rate_e9: rateE9,
   rate_source: trimmedOptional(60),
+  /** The actual converted amount, when the user overrode the rate (upgrade §40). */
+  converted_amount: z.string().trim().optional(),
+  conversion_mode: z.enum(['automatic', 'manual']).optional(),
   direction: z.enum(['in', 'out']).optional(),
   transaction_id: z.union([uuid, z.literal('')]).optional(),
   date: isoDate,

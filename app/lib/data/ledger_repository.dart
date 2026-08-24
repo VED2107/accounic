@@ -163,6 +163,8 @@ class LedgerRepository {
     String? openingEnteredCurrency,
     int? openingRateE9,
     String? openingRateSource,
+    int? openingConvertedMinor,
+    String? openingConversionMode,
   }) async {
     try {
       final data = await _client.rpc('create_person', params: {
@@ -179,6 +181,8 @@ class LedgerRepository {
         'p_opening_entered_currency': openingEnteredCurrency,
         'p_opening_rate_e9': openingRateE9,
         'p_opening_rate_source': openingRateSource,
+        'p_opening_converted_minor': openingConvertedMinor,
+        'p_opening_conversion_mode': openingConversionMode,
       });
       return Person.fromJson(Map<String, dynamic>.from(data as Map));
     } catch (error, stack) {
@@ -262,6 +266,8 @@ class LedgerRepository {
     String? enteredCurrency,
     int? exchangeRateE9,
     String? rateSource,
+    int? convertedAmountMinor,
+    String? conversionMode,
   }) async {
     try {
       final data = await _client.rpc('create_transaction', params: {
@@ -274,6 +280,8 @@ class LedgerRepository {
         'p_entered_currency': enteredCurrency,
         'p_exchange_rate_e9': exchangeRateE9,
         'p_rate_source': rateSource,
+        'p_converted_amount_minor': convertedAmountMinor,
+        'p_conversion_mode': conversionMode,
       });
       return LedgerMutation.fromJson(Map<String, dynamic>.from(data as Map));
     } catch (error, stack) {
@@ -291,6 +299,8 @@ class LedgerRepository {
     String? enteredCurrency,
     int? exchangeRateE9,
     String? rateSource,
+    int? convertedAmountMinor,
+    String? conversionMode,
   }) async {
     try {
       final data = await _client.rpc('update_transaction', params: {
@@ -303,6 +313,8 @@ class LedgerRepository {
         'p_entered_currency': enteredCurrency,
         'p_exchange_rate_e9': exchangeRateE9,
         'p_rate_source': rateSource,
+        'p_converted_amount_minor': convertedAmountMinor,
+        'p_conversion_mode': conversionMode,
       });
       return LedgerMutation.fromJson(Map<String, dynamic>.from(data as Map));
     } catch (error, stack) {
@@ -344,6 +356,8 @@ class LedgerRepository {
     String? enteredCurrency,
     int? exchangeRateE9,
     String? rateSource,
+    int? convertedAmountMinor,
+    String? conversionMode,
   }) async {
     try {
       await _client.rpc('set_person_opening_balance', params: {
@@ -355,6 +369,8 @@ class LedgerRepository {
         'p_entered_currency': enteredCurrency,
         'p_rate_e9': exchangeRateE9,
         'p_rate_source': rateSource,
+        'p_converted_amount_minor': convertedAmountMinor,
+        'p_conversion_mode': conversionMode,
       });
     } catch (error, stack) {
       throw Failure.from(

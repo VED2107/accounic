@@ -73,6 +73,11 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
   late PartyType _type = widget.person?.type ?? PartyType.person;
   late String _currency = normaliseCode(widget.person?.currency ?? '');
   OpeningDirection _direction = OpeningDirection.none;
+
+  /// Whether the opening balance's converted figure was replaced by what
+  /// actually changed hands (upgrade 40).
+  bool _openingManual = false;
+  int? _openingActual;
   late String _openingCurrency = _currency;
 
   bool _saving = false;
@@ -206,6 +211,10 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
           openingEnteredCurrency: foreign ? _openingCurrency : null,
           openingRateE9: rate?.rateE9,
           openingRateSource: rate?.source,
+          openingConvertedMinor:
+              foreign && _openingManual ? _openingActual : null,
+          openingConversionMode:
+              foreign ? (_openingManual && _openingActual != null ? 'manual' : 'automatic') : null,
         );
       }
 
@@ -350,6 +359,9 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
             openingCurrency: _openingCurrency,
             onOpeningCurrency: (next) => setState(() => _openingCurrency = next),
             onChanged: (_) => setState(() {}),
+            manual: _openingManual,
+            onManualChanged: (manual) => setState(() => _openingManual = manual),
+            onActualChanged: (minor) => setState(() => _openingActual = minor),
           ),
         ],
 
@@ -418,6 +430,9 @@ class _OpeningBalance extends StatelessWidget {
     required this.openingCurrency,
     required this.onOpeningCurrency,
     required this.onChanged,
+    required this.manual,
+    required this.onManualChanged,
+    required this.onActualChanged,
   });
 
   final OpeningDirection direction;
@@ -429,6 +444,9 @@ class _OpeningBalance extends StatelessWidget {
   final String openingCurrency;
   final ValueChanged<String> onOpeningCurrency;
   final ValueChanged<String> onChanged;
+  final bool manual;
+  final ValueChanged<bool> onManualChanged;
+  final ValueChanged<int?> onActualChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -499,10 +517,13 @@ class _OpeningBalance extends StatelessWidget {
             ),
             if (openingCurrency != accountCurrency) ...[
               const SizedBox(height: AppSpacing.md),
-              ConversionNote(
+              ConversionPanel(
                 amountMinor: amountMinor,
                 from: openingCurrency,
                 to: accountCurrency,
+                manual: manual,
+                onManualChanged: onManualChanged,
+                onActualChanged: onActualChanged,
               ),
             ],
             const SizedBox(height: AppSpacing.sm),

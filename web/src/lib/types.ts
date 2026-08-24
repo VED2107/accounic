@@ -61,7 +61,21 @@ export interface Conversion {
   exchange_rate_e9: number | null;
   exchange_rate_at?: string | null;
   exchange_rate_source?: string | null;
+  /**
+   * 'automatic' | 'manual' | null (upgrade §40). Null means the row was never
+   * converted; a pre-v1.1.2 converted row reads as 'automatic', because the
+   * feed resolves that rather than passing its stored NULL through.
+   */
+  conversion_mode?: ConversionMode | null;
+  /**
+   * What the recorded rate said the entry was worth. Present only on a manual
+   * row, where `amount_minor` is instead what actually changed hands.
+   */
+  auto_converted_amount_minor?: number | null;
 }
+
+/** Which of the two figures `amount_minor` is (upgrade §40). */
+export type ConversionMode = 'automatic' | 'manual';
 
 /** public.person_balances — the authoritative per-person position. */
 export interface PersonBalance {
@@ -136,6 +150,8 @@ export interface TimelineEntry {
   exchange_rate_e9: number | null;
   exchange_rate_at: string | null;
   exchange_rate_source: string | null;
+  conversion_mode: ConversionMode | null;
+  auto_converted_amount_minor: number | null;
   /** Present only on transaction entries. */
   settled_minor: number | null;
   remaining_minor: number | null;
@@ -183,6 +199,8 @@ export interface ActivityItem {
   entered_amount_minor?: number | null;
   entered_currency?: string | null;
   exchange_rate_e9?: number | null;
+  conversion_mode?: ConversionMode | null;
+  auto_converted_amount_minor?: number | null;
 }
 
 export interface DashboardPeopleRow {

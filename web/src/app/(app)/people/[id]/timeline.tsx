@@ -166,6 +166,8 @@ export function Timeline({
                             enteredCurrency={entry.entered_currency}
                             rateE9={entry.exchange_rate_e9}
                             accountCurrency={currency}
+                            conversionMode={entry.conversion_mode}
+                            autoConvertedMinor={entry.auto_converted_amount_minor}
                           />
                         ) : null}
                       </span>
@@ -229,6 +231,13 @@ export function Timeline({
             amount_minor: editing.amount_minor,
             transaction_date: editing.entry_date,
             description: editing.note,
+            // An edit reopens on what was actually typed, in the currency it
+            // was typed in — and on the actual converted amount when the rate
+            // was overridden, so re-saving cannot silently restate the row.
+            entered_amount_minor: editing.entered_amount_minor,
+            entered_currency: editing.entered_currency,
+            conversion_mode: editing.conversion_mode,
+            auto_converted_amount_minor: editing.auto_converted_amount_minor,
           }}
         />
       ) : null}

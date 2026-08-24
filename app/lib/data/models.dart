@@ -372,6 +372,8 @@ class TimelineEntry {
     this.enteredAmountMinor,
     this.enteredCurrency,
     this.exchangeRateE9,
+    this.conversionMode,
+    this.autoConvertedAmountMinor,
   });
 
   final String id;
@@ -395,6 +397,18 @@ class TimelineEntry {
   final String? enteredCurrency;
   final int? exchangeRateE9;
 
+  /// 'automatic' | 'manual' | null. Null means the row was never converted;
+  /// a pre-v1.1.2 converted row reads as 'automatic', because the feed resolves
+  /// that rather than passing its stored NULL through (upgrade 40).
+  final String? conversionMode;
+
+  /// What the recorded rate said the entry was worth. Present only on a manual
+  /// row, where [amountMinor] is instead what actually changed hands.
+  final int? autoConvertedAmountMinor;
+
+  /// True when somebody said the rate got it wrong and gave the real figure.
+  bool get isManualConversion => conversionMode == 'manual';
+
   factory TimelineEntry.fromJson(Map<String, dynamic> json) {
     final kind = json['entry_kind'] as String?;
     final isSettlement = kind == 'settlement';
@@ -416,6 +430,10 @@ class TimelineEntry {
       enteredCurrency: _str(json['entered_currency']),
       exchangeRateE9:
           json['exchange_rate_e9'] == null ? null : _int(json['exchange_rate_e9']),
+      conversionMode: _str(json['conversion_mode']),
+      autoConvertedAmountMinor: json['auto_converted_amount_minor'] == null
+          ? null
+          : _int(json['auto_converted_amount_minor']),
     );
   }
 
@@ -534,6 +552,8 @@ class ActivityItem {
     this.enteredAmountMinor,
     this.enteredCurrency,
     this.exchangeRateE9,
+    this.conversionMode,
+    this.autoConvertedAmountMinor,
   });
 
   final String id;
@@ -557,6 +577,12 @@ class ActivityItem {
   final String? enteredCurrency;
   final int? exchangeRateE9;
 
+  /// See [TimelineEntry.conversionMode].
+  final String? conversionMode;
+  final int? autoConvertedAmountMinor;
+
+  bool get isManualConversion => conversionMode == 'manual';
+
   factory ActivityItem.fromJson(Map<String, dynamic> json) {
     final type = json['entry_type'] as String?;
     return ActivityItem(
@@ -576,6 +602,10 @@ class ActivityItem {
       enteredCurrency: _str(json['entered_currency']),
       exchangeRateE9:
           json['exchange_rate_e9'] == null ? null : _int(json['exchange_rate_e9']),
+      conversionMode: _str(json['conversion_mode']),
+      autoConvertedAmountMinor: json['auto_converted_amount_minor'] == null
+          ? null
+          : _int(json['auto_converted_amount_minor']),
     );
   }
 

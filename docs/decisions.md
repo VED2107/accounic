@@ -775,3 +775,77 @@ Two consequences worth stating:
   reachable would leave it reachable. Dropping it also retires the transaction-local
   `accounic.restating` escape hatch, which restores `0005_rls.sql`'s rule that a voided row
   cannot be edited by anyone.
+
+---
+
+## 39. The ledger records what changed hands, not what the rate quoted
+
+`0010`–`0013` built automatic conversion and got the arithmetic right. It is still, on
+its own, the wrong answer some of the time.
+
+Ahmed's account is in dirhams. ₹1,000 is handed over. The rate says AED 44.20, and the
+exchange counter gives AED 43 — because of cash availability, the counter's own spread,
+rounding, a fee, or a negotiated number. **Neither figure is a mistake.** The API reports
+what the market converts at; the person reports what they actually exchanged.
+
+Two columns, both additive:
+
+* `auto_converted_amount_minor` — what the recorded rate said the entry was worth.
+* `conversion_mode` — `'automatic' | 'manual'`, which of the two figures `amount_minor` is.
+
+**`amount_minor` takes the manual figure when there is one.** That is the decision, and
+it follows from what a ledger is for: it records money that moved. A balance computed
+from quotes rather than from cash would be wrong in exactly the way that matters, and it
+would be wrong quietly.
+
+**NULL `conversion_mode` reads as automatic** — the same device `people.ledger_currency`
+uses in §38, and for the same reason. Every row written before this release *was* an
+automatic conversion, so the migration backfills nothing, writes to no historical row,
+and `snapshot.mjs diff` comes back clean on all eight fingerprints. The `activity_feed`
+view resolves the NULL, so no client has to know the column was ever added.
+
+`auto_converted_amount_minor` is stored **only** on a manual row. On an automatic one it
+would equal `amount_minor` in every case, and a second copy of a number is a second
+number to keep in step. Its presence *is* the marker, and the CHECK constraint says so
+rather than leaving it as folklore.
+
+Three consequences that took the most care:
+
+* **An edit that says nothing about currency keeps the override.** Changing a note on a
+  manually converted row must not restate it at the stored rate and move the balance by
+  AED 1.20. `update_transaction()` carries the mode and the figure forward, exactly as it
+  already carried the rate.
+* **A manual figure equal to the automatic one is still manual.** Collapsing it back would
+  be a lie about a number the user looked at and confirmed, and would leave the row
+  re-derivable at some other rate later.
+* **The settlement guard compares the actual amount.** What is being settled is the money
+  that moved, not what the rate said it should have been.
+
+The alternative — a second transaction for the difference — was rejected outright. It
+invents a movement that never happened, and the brief said not to.
+
+---
+
+## 40. A form is not part of the shell it was opened from
+
+On Android the bottom bar and its docked `+` stayed drawn over every sheet: the person
+form, the transaction form, the settle sheet, the opening balance. Two bottom action
+areas at once, and the app's own one sitting on the exact edge of the screen the thumb
+reaches for Save.
+
+The cause was structural, not cosmetic. `go_router`'s `ShellRoute` builds `AppShell`
+around its **own nested navigator**, and `showModalBottomSheet` defaults to the nearest
+`Navigator`. So the sheet was pushed *inside* `Scaffold(body: child)` — underneath the
+Scaffold's `bottomNavigationBar` and its `floatingActionButton`, both of which paint
+above their body by construction.
+
+The fix is one argument, `useRootNavigator: true`, in `showAppSheet()`, `showSearchSheet()`
+and `confirm()`. It is the whole of it: the route goes above the shell, the footer is gone
+while a form is open and back the moment it closes, and there is no visibility state for
+anyone to keep in step and get wrong.
+
+What was deliberately *not* done: hiding the bar with a flag on the shell. That is the
+same bug wearing a workaround — a second source of truth for "is a form open", which
+drifts the first time a sheet is dismissed by a gesture rather than by a button. And no
+nested bottom navigation was introduced; `SheetScaffold`'s pinned actions (§33) already
+are the form's action area, keyboard insets and all.

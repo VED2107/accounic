@@ -17,53 +17,8 @@ import {
   transactionEditSchema,
   transactionSchema,
 } from '@/lib/validation';
-import type { ActionResult, PersonBalance, Person } from '@/lib/types';
-
-/**
- * The conversion arguments every money-writing RPC takes.
- *
- * When the entry currency is the account currency this is all nulls and the
- * database stores a plain amount, exactly as it did before this feature. When
- * it is not, the *entered* figure is what travels and the database derives the
- * account amount from it — the client never sends a converted number it worked
- * out itself.
- */
-interface ConversionArgs {
-  p_amount_minor: number | null;
-  p_entered_amount_minor: number | null;
-  p_entered_currency: string | null;
-  p_exchange_rate_e9: number | null;
-  p_rate_source: string | null;
-}
-
-function conversionArgs(
-  minor: number,
-  entryCurrency: string,
-  accountCurrency: string,
-  rateE9: number | null | undefined,
-  rateSource: string | null | undefined,
-): ConversionArgs {
-  const entry = normaliseCode(entryCurrency);
-  const account = normaliseCode(accountCurrency);
-
-  if (!entry || entry === account) {
-    return {
-      p_amount_minor: minor,
-      p_entered_amount_minor: null,
-      p_entered_currency: null,
-      p_exchange_rate_e9: null,
-      p_rate_source: null,
-    };
-  }
-
-  return {
-    p_amount_minor: null,
-    p_entered_amount_minor: minor,
-    p_entered_currency: entry,
-    p_exchange_rate_e9: rateE9 ?? null,
-    p_rate_source: rateSource ?? null,
-  };
-}
+import { conversionArgs, manualMinor, type ConversionArgs } from '@/lib/conversion';
+import type { ActionResult, ConversionMode, PersonBalance, Person } from '@/lib/types';
 
 /**
  * Turn an amount field and its currency into RPC arguments.
@@ -80,6 +35,8 @@ async function moneyArgs(entry: {
   account_currency?: string | null;
   rate_e9?: number | null;
   rate_source?: string | null;
+  converted_amount?: string | null;
+  conversion_mode?: ConversionMode | null;
 }): Promise<{ args: ConversionArgs } | { error: string }> {
   const account = normaliseCode(entry.account_currency ?? '') || FALLBACK_CURRENCY;
   const typed = normaliseCode(entry.entry_currency ?? '') || account;
@@ -104,7 +61,13 @@ async function moneyArgs(entry: {
     source = rate.source;
   }
 
-  return { args: conversionArgs(amount.minor, typed, account, rateE9, source) };
+  // The manual figure is parsed against the ACCOUNT currency, not the entry
+  // one: it is the amount that landed in the account, which is the whole point
+  // of it. Getting this pair the wrong way round is how AED 43 becomes Rs 43.
+  const override = manualMinor(entry.converted_amount, entry.conversion_mode, account);
+  if ('error' in override) return override;
+
+  return { args: conversionArgs(amount.minor, typed, account, rateE9, source, override.minor) };
 }
 
 /**
@@ -120,6 +83,8 @@ async function openingArgs(person: {
   opening_amount?: string;
   opening_currency?: string | null;
   opening_rate_e9?: number | null;
+  opening_converted_amount?: string | null;
+  opening_conversion_mode?: ConversionMode | null;
 }): Promise<{ args: Record<string, unknown> } | { error: string }> {
   const direction = person.opening_direction ?? 'none';
   const text = (person.opening_amount ?? '').trim();
@@ -148,7 +113,21 @@ async function openingArgs(person: {
     rateE9 = rate.rateE9;
   }
 
-  const converted = conversionArgs(amount.minor, entry, account, rateE9, 'form');
+  const override = manualMinor(
+    person.opening_converted_amount,
+    person.opening_conversion_mode,
+    account,
+  );
+  if ('error' in override) return override;
+
+  const converted = conversionArgs(
+    amount.minor,
+    entry,
+    account,
+    rateE9,
+    'form',
+    override.minor,
+  );
 
   return {
     args: {
@@ -158,6 +137,8 @@ async function openingArgs(person: {
       p_opening_entered_currency: converted.p_entered_currency,
       p_opening_rate_e9: converted.p_exchange_rate_e9,
       p_opening_rate_source: converted.p_rate_source,
+      p_opening_converted_minor: converted.p_converted_amount_minor,
+      p_opening_conversion_mode: converted.p_conversion_mode,
     },
   };
 }
@@ -333,6 +314,8 @@ export async function setOpeningBalance(
       opening_amount: true,
       opening_currency: true,
       opening_rate_e9: true,
+      opening_converted_amount: true,
+      opening_conversion_mode: true,
     })
     .safeParse(formObject(formData));
   if (!parsed.success) return { ok: false, ...firstIssue(parsed.error) };
@@ -349,6 +332,8 @@ export async function setOpeningBalance(
     p_entered_currency: opening.args.p_opening_entered_currency ?? null,
     p_rate_e9: opening.args.p_opening_rate_e9 ?? null,
     p_rate_source: opening.args.p_opening_rate_source ?? null,
+    p_converted_amount_minor: opening.args.p_opening_converted_minor ?? null,
+    p_conversion_mode: opening.args.p_opening_conversion_mode ?? null,
   });
   if (error) return fail(error, 'That opening balance could not be saved. Your balance has not been changed.');
 

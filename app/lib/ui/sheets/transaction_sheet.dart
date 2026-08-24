@@ -68,6 +68,8 @@ class EditableTransaction {
     this.description,
     this.enteredAmountMinor,
     this.enteredCurrency,
+    this.conversionMode,
+    this.autoConvertedAmountMinor,
   });
 
   final String id;
@@ -81,6 +83,13 @@ class EditableTransaction {
   /// correction is made to what the user actually remembers (upgrade 2).
   final int? enteredAmountMinor;
   final String? enteredCurrency;
+
+  /// 'automatic' | 'manual' | null. An edit reopens on the override when there
+  /// is one, so re-saving cannot silently restate the row (upgrade 40).
+  final String? conversionMode;
+  final int? autoConvertedAmountMinor;
+
+  bool get isManualConversion => conversionMode == 'manual';
 }
 
 class _TransactionSheet extends ConsumerStatefulWidget {
@@ -109,8 +118,24 @@ class _TransactionSheetState extends ConsumerState<_TransactionSheet> {
   /// otherwise, because the ordinary case should cost no decisions.
   String? _entryCurrency;
 
+  /// Whether the converted figure was replaced by what actually changed hands.
+  /// Automatic is the default for a new entry, and an edit reopens on whatever
+  /// the row already says (upgrade 40).
+  late bool _manual = widget.transaction?.isManualConversion ?? false;
+
+  /// The actual amount, in the ACCOUNT currency. Null until it parses.
+  late int? _actual =
+      widget.transaction?.isManualConversion ?? false ? widget.transaction?.amountMinor : null;
+
   bool get _isEdit => widget.transaction != null;
-  bool get _canSave => _amount != null && _person != null && !_saving;
+  bool get _canSave =>
+      _amount != null &&
+      _person != null &&
+      !_saving &&
+      // A manual override with nothing valid typed in it is not savable: the
+      // ledger figure would be missing, and falling back to the automatic one
+      // silently would be the opposite of what the user asked for.
+      !(_manual && _entryCurrency != null && _entryCurrency != _accountCurrency && _actual == null);
 
   @override
   void dispose() {
@@ -143,6 +168,12 @@ class _TransactionSheetState extends ConsumerState<_TransactionSheet> {
       final rate =
           foreign ? await ref.read(ratesRepositoryProvider).rate(entry, account) : null;
 
+      // The mode is stated rather than inferred, so switching an entry back to
+      // automatic is something this client can say — not merely the absence of
+      // something it forgot to send.
+      final manual = foreign && _manual && _actual != null;
+      final mode = foreign ? (manual ? 'manual' : 'automatic') : null;
+
       if (foreign && rate == null) {
         setState(() {
           _saving = false;
@@ -163,6 +194,8 @@ class _TransactionSheetState extends ConsumerState<_TransactionSheet> {
           enteredCurrency: foreign ? entry : null,
           exchangeRateE9: rate?.rateE9,
           rateSource: rate?.source,
+          convertedAmountMinor: manual ? _actual : null,
+          conversionMode: mode,
         );
       } else {
         await repository.createTransaction(
@@ -175,6 +208,8 @@ class _TransactionSheetState extends ConsumerState<_TransactionSheet> {
           enteredCurrency: foreign ? entry : null,
           exchangeRateE9: rate?.rateE9,
           rateSource: rate?.source,
+          convertedAmountMinor: manual ? _actual : null,
+          conversionMode: mode,
         );
       }
 
@@ -253,7 +288,17 @@ class _TransactionSheetState extends ConsumerState<_TransactionSheet> {
 
         if (entry != account) ...[
           const SizedBox(height: 12),
-          ConversionNote(amountMinor: _amount, from: entry, to: account),
+          ConversionPanel(
+            amountMinor: _amount,
+            from: entry,
+            to: account,
+            manual: _manual,
+            onManualChanged: (manual) => setState(() => _manual = manual),
+            onActualChanged: (minor) => setState(() => _actual = minor),
+            initialActualMinor: widget.transaction?.isManualConversion ?? false
+                ? widget.transaction?.amountMinor
+                : null,
+          ),
         ],
         const SizedBox(height: 18),
 
