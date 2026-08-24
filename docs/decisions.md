@@ -643,6 +643,11 @@ they were shown; `resolve_amount_minor()` decides what that is worth.
 
 ## 35. Changing an account's currency restates it, and says so first
 
+> **Superseded in v1.1.1 by §38.** Restating shipped in v1.1.0 and was withdrawn one
+> release later: `restate_person_currency()` no longer exists, and changing a person's
+> currency now rewrites nothing. The reasoning below is kept because it explains what was
+> tried and why the replacement is shaped the way it is.
+
 The brief asked for currency to be editable and preferred that a change affect only future
 transactions. Under §34 that is not available: if old rows stay in rupees while the account
 says dirhams, `person_balances` sums rupees and dirhams into one integer and reports a number
@@ -707,3 +712,66 @@ the seed in `0010_currency.sql`, `web/src/lib/currencies.ts` and `app/lib/core/c
 A test on each side fails if its copy drifts from the JSON, and the same conversion cases are
 asserted in all three suites. Three runtimes convert money here; the only defence against them
 disagreeing is that they are generated from one file and tested against the same numbers.
+
+
+## 38. Currency is per person; the ledger denomination is separate, and frozen
+
+§35 restated: changing a person's currency converted every historical row at a confirmed
+rate. It was coherent, it lost nothing — every row kept what was originally entered — and it
+was the wrong product. The brief had asked for the opposite and said so twice: a change must
+affect future transactions only, and ₹1,000 recorded last year must still read ₹1,000 next
+year. Restating makes a figure the user has already seen, written down and possibly told
+somebody about turn into a different number. No amount of provenance on the row makes that
+acceptable.
+
+The reason §35 reached for restatement was a conflation, not a constraint. `people.currency`
+was doing two jobs at once:
+
+* what a new entry for this person is entered in, and
+* what `transactions.amount_minor` is denominated in.
+
+While the two agree, nothing distinguishes them. They stop agreeing the instant someone
+changes currency, and then one of the two jobs has to lose. §35 let the denomination lose and
+rewrote history to keep them equal.
+
+v1.1.1 splits them instead. `people.currency` keeps only the first job. A new column,
+`people.ledger_currency`, takes the second, and is frozen the first time the two diverge:
+
+    entry  = people.currency        ?? profiles.currency
+    ledger = people.ledger_currency ?? people.currency ?? profiles.currency
+
+NULL still means "the account's base currency", so the column is NULL on every row that
+existed before the migration and the two expressions collapse to the one 0010 used. Every
+balance computes identically; `db/tools/snapshot.mjs` checks that rather than asserting it.
+
+What this buys, and what it costs:
+
+* **History is never touched.** Ahmed's ₹1,000 stays ₹1,000 INR forever. The migration reads
+  no ledger row and writes none.
+* **The engine is untouched.** `amount_minor` still means "minor units, in this person's
+  ledger currency" — one currency per person, one integer per balance. `person_balances` did
+  not gain a row per currency, `settle_account()` and the over-settlement guards are as they
+  were, and no screen that reads a net balance had to change.
+* **The cost is that a switched account keeps reporting in its old currency.** Ahmed's
+  balance stays in dirhams after he moves to dollars, because that is the currency his history
+  is written in and the only one in which it sums to a meaningful number. The views carry
+  `net_balance_default` beside it — the same position converted to his current currency — so
+  a screen can show him the number he now thinks in without any of it being authoritative.
+  Display conversions move when rates move; the ledger figure does not.
+
+The alternative — a genuinely mixed-currency ledger, one row per currency out of
+`person_balances` — is the engine rewrite §34 rejected and the brief rejected again. It would
+have put every balance guard, every settlement path and every screen at risk in order to
+preserve data, which is precisely the wrong trade when preserving data is the goal.
+
+Two consequences worth stating:
+
+* A settlement entered in the new currency is converted into the ledger currency **before**
+  the over-settlement guard compares it with the outstanding figure. Comparing dollars with
+  dirhams there would let an account be over-settled, and it is the kind of bug that only
+  appears once somebody switches currency.
+* `restate_person_currency()` is dropped, not merely unused. A granted RPC that rewrites
+  every amount on an account is exactly the behaviour this decision removes, and leaving it
+  reachable would leave it reachable. Dropping it also retires the transaction-local
+  `accounic.restating` escape hatch, which restores `0005_rls.sql`'s rule that a voided row
+  cannot be edited by anyone.

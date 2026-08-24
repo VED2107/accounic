@@ -34,8 +34,18 @@ export interface Person {
   email: string | null;
   address: string | null;
   notes: string | null;
-  /** NULL means the owner's base currency — see db/migrations/0010. */
+  /**
+   * The person's DEFAULT ENTRY currency: what a new transaction with them is
+   * entered in. NULL means the owner's base currency — see db/migrations/0010.
+   * Changing it never rewrites history (db/migrations/0013).
+   */
   currency: string | null;
+  /**
+   * The currency this person's stored figures are denominated in, frozen the
+   * first time `currency` moved away from it. NULL means the two have never
+   * diverged, so the ledger simply follows `currency`.
+   */
+  ledger_currency: string | null;
   is_archived: boolean;
   created_at: string;
   updated_at: string;
@@ -62,8 +72,13 @@ export interface PersonBalance {
   phone: string | null;
   email: string | null;
   is_archived: boolean;
-  /** The account currency for this person, already resolved. */
+  /**
+   * The currency every figure in this row is denominated in — the person's
+   * ledger currency, already resolved.
+   */
   currency: string;
+  /** What a new entry for this person should default to. May differ. */
+  default_currency: string;
   base_currency: string;
   total_credit: number;
   total_debit: number;
@@ -75,6 +90,11 @@ export interface PersonBalance {
   net_balance: number;
   /** The same net position in the base currency, or null when no rate is known. */
   net_balance_base: number | null;
+  /**
+   * And in the person's own default currency. Display only — it moves when
+   * rates move, and equals net_balance whenever the two currencies agree.
+   */
+  net_balance_default: number | null;
   transaction_count: number;
   /** The opening balance as a signed figure: positive when they owe the user. */
   opening_minor: number;
@@ -137,7 +157,10 @@ export interface OpenTransaction {
 export interface PersonPage {
   person: Person;
   balance: PersonBalance;
+  /** What the figures on this page are denominated in. */
   currency: string;
+  /** What a new entry for this person should default to. */
+  default_currency: string;
   base_currency: string;
   timeline: TimelineEntry[];
   timeline_total: number;
@@ -167,6 +190,7 @@ export interface DashboardPeopleRow {
   name: string;
   type: PartyType;
   currency: string;
+  default_currency?: string;
   base_currency: string;
   net_balance: number;
   net_balance_base: number | null;

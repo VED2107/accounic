@@ -159,3 +159,31 @@ export function rateSentence(from: string, to: string, rateE9: number): string {
   });
   return `1 ${normaliseCode(from)} = ${toCurrency?.symbol ?? ''}${value} ${normaliseCode(to)}`;
 }
+
+/**
+ * The two currencies a person has, resolved (db/migrations/0013).
+ *
+ * `ledger` is what their stored figures are denominated in; `entry` is what a
+ * new transaction with them should be typed in. They are the same string for
+ * everyone who has never changed currency, which is almost everyone — the pair
+ * exists so that the one case where they differ cannot be silently collapsed
+ * into whichever of the two the calling screen happened to have.
+ *
+ * The fallback chain is the database's, to the letter:
+ *
+ *     entry  = person.currency        ?? base
+ *     ledger = person.ledger_currency ?? person.currency ?? base
+ *
+ * A NULL `currency` is a reference to the account's base currency and not a
+ * snapshot of it, so a person who has never named one follows the workspace
+ * when the workspace changes.
+ */
+export function personCurrencies(
+  person: { currency?: string | null; ledger_currency?: string | null } | null | undefined,
+  baseCurrency: string | null | undefined,
+): { entry: string; ledger: string } {
+  const base = normaliseCode(baseCurrency) || FALLBACK_CURRENCY;
+  const entry = normaliseCode(person?.currency) || base;
+  const ledger = normaliseCode(person?.ledger_currency) || entry;
+  return { entry, ledger };
+}

@@ -4,7 +4,7 @@ Status of the Accounic build against `context.md`. This is the file to read firs
 picking the work back up.
 
 **Last updated:** 2026-08-24 (fifth session)
-**Current release:** [v1.1.0](https://github.com/VED2107/accounic/releases/latest)
+**Current release:** [v1.1.1](https://github.com/VED2107/accounic/releases/latest)
 **Overall:** Phases 1–4 complete and verified against the live database. Phase 5
 (performance) measured and the client half tuned — see `docs/performance.md`. Phase 6
 (hardening) partly done.
@@ -25,6 +25,7 @@ Everything found since v1.0.0 was found on a **phone**, and none of it was catch
 | 1.0.4 | ~1,500 animation controllers per screen, most of them serving hover on a touch device |
 | 1.0.5–1.0.7 | delete refusing a person whose history was all retracted; Save and Cancel sitting under the keyboard |
 | 1.1.0 | multi-currency, opening balances, and the rest of the keyboard story on the person form |
+| 1.1.1 | currency made genuinely per person: changing it no longer rewrites history |
 
 Each now has a widget test pinning it — see README §4.
 
@@ -59,8 +60,9 @@ Nine migrations, applied in order to the live Supabase project.
 | `0008_activity.sql` | `activity_page()` paginated feed, `activity_summary()` buckets |
 | `0009_delete_person_voided.sql` | `delete_person()` agreeing with the view about what "has transactions" means |
 | `0010_currency.sql` | `currencies` reference table, `people.currency`, conversion provenance on every ledger row, `is_opening`, the per-owner `exchange_rates` cache, `convert_amount_minor()`, and the engine views rebuilt to carry currency |
-| `0011_currency_mutations.sql` | the write path: currency and opening balance on `create_person()`, restatement on `update_person()`, conversion arguments on every money RPC, `set_person_opening_balance()` |
+| `0011_currency_mutations.sql` | the write path: currency and opening balance on `create_person()`, restatement on `update_person()` (withdrawn in 0013), conversion arguments on every money RPC, `set_person_opening_balance()` |
 | `0012_currency_reads.sql` | `dashboard()`, `person_page()`, `search_all()`, `activity_page()` and `activity_summary()` made currency-aware |
+| `0013_person_currency.sql` | splits `people.currency` (the entry default) from `people.ledger_currency` (the frozen denomination); a currency change no longer rewrites history; `restate_person_currency()` dropped |
 
 Supporting files: `db/seed.sql` (two isolated demo workspaces),
 `db/tests/01_accounting_engine.sql`, `db/tests/02_rls_isolation.sql`,
@@ -426,3 +428,59 @@ transactions" option is not available under this data model.
   add demo rows to a production database. Not run for that reason.
 - **No Android emulator on this machine.** Android verification remains widget tests at real
   phone metrics plus sideloading the APK.
+
+
+---
+
+## 11. Sixth session — currency made genuinely per person (v1.1.1)
+
+v1.1.0 shipped per-person currency and got one thing wrong, in the one place it mattered
+most: changing a person's currency **restated** their account, rewriting `amount_minor` on
+every historical row at a confirmed rate. The brief had asked for the opposite — a currency
+change must affect future transactions only, and a ₹1,000 entry must still read ₹1,000
+afterwards.
+
+**The cause was a conflation, not a constraint.** `people.currency` was answering two
+different questions with one column: *what is a new entry for this person typed in* and
+*what is this person's stored `amount_minor` denominated in*. Those agree until somebody
+changes currency, and then one of them has to give. v1.1.0 let the denomination give.
+
+**The fix splits them.** `people.currency` keeps the first job; a new nullable column,
+`people.ledger_currency`, takes the second and is frozen the first time the two diverge.
+NULL means "never diverged", so the column is NULL on every pre-existing row and the
+resolution chain collapses to exactly what 0010 did:
+
+    entry  = people.currency        ?? profiles.currency
+    ledger = people.ledger_currency ?? people.currency ?? profiles.currency
+
+Full reasoning in `docs/decisions.md` §38; §35 is marked superseded rather than deleted.
+
+**The engine did not change.** `amount_minor` still means "minor units, in this person's
+ledger currency". `person_balances` did not gain a row per currency, `settle_account()` and
+the over-settlement guards are untouched, and no screen that reads a net balance changed.
+The migration reads no ledger row and writes none — `db/tools/snapshot.mjs before | after |
+diff` came back clean on all eight fingerprints, every person id and every net balance.
+
+What each client had to learn is that a person has **two** currencies and which one answers
+which question:
+
+* the amount field defaults to the person's entry currency,
+* every displayed figure is labelled with their ledger currency,
+* and the two are shown side by side only when they differ, because a person who has never
+  switched has one currency and should be told about exactly one.
+
+Also in this release:
+
+* `restate_person_currency()` is **dropped**, not left unused — a granted RPC that rewrites
+  every amount on an account is the behaviour being removed. Dropping it retires the
+  transaction-local `accounic.restating` marker too, restoring 0005's rule that a voided row
+  cannot be edited by anyone.
+* A settlement entered in the new currency is converted into the ledger currency *before*
+  the over-settlement guard compares it with the outstanding figure. Comparing dollars with
+  dirhams there would let an account be over-settled.
+* `update_person()` still accepts `p_restate_rate_e9` and ignores it, so a v1.1.0 client
+  keeps working. The smoke test pins a v1.0.7-style call as well.
+
+**Verified:** 172 SQL assertions, 26 HTTP checks on a throwaway account, 51 web tests, 112
+Flutter tests, both binaries built, and the data-safety snapshot clean against the live
+database (4 users, 4 profiles, 16 people, 27 transactions, 16 settlements — unchanged).

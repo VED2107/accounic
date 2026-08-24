@@ -304,8 +304,7 @@ export async function updatePerson(
     p_address: parsed.data.address ?? null,
     p_notes: parsed.data.notes ?? null,
     p_currency: parsed.data.currency ?? null,
-    p_restate_confirmed: parsed.data.restate_confirmed ?? false,
-    p_restate_rate_e9: parsed.data.restate_rate_e9 ?? null,
+    p_currency_change_confirmed: parsed.data.currency_change_confirmed ?? false,
   });
   if (error) return fail(error, UNCHANGED.person);
 

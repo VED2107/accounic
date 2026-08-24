@@ -60,8 +60,14 @@ export default async function PersonPage({
   if (!data) notFound();
 
   // The account's own currency, not the workspace's: every figure on this page
-  // is denominated in what this person is billed in (upgrade §10).
+  // is denominated in what this person is billed in (upgrade §10). That is the
+  // person's LEDGER currency — what their history was actually recorded in.
   const currency = data.currency ?? me?.currency ?? 'INR';
+  // And what a new entry for them defaults to. The two differ only for a person
+  // whose currency was changed after they already had entries: the history
+  // stayed where it was written, and new entries start in the new currency.
+  const defaultCurrency = data.default_currency ?? currency;
+  const currencySwitched = defaultCurrency !== currency;
   const baseCurrency = data.base_currency ?? me?.currency ?? 'INR';
   const { person, balance, timeline, timeline_total: total, open_transactions: openTxns } = data;
   const tone = balanceTone(balance.net_balance);
@@ -99,6 +105,11 @@ export default async function PersonPage({
                 and a badge that appears and disappears is a worse answer than
                 one that is simply always there. */}
             <Badge tone="muted">{currency}</Badge>
+            {/* Only when they differ. A person who has never switched has one
+                currency and should be told about exactly one. */}
+            {currencySwitched ? (
+              <Badge tone="muted">New entries in {defaultCurrency}</Badge>
+            ) : null}
           </div>
           <p className="mt-1 truncate text-[0.8125rem] text-ink-muted">
             <span className="capitalize">{person.type}</span>

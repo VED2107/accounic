@@ -59,15 +59,26 @@ export function TransactionSheet({
   const [picked, setPicked] = useState<PickedPerson | null>(person ?? null);
   const [type, setType] = useState<TxnType>(defaultType ?? transaction?.type ?? 'credit');
 
-  // The account currency is the *person's*, not the workspace's. `currency` is
-  // the fallback for the moment before anyone has been picked.
+  // What this entry will be RECORDED in: the person's ledger currency, not the
+  // workspace's. `currency` is the fallback for the moment before anyone has
+  // been picked.
   const accountCurrency =
     normaliseCode(picked?.currency ?? person?.currency ?? currency) || FALLBACK_CURRENCY;
 
-  // What the user is typing in. Defaults to the account's, and is offered as a
-  // choice only because the common real case — "I gave Ahmed ₹1,000" against a
-  // dirham account — is exactly the one where they differ.
-  const [entryCurrency, setEntryCurrency] = useState(accountCurrency);
+  // What the amount field starts out in: the person's own default currency.
+  // For almost everyone this is the same string as `accountCurrency`. It differs
+  // for a person who has changed currency — their history stays denominated in
+  // what it was entered in, and new entries start in the new one, which is the
+  // whole point of the v1.1.1 correction.
+  const personDefaultCurrency =
+    normaliseCode(
+      picked?.default_currency ?? person?.default_currency ?? accountCurrency,
+    ) || accountCurrency;
+
+  // What the user is typing in. Defaults to the person's currency, and is
+  // offered as a choice because the common real case — "I gave Ahmed ₹1,000"
+  // against a dirham account — is exactly the one where they differ.
+  const [entryCurrency, setEntryCurrency] = useState(personDefaultCurrency);
   const [amountMinor, setAmountMinor] = useState<number | null>(null);
   const rate = useRate(entryCurrency, accountCurrency);
 
@@ -88,11 +99,12 @@ export function TransactionSheet({
     setAmountMinor(null);
   }, [open, person, transaction, defaultType]);
 
-  // Following the account keeps the ordinary case free of decisions: pick a
-  // dirham account and you are typing dirhams until you say otherwise.
+  // Following the person keeps the ordinary case free of decisions: pick a
+  // dirham person and you are typing dirhams until you say otherwise. Editing an
+  // existing row starts from what that row was actually entered in.
   useEffect(() => {
-    setEntryCurrency(normaliseCode(transaction?.entered_currency ?? accountCurrency));
-  }, [accountCurrency, transaction]);
+    setEntryCurrency(normaliseCode(transaction?.entered_currency ?? personDefaultCurrency));
+  }, [personDefaultCurrency, transaction]);
 
   // `state` from useActionState stays `ok` for the life of the component, so an
   // effect keyed on it alone fires again every time anything else in this

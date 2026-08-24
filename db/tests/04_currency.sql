@@ -276,8 +276,24 @@ begin
     ));
 
   -- ---------------------------------------------------------------------------
-  -- 8. Restating an account into another currency (upgrade §1).
+  -- 8. Changing a person's currency affects future entries ONLY (upgrade §1).
+  --
+  -- This is the correction v1.1.1 exists for. v1.1.0 restated the account --
+  -- rewriting amount_minor on every historical row at a confirmed rate. It no
+  -- longer does anything of the kind: the ledger denomination is frozen where
+  -- it was, every recorded figure stays exactly as recorded, and only the
+  -- default for new entries moves.
   -- ---------------------------------------------------------------------------
+
+  -- Photograph the account before the change, so "unchanged" can be asserted
+  -- against what was actually there rather than against a remembered literal.
+  create temporary table pg_temp_before_switch on commit drop as
+    select id, amount_minor, entered_amount_minor, entered_currency,
+           exchange_rate_e9, exchange_rate_at, exchange_rate_source, is_void
+    from public.transactions where person_id = v_ahmed;
+
+  select net_balance into v_amount from public.person_balances where person_id = v_ahmed;
+
   perform pg_temp.assert_raises(
     'changing the currency of an account with history needs confirming',
     format('select public.update_person(%L, ''Ahmed'', ''person'', null, null, null, null, ''USD'')',
@@ -285,36 +301,111 @@ begin
 
   perform pg_temp.assert(
     'and nothing moved when it was refused',
-    (select currency from public.people where id = v_ahmed) = 'AED');
+    (select currency from public.people where id = v_ahmed) = 'AED'
+      and (select ledger_currency from public.people where id = v_ahmed) is null);
 
-  -- Confirmed, at 1 AED = 0.272 USD.
   perform public.update_person(
     p_person_id => v_ahmed, p_name => 'Ahmed', p_type => 'person',
-    p_currency => 'USD', p_restate_confirmed => true, p_restate_rate_e9 => 272000000);
+    p_currency => 'USD', p_currency_change_confirmed => true);
+
+  -- The point of the whole release: history is byte-for-byte what it was.
+  perform pg_temp.assert(
+    'not one historical row was rewritten by the currency change',
+    not exists (
+      select 1 from public.transactions t
+      join pg_temp_before_switch b on b.id = t.id
+      where t.amount_minor         is distinct from b.amount_minor
+         or t.entered_amount_minor is distinct from b.entered_amount_minor
+         or t.entered_currency     is distinct from b.entered_currency
+         or t.exchange_rate_e9     is distinct from b.exchange_rate_e9
+         or t.exchange_rate_at     is distinct from b.exchange_rate_at
+         or t.exchange_rate_source is distinct from b.exchange_rate_source
+         or t.is_void              is distinct from b.is_void)
+    and (select count(*) from public.transactions where person_id = v_ahmed)
+      = (select count(*) from pg_temp_before_switch));
 
   perform pg_temp.assert(
-    'the account is now in the new currency',
-    (select currency from public.person_balances where person_id = v_ahmed) = 'USD');
-  perform pg_temp.assert(
-    'every restated row still says what was originally entered',
-    not exists (
-      select 1 from public.transactions
-      where person_id = v_ahmed and entered_currency is null));
-  perform pg_temp.assert(
-    'the opening balance was restated at the confirmed rate',
+    'the opening balance is still the AED 500 that was entered',
     (select amount_minor from public.transactions
-      where person_id = v_ahmed and is_opening and not is_void) = 13600);   -- AED 500 -> USD 136.00
-  perform pg_temp.assert(
-    'and its original AED figure is on the row',
-    (select entered_amount_minor from public.transactions
       where person_id = v_ahmed and is_opening and not is_void) = 50000);
 
-  -- A person with no history changes currency freely.
+  perform pg_temp.assert(
+    'the ledger denomination was frozen where it stood',
+    (select ledger_currency from public.people where id = v_ahmed) = 'AED'
+      and public.person_ledger_currency(v_ahmed) = 'AED');
+
+  perform pg_temp.assert(
+    'the default for new entries is the new currency',
+    (select currency from public.people where id = v_ahmed) = 'USD'
+      and public.person_currency(v_ahmed) = 'USD');
+
+  select * into v_bal from public.person_balances where person_id = v_ahmed;
+  perform pg_temp.assert(
+    'the balance is unchanged and still reported in the ledger currency',
+    v_bal.net_balance = v_amount and v_bal.currency = 'AED');
+  perform pg_temp.assert(
+    'and the view reports the entry default beside it',
+    v_bal.default_currency = 'USD');
+
+  v_page := public.person_page(v_ahmed);
+  perform pg_temp.assert(
+    'the person page separates the two currencies',
+    v_page ->> 'currency' = 'AED' and v_page ->> 'default_currency' = 'USD');
+
+  -- A future entry, in the new default currency, converts into the frozen
+  -- ledger and keeps the dollars it was entered in.
+  perform public.upsert_exchange_rates('USD', '{"AED": 3.6725}'::jsonb, current_date, 'test');
+
+  perform public.create_transaction(
+    p_person_id => v_ahmed, p_type => 'credit',
+    p_entered_amount_minor => 10000,        -- USD 100.00
+    p_entered_currency     => 'USD',
+    p_exchange_rate_e9     => 3672500000,
+    p_rate_source          => 'test');
+
+  select * into v_row from public.transactions
+  where person_id = v_ahmed and entered_currency = 'USD';
+
+  perform pg_temp.assert(
+    'a new entry is stored in the ledger currency',
+    v_row.amount_minor = 36725);                     -- USD 100 -> AED 367.25
+  perform pg_temp.assert(
+    'and keeps the dollars that were actually handed over',
+    v_row.entered_amount_minor = 10000
+      and v_row.entered_currency = 'USD'
+      and v_row.exchange_rate_e9 = 3672500000
+      and v_row.exchange_rate_source = 'test');
+  perform pg_temp.assert(
+    'the balance moved by the converted amount, not the entered one',
+    (select net_balance from public.person_balances where person_id = v_ahmed)
+      = v_amount + 36725);
+
+  -- Switching a second time moves the default again and leaves the frozen
+  -- denomination exactly where it was set the first time.
+  perform public.update_person(
+    p_person_id => v_ahmed, p_name => 'Ahmed', p_type => 'person',
+    p_currency => 'EUR', p_currency_change_confirmed => true);
+  perform pg_temp.assert(
+    'a second switch does not re-freeze the ledger',
+    (select ledger_currency from public.people where id = v_ahmed) = 'AED'
+      and (select currency from public.people where id = v_ahmed) = 'EUR');
+
+  -- Restatement is gone, and so is the RPC that performed it.
+  perform pg_temp.assert(
+    'the restatement RPC no longer exists',
+    not exists (
+      select 1 from pg_proc where proname = 'restate_person_currency'));
+
+  -- A person with no history changes currency freely, and stays undiverged.
   perform public.update_person(
     p_person_id => v_legacy, p_name => 'Legacy Person', p_type => 'person', p_currency => 'EUR');
   perform pg_temp.assert(
     'an account with no entries changes currency without ceremony',
-    (select currency from public.people where id = v_legacy) = 'EUR');
+    (select currency from public.people where id = v_legacy) = 'EUR'
+      and (select ledger_currency from public.people where id = v_legacy) is null);
+  perform pg_temp.assert(
+    'and its ledger simply follows the new currency',
+    public.person_ledger_currency(v_legacy) = 'EUR');
 
   -- ---------------------------------------------------------------------------
   -- 9. A foreign amount with no rate is refused, and nothing is written.

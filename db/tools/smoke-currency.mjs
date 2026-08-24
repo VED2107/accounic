@@ -182,23 +182,36 @@ try {
   const stillAed = await api.rpc('person_page', { p_person_id: personId });
   check('and nothing moved when it was refused', stillAed.data?.currency === 'AED');
 
+  const beforeSwitch = await api.rpc('person_page', { p_person_id: personId });
+  const openingBefore = (beforeSwitch.data?.timeline ?? []).find((e) => e.is_opening);
+
   const confirmed = await api.rpc('update_person', {
     p_person_id: personId,
     p_name: 'Ahmed',
     p_type: 'person',
     p_currency: 'USD',
-    p_restate_confirmed: true,
-    p_restate_rate_e9: 272000000, // 1 AED = 0.272 USD
+    p_currency_change_confirmed: true,
   });
-  check('confirming it restates the account', !confirmed.error && confirmed.data?.currency === 'USD',
+  check('confirming it moves the default for new entries',
+    !confirmed.error && confirmed.data?.currency === 'USD',
     confirmed.error?.message ?? '');
 
-  const restated = await api.rpc('person_page', { p_person_id: personId });
-  const opening = (restated.data?.timeline ?? []).find((entry) => entry.is_opening);
-  check('the opening balance was restated at the confirmed rate',
-    opening?.amount_minor === 13600, String(opening?.amount_minor));
-  check('and still says what was originally entered',
-    opening?.entered_amount_minor === 50000 && opening?.entered_currency === 'AED');
+  const switched = await api.rpc('person_page', { p_person_id: personId });
+  const opening = (switched.data?.timeline ?? []).find((entry) => entry.is_opening);
+
+  // The point of v1.1.1: the change rewrote nothing.
+  check('the history stays denominated where it was written',
+    switched.data?.currency === 'AED', String(switched.data?.currency));
+  check('and the entry default is the new currency',
+    switched.data?.default_currency === 'USD', String(switched.data?.default_currency));
+  check('the opening balance is still the AED 500 that was entered',
+    opening?.amount_minor === 50000, String(opening?.amount_minor));
+  check('not one historical figure moved',
+    opening?.amount_minor === openingBefore?.amount_minor
+      && opening?.entered_amount_minor === openingBefore?.entered_amount_minor
+      && opening?.entered_currency === openingBefore?.entered_currency);
+  check('and the balance is unchanged',
+    switched.data?.balance?.net_balance === beforeSwitch.data?.balance?.net_balance);
 
   // --- an old-style client still works --------------------------------------
   // Exactly the arguments v1.0.7 sends: no currency, no conversion.

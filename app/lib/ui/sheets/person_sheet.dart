@@ -79,10 +79,10 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
   String? _error;
   String? _openingError;
 
-  /// Set once the database has explained that changing the currency restates
-  /// the account. Ticking the box and saving again goes through (upgrade §1).
-  bool _restateOffered = false;
-  bool _restateConfirmed = false;
+  /// Set once the database has explained what changing the currency does.
+  /// Ticking the box and saving again goes through (db/migrations/0013).
+  bool _currencyChangeOffered = false;
+  bool _currencyChangeConfirmed = false;
 
   bool get _isEdit => widget.person != null;
 
@@ -161,16 +161,9 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
       final Person person;
 
       if (_isEdit) {
-        final changingCurrency = _currency != normaliseCode(
-          widget.person?.currency ?? ref.read(currencyProvider),
-        );
-        final rate = changingCurrency
-            ? await ref.read(ratesRepositoryProvider).rate(
-                  normaliseCode(widget.person?.currency ?? ref.read(currencyProvider)),
-                  _currency,
-                )
-            : null;
-
+        // No rate is fetched and none is needed: changing the currency moves
+        // what future entries default to and leaves every recorded figure
+        // exactly where it is.
         person = await repository.updatePerson(
           personId: widget.person!.id,
           name: name,
@@ -180,8 +173,7 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
           address: _clean(_address),
           notes: _clean(_notes),
           currency: _currency,
-          restateConfirmed: _restateConfirmed,
-          restateRateE9: rate?.rateE9,
+          currencyChangeConfirmed: _currencyChangeConfirmed,
         );
       } else {
         final entered = _direction == OpeningDirection.none ? null : _openingMinor;
@@ -223,12 +215,13 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
       setState(() {
         _saving = false;
         _error = failure.message;
-        // The database refuses a restatement once and says why. That refusal is
-        // the confirmation step: the box appears, and the same Save goes
-        // through when it is ticked. Nothing has been written either way.
-        if (failure.message.contains('restates them')) {
-          _restateOffered = true;
-          _restateConfirmed = true;
+        // The database refuses a currency change once and says what it will
+        // do. That refusal is the confirmation step: the box appears, and the
+        // same Save goes through when it is ticked. Nothing has been written
+        // either way.
+        if (failure.message.contains('affects future transactions only')) {
+          _currencyChangeOffered = true;
+          _currencyChangeConfirmed = true;
         }
       });
     }
@@ -242,6 +235,11 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
     final compact = context.isCompact;
     final base = normaliseCode(ref.watch(currencyProvider));
     final originalCurrency = normaliseCode(widget.person?.currency ?? base);
+    // What this person's history is denominated in, which is what the balance
+    // keeps being reported in after a switch. The same fallback chain the
+    // database uses (db/migrations/0013).
+    final ledgerCurrency =
+        normaliseCode(widget.person?.ledgerCurrencyOr(base) ?? base);
     final currencyChanged = _isEdit && _currency != originalCurrency;
 
     final phone = AppTextField(
@@ -272,8 +270,8 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
       icon: _isEdit ? AppIcons.edit : AppIcons.addPerson,
       error: _error,
       busy: _saving,
-      primaryLabel: _restateOffered
-          ? 'Restate into $_currency'
+      primaryLabel: _currencyChangeOffered
+          ? 'Use $_currency from now on'
           : _isEdit
               ? 'Save changes'
               : 'Add person',
@@ -328,12 +326,12 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
 
         if (currencyChanged) ...[
           const SizedBox(height: AppSpacing.lg),
-          _RestateNotice(
-            from: originalCurrency,
+          _CurrencyChangeNotice(
+            from: ledgerCurrency,
             to: _currency,
-            offered: _restateOffered,
-            confirmed: _restateConfirmed,
-            onConfirmed: (value) => setState(() => _restateConfirmed = value),
+            offered: _currencyChangeOffered,
+            confirmed: _currencyChangeConfirmed,
+            onConfirmed: (value) => setState(() => _currencyChangeConfirmed = value),
           ),
         ],
 
@@ -521,8 +519,8 @@ class _OpeningBalance extends StatelessWidget {
 }
 
 /// What changing an existing account's currency actually does (upgrade §1).
-class _RestateNotice extends StatelessWidget {
-  const _RestateNotice({
+class _CurrencyChangeNotice extends StatelessWidget {
+  const _CurrencyChangeNotice({
     required this.from,
     required this.to,
     required this.offered,
@@ -551,7 +549,7 @@ class _RestateNotice extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'This account is recorded in $from.',
+            'Changing this person’s currency affects future transactions only.',
             style: TextStyle(
               fontSize: 12.5,
               fontWeight: FontWeight.w600,
@@ -560,9 +558,9 @@ class _RestateNotice extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            'Changing it to $to restates every entry at today’s rate. The original '
-            'amount, currency and rate stay on every row, so nothing is lost — but '
-            'the balances you have seen will be shown in $to from now on.',
+            'Existing transactions will remain unchanged. This account’s history '
+            'stays recorded in $from, exactly as it was entered, and its balance '
+            'is still reported in $from. New entries will default to $to.',
             style: TextStyle(fontSize: 12, height: 1.45, color: palette.inkMuted),
           ),
           if (offered) ...[
@@ -585,7 +583,7 @@ class _RestateNotice extends StatelessWidget {
                     ),
                     Expanded(
                       child: Text(
-                        'Yes, restate this account into $to at that rate.',
+                        'Yes, use $to for new transactions.',
                         style: TextStyle(fontSize: 12.5, color: context.colors.onSurface),
                       ),
                     ),

@@ -217,7 +217,12 @@ export function Timeline({
           onClose={() => setEditing(null)}
           currency={currency}
           mode="edit"
-          person={{ id: person.id, name: person.name }}
+          person={{
+            id: person.id,
+            name: person.name,
+            currency,
+            default_currency: balance.default_currency,
+          }}
           transaction={{
             id: editing.id,
             type: editing.entry_type === 'credit' ? 'credit' : 'debit',

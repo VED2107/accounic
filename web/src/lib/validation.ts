@@ -119,13 +119,13 @@ export const personSchema = z.object({
   opening_amount: z.string().trim().optional(),
   opening_currency: optionalCurrencyCode,
   opening_rate_e9: rateE9,
-  // Changing the currency of an account that already holds entries restates
-  // them, so the form has to say so and send this back.
-  restate_confirmed: z
+  // Changing the currency of an account that already holds entries changes what
+  // future entries default to and leaves every recorded one alone. The user is
+  // told that before it happens, and the form sends the acknowledgement back.
+  currency_change_confirmed: z
     .union([z.literal('on'), z.literal('true'), z.literal('')])
     .transform((v) => v === 'on' || v === 'true')
     .optional(),
-  restate_rate_e9: rateE9,
   phone: trimmedOptional(32),
   email: z
     .union([z.literal(''), z.string().trim().email('Enter a valid email address')])

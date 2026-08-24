@@ -160,6 +160,7 @@ class Person {
     this.address,
     this.notes,
     this.currency,
+    this.ledgerCurrency,
   });
 
   final String id;
@@ -171,9 +172,16 @@ class Person {
   final String? address;
   final String? notes;
 
-  /// The account currency. Null means the owner's base currency, which is what
-  /// every person created before this feature meant (upgrade §1).
+  /// The person's DEFAULT ENTRY currency: what a new transaction with them is
+  /// entered in. Null means the owner's base currency, which is what every
+  /// person created before this feature meant (upgrade §1). Changing it never
+  /// rewrites history (db/migrations/0013).
   final String? currency;
+
+  /// The currency this person's stored figures are denominated in, frozen the
+  /// first time [currency] moved away from it. Null means the two have never
+  /// diverged, so the ledger simply follows [currency].
+  final String? ledgerCurrency;
   final bool isArchived;
 
   factory Person.fromJson(Map<String, dynamic> json) => Person(
@@ -186,8 +194,22 @@ class Person {
         address: _str(json['address']),
         notes: _str(json['notes']),
         currency: _str(json['currency']),
+        ledgerCurrency: _str(json['ledger_currency']),
         isArchived: json['is_archived'] as bool? ?? false,
       );
+
+  /// What a new entry for this person should be typed in.
+  String entryCurrency(String baseCurrency) =>
+      currency ?? baseCurrency;
+
+  /// What this person's already-recorded figures are denominated in. The same
+  /// chain the database uses, to the letter.
+  String ledgerCurrencyOr(String baseCurrency) =>
+      ledgerCurrency ?? currency ?? baseCurrency;
+
+  /// True when this person's history and their entry default have parted ways.
+  bool hasSwitchedCurrency(String baseCurrency) =>
+      ledgerCurrencyOr(baseCurrency) != entryCurrency(baseCurrency);
 }
 
 /// public.person_balances — the authoritative per-person position.
@@ -198,6 +220,7 @@ class PersonBalance {
     required this.type,
     required this.isArchived,
     required this.currency,
+    String? defaultCurrency,
     required this.baseCurrency,
     required this.totalCredit,
     required this.totalDebit,
@@ -211,8 +234,9 @@ class PersonBalance {
     this.phone,
     this.lastActivityAt,
     this.netBalanceBase,
+    this.netBalanceDefault,
     this.openingMinor = 0,
-  });
+  }) : _defaultCurrency = defaultCurrency;
 
   final String personId;
   final String name;
@@ -233,11 +257,28 @@ class PersonBalance {
   /// zero (upgrade §9).
   final int? netBalanceBase;
 
+  /// The same position in this person's own default currency. Display only: it
+  /// moves when rates move, and equals [netBalance] whenever the two currencies
+  /// agree, which is almost always.
+  final int? netBalanceDefault;
+
   /// The opening balance as a signed figure: positive when they owe the user.
   final int openingMinor;
 
-  /// The currency every figure above is denominated in.
+  /// True when this person's history and their entry default have parted ways.
+  bool get hasSwitchedCurrency => defaultCurrency != currency;
+
+  /// The currency every figure above is denominated in: this person's ledger
+  /// currency, which is what their history was actually recorded in.
   final String currency;
+
+  final String? _defaultCurrency;
+
+  /// What a new entry for this person should default to. Differs from
+  /// [currency] only for a person whose currency was changed after they already
+  /// had entries (db/migrations/0013); absent, it is simply [currency], which is
+  /// what it means for everyone who has never switched.
+  String get defaultCurrency => _defaultCurrency ?? currency;
   final String baseCurrency;
   final int transactionCount;
   final String? lastActivityAt;
@@ -259,11 +300,17 @@ class PersonBalance {
         transactionCount: _int(json['transaction_count']),
         lastActivityAt: _str(json['last_activity_at']),
         currency: (json['currency'] as String?) ?? kFallbackCurrency,
+        defaultCurrency: (json['default_currency'] as String?) ??
+            (json['currency'] as String?) ??
+            kFallbackCurrency,
         baseCurrency: (json['base_currency'] as String?) ??
             (json['currency'] as String?) ??
             kFallbackCurrency,
         netBalanceBase:
             json['net_balance_base'] == null ? null : _int(json['net_balance_base']),
+        netBalanceDefault: json['net_balance_default'] == null
+            ? null
+            : _int(json['net_balance_default']),
         openingMinor: _int(json['opening_minor']),
       );
 
@@ -427,6 +474,7 @@ class PersonPage {
     required this.timelineTotal,
     required this.openTransactions,
     required this.currency,
+    required this.defaultCurrency,
     required this.baseCurrency,
   });
 
@@ -436,8 +484,14 @@ class PersonPage {
   final int timelineTotal;
   final List<OpenTransaction> openTransactions;
 
-  /// The account's own currency: what every figure on the screen is in.
+  /// The account's own currency: what every figure on the screen is in. This is
+  /// the person's LEDGER currency — what their history was actually recorded in.
   final String currency;
+
+  /// What a new entry for this person should default to. Differs from [currency]
+  /// only for a person whose currency was changed after they already had
+  /// entries (db/migrations/0013).
+  final String defaultCurrency;
 
   /// The workspace currency, for the equivalent shown beside the position.
   final String baseCurrency;
@@ -455,6 +509,9 @@ class PersonPage {
             OpenTransaction.fromJson(entry as Map<String, dynamic>),
         ],
         currency: (json['currency'] as String?) ?? kFallbackCurrency,
+        defaultCurrency: (json['default_currency'] as String?) ??
+            (json['currency'] as String?) ??
+            kFallbackCurrency,
         baseCurrency: (json['base_currency'] as String?) ??
             (json['currency'] as String?) ??
             kFallbackCurrency,

@@ -141,7 +141,12 @@ export function PersonActionBar({
         currency={currency}
         mode="create"
         defaultType={addType ?? TYPE_FOR_FLOW.person_to_owner}
-        person={{ id: person.id, name: person.name }}
+        person={{
+          id: person.id,
+          name: person.name,
+          currency,
+          default_currency: balance.default_currency,
+        }}
       />
 
       <SettleSheet

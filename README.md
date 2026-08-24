@@ -2,7 +2,7 @@
 
 A small, fast, personal accounting system. Three clients, one backend, one database.
 
-Current release: **[v1.1.0](https://github.com/VED2107/accounic/releases/latest)** —
+Current release: **[v1.1.1](https://github.com/VED2107/accounic/releases/latest)** —
 Windows installer, Windows portable zip, and an Android APK.
 
 Answers four questions and little else (`context.md` §35):
@@ -170,7 +170,8 @@ with a network error.
 | Suite | Command | Covers |
 |---|---|---|
 | Accounting engine | `node db/tools/run-sql.mjs test` | §33 arithmetic, FIFO allocation, integrity guards |
-| Currency engine | (same command) | per-person currency, opening balances, conversion, restatement, historical rates |
+| Currency engine | (same command) | per-person currency, opening balances, conversion, historical rates |
+| Per-person currency | (same command) | four people on four currencies, NULL fallback, a currency change that rewrites nothing |
 | Currency over HTTP | `node db/tools/smoke-currency.mjs` | the whole feature as a signed-in user, on a throwaway account it deletes |
 | Data safety | `node db/tools/snapshot.mjs before` · `… after` · `… diff` | counts, ids and every person's net balance, before and after a migration |
 | RLS / authorisation | (same command) | cross-tenant reads and writes, privilege escalation, disabled accounts, anon |

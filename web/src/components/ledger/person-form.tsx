@@ -13,7 +13,7 @@ import {
 import { AmountInput } from '@/components/ledger/amount-input';
 import { useToast } from '@/components/ui/toast';
 import { createPerson, updatePerson } from '@/lib/actions';
-import { FALLBACK_CURRENCY, normaliseCode } from '@/lib/currencies';
+import { FALLBACK_CURRENCY, personCurrencies } from '@/lib/currencies';
 import { parseAmountToMinor } from '@/lib/money';
 import type { ActionResult, OpeningDirection, PartyType, Person } from '@/lib/types';
 
@@ -28,9 +28,11 @@ import type { ActionResult, OpeningDirection, PartyType, Person } from '@/lib/ty
  *   * **Opening balance.** The point of it is that a user with real-world
  *     balances can start from where they actually are rather than inventing a
  *     transaction dated today to fake it.
- *   * **Restatement.** Changing the currency of an account that already holds
- *     entries has to restate them, which moves numbers the user has seen. It is
- *     therefore refused once and explained, rather than done quietly.
+ *   * **Changing that currency.** It affects future transactions only. Every
+ *     recorded entry stays exactly as it was entered, and the account keeps
+ *     reporting in the currency its history is written in. That is worth saying
+ *     out loud, so the change is refused once and explained rather than done
+ *     quietly.
  */
 export function PersonForm({
   open,
@@ -49,7 +51,13 @@ export function PersonForm({
   const toast = useToast();
   const isEdit = Boolean(person);
 
-  const originalCurrency = normaliseCode(person?.currency ?? baseCurrency) || FALLBACK_CURRENCY;
+  // The person's two currencies, resolved by the same chain the database uses.
+  // `entry` is what they are currently entered in; `ledger` is what their
+  // history is denominated in, and the two differ only after a switch.
+  const { entry: originalCurrency, ledger: ledgerCurrency } = personCurrencies(
+    person,
+    baseCurrency,
+  );
 
   const [type, setType] = useState<PartyType>(person?.type ?? 'person');
   const [currency, setCurrency] = useState(originalCurrency);
@@ -79,9 +87,11 @@ export function PersonForm({
   // "I know I owe him ₹5,000" on a dirham account is the case this exists for.
   const openingRate = useRate(openingCurrency, currency);
 
-  // And changing an existing account's currency needs a rate to restate it at.
+  // Changing an existing account's currency needs no rate at all: it moves what
+  // future entries default to and leaves every recorded figure alone. What the
+  // history is denominated in is the person's ledger currency, which is frozen
+  // the first time the two diverge and is what the balance keeps being shown in.
   const currencyChanged = isEdit && currency !== originalCurrency;
-  const restateRate = useRate(currencyChanged ? originalCurrency : '', currency);
 
   // `onCreated` is an inline arrow at most call sites, so it is a new function
   // on every render. Keyed on that alone this effect would re-run — and
@@ -105,11 +115,11 @@ export function PersonForm({
   const fieldError = (field: string) =>
     state && !state.ok && state.field === field ? state.error : undefined;
 
-  // The database refuses the first attempt at a restatement and says why. That
-  // refusal is the confirmation step: the same form comes back with the
-  // consequence stated and a box to tick, and nothing has been written.
-  const needsRestateConfirmation =
-    Boolean(state && !state.ok && /restates them/i.test(state.error));
+  // The database refuses the first attempt at a currency change and says what
+  // will happen. That refusal is the confirmation step: the same form comes back
+  // with the consequence stated and a box to tick, and nothing has been written.
+  const needsCurrencyConfirmation =
+    Boolean(state && !state.ok && /affects future transactions only/i.test(state.error));
 
   return (
     <Modal
@@ -174,36 +184,28 @@ export function PersonForm({
         {currencyChanged ? (
           <div className="rounded-lg border border-line bg-sunken px-3.5 py-3 text-[0.8125rem] text-ink-muted">
             <p className="font-medium text-ink">
-              This account is recorded in {originalCurrency}.
+              Changing this person’s currency affects future transactions only.
             </p>
             <p className="mt-1">
-              Changing it to {currency} restates every entry at today’s rate. The original
-              amount, currency and rate stay on every row, so nothing is lost — but the
-              balances you have seen will be shown in {currency} from now on.
+              Existing transactions will remain unchanged. This account’s history stays
+              recorded in {ledgerCurrency}, exactly as it was entered, and its balance is
+              still reported in {ledgerCurrency}. New entries will default to {currency}.
             </p>
-            {restateRate.rate ? (
-              <p className="mt-1.5 text-ink-faint">{restateRate.rate.provenance}</p>
-            ) : null}
-            {!restateRate.loading && !restateRate.rate ? (
-              <p className="mt-1.5 font-medium text-payable" role="alert">
-                No {originalCurrency} → {currency} rate is available, so this account cannot
-                be restated right now. Nothing has been changed.
-              </p>
-            ) : null}
 
-            {needsRestateConfirmation ? (
+            {needsCurrencyConfirmation ? (
               <label className="mt-3 flex items-start gap-2 text-ink">
                 <input
                   type="checkbox"
-                  name="restate_confirmed"
+                  name="currency_change_confirmed"
                   value="on"
                   defaultChecked
                   className="mt-0.5 size-4 rounded border-line-strong"
                 />
-                <span>Yes, restate this account into {currency} at that rate.</span>
+                <span>
+                  Yes, use {currency} for new transactions with {person?.name ?? 'this person'}.
+                </span>
               </label>
             ) : null}
-            <input type="hidden" name="restate_rate_e9" value={restateRate.rate?.rate_e9 ?? ''} />
           </div>
         ) : null}
 
@@ -329,17 +331,14 @@ export function PersonForm({
 
         <SubmitRow
           label={
-            needsRestateConfirmation
-              ? `Restate into ${currency}`
+            needsCurrencyConfirmation
+              ? `Use ${currency} from now on`
               : isEdit
                 ? 'Save changes'
                 : 'Add person'
           }
           onCancel={onClose}
-          disabled={
-            (direction !== 'none' && openingAmount === null && !isEdit) ||
-            (currencyChanged && needsRestateConfirmation && !restateRate.rate)
-          }
+          disabled={direction !== 'none' && openingAmount === null && !isEdit}
         />
       </form>
     </Modal>

@@ -10,8 +10,18 @@ import { Avatar, Spinner, cn } from '@/components/ui/primitives';
 export interface PickedPerson {
   id: string;
   name: string;
-  /** The account currency, so the sheet knows what it is recording into. */
+  /**
+   * The person's LEDGER currency: what their stored figures are denominated in,
+   * and therefore what the sheet is recording into.
+   */
   currency?: string | null;
+  /**
+   * The person's DEFAULT ENTRY currency: what a new entry for them should be
+   * typed in. Equal to `currency` unless they have changed currency at some
+   * point, in which case the history stays in one and new entries start in the
+   * other (db/migrations/0013).
+   */
+  default_currency?: string | null;
 }
 
 /**
@@ -38,6 +48,7 @@ export function PersonPicker({
       phone: string | null;
       net_balance: number;
       currency?: string | null;
+      default_currency?: string | null;
     }>
   >([]);
   const [loading, setLoading] = useState(false);
@@ -57,7 +68,7 @@ export function PersonPicker({
         ? supabase.rpc('search_all', { p_query: trimmed, p_limit: 6 })
         : supabase
             .from('person_balances')
-            .select('person_id, name, phone, net_balance, currency')
+            .select('person_id, name, phone, net_balance, currency, default_currency')
             .eq('is_archived', false)
             .order('last_activity_at', { ascending: false, nullsFirst: false })
             .limit(6);
@@ -94,7 +105,14 @@ export function PersonPicker({
       return;
     }
     const created = data as { id: string; name: string; currency: string | null };
-    onChange({ id: created.id, name: created.name, currency: created.currency });
+    // A person who has just been created has no history, so their ledger and
+    // their entry default are necessarily the same currency.
+    onChange({
+      id: created.id,
+      name: created.name,
+      currency: created.currency,
+      default_currency: created.currency,
+    });
   }
 
   if (value) {
@@ -165,6 +183,7 @@ export function PersonPicker({
                   id: option.person_id,
                   name: option.name,
                   currency: option.currency ?? null,
+                  default_currency: option.default_currency ?? option.currency ?? null,
                 })
               }
               className={cn(

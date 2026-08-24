@@ -42,13 +42,21 @@ Future<bool> showTransactionSheet(
 }
 
 class PersonRef {
-  const PersonRef(this.id, this.name, {this.currency});
+  const PersonRef(this.id, this.name, {this.currency, this.defaultCurrency});
   final String id;
   final String name;
 
-  /// The account currency. Null falls back to the workspace's, which is what a
-  /// person with none stored means (upgrade 1).
+  /// The person's LEDGER currency: what their stored figures are denominated
+  /// in, and therefore what this entry will be recorded into. Null falls back
+  /// to the workspace's, which is what a person with none stored means
+  /// (upgrade 1).
   final String? currency;
+
+  /// The person's DEFAULT ENTRY currency: what a new entry for them should be
+  /// typed in. Equal to [currency] unless they have changed currency at some
+  /// point, in which case the history stays in one and new entries start in the
+  /// other (db/migrations/0013).
+  final String? defaultCurrency;
 }
 
 class EditableTransaction {
@@ -97,7 +105,7 @@ class _TransactionSheetState extends ConsumerState<_TransactionSheet> {
   bool _saving = false;
   String? _error;
 
-  /// The currency the user is typing in. Follows the account until they say
+  /// The currency the user is typing in. Follows the person until they say
   /// otherwise, because the ordinary case should cost no decisions.
   String? _entryCurrency;
 
@@ -114,7 +122,7 @@ class _TransactionSheetState extends ConsumerState<_TransactionSheet> {
     if (!_canSave) return;
 
     final account = _accountCurrency;
-    final entry = _entryCurrency ?? account;
+    final entry = _entryCurrency ?? _personDefaultCurrency;
     // The keyboard has nothing left to contribute, and the result of this press
     // is behind it.
     FocusManager.instance.primaryFocus?.unfocus();
@@ -180,17 +188,27 @@ class _TransactionSheetState extends ConsumerState<_TransactionSheet> {
     }
   }
 
-  /// The account's currency, which is the person's — not the workspace's.
+  /// What this entry will be RECORDED in: the person's ledger currency, not the
+  /// workspace's.
   String get _accountCurrency {
     final person = _person?.currency;
     if (person != null && person.isNotEmpty) return normaliseCode(person);
     return normaliseCode(ref.read(currencyProvider));
   }
 
+  /// What the amount field starts out in: the person's own default currency.
+  /// The same string as [_accountCurrency] for everyone who has never changed
+  /// currency, and the new one for anyone who has.
+  String get _personDefaultCurrency {
+    final preferred = _person?.defaultCurrency;
+    if (preferred != null && preferred.isNotEmpty) return normaliseCode(preferred);
+    return _accountCurrency;
+  }
+
   @override
   Widget build(BuildContext context) {
     final account = _accountCurrency;
-    final entry = _entryCurrency ?? account;
+    final entry = _entryCurrency ?? _personDefaultCurrency;
 
     return SheetScaffold(
       title: _isEdit ? 'Edit transaction' : 'Add transaction',
@@ -478,7 +496,14 @@ class _PersonPickerFieldState extends ConsumerState<PersonPickerField> {
     try {
       final person = await ref.read(ledgerRepositoryProvider).createPerson(name: name);
       ref.refreshLedger();
-      widget.onChanged(PersonRef(person.id, person.name, currency: person.currency));
+      // A person who has just been created has no history, so their ledger and
+      // their entry default are necessarily the same currency.
+      widget.onChanged(PersonRef(
+        person.id,
+        person.name,
+        currency: person.currency,
+        defaultCurrency: person.currency,
+      ));
     } on Failure catch (failure) {
       if (mounted) showMessage(context, failure.message, error: true);
     } finally {
@@ -585,6 +610,7 @@ class _PersonPickerFieldState extends ConsumerState<PersonPickerField> {
                         option.personId,
                         option.name,
                         currency: option.currency,
+                        defaultCurrency: option.defaultCurrency,
                       )),
                 ),
               if (_query.trim().isNotEmpty && !exactMatch)

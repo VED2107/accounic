@@ -188,10 +188,13 @@ class LedgerRepository {
 
   /// Updates a person.
   ///
-  /// Changing [currency] on an account that already holds entries restates them
-  /// and is refused unless [restateConfirmed] is set, because it moves numbers
-  /// the user has already seen. Every restated row keeps what was originally
-  /// entered, so nothing is lost (upgrade §1).
+  /// Changing [currency] on an account that already holds entries affects
+  /// FUTURE transactions only: every recorded entry stays exactly as it was
+  /// entered, and the account keeps reporting in the currency its history is
+  /// written in. It is still refused unless [currencyChangeConfirmed] is set,
+  /// because the user is entitled to be told that before it happens — the
+  /// database's refusal of the first attempt IS the confirmation step, and
+  /// nothing has been written when it is raised (db/migrations/0013).
   Future<Person> updatePerson({
     required String personId,
     required String name,
@@ -201,8 +204,7 @@ class LedgerRepository {
     String? address,
     String? notes,
     String? currency,
-    bool restateConfirmed = false,
-    int? restateRateE9,
+    bool currencyChangeConfirmed = false,
   }) async {
     try {
       final data = await _client.rpc('update_person', params: {
@@ -214,8 +216,7 @@ class LedgerRepository {
         'p_address': address,
         'p_notes': notes,
         'p_currency': currency,
-        'p_restate_confirmed': restateConfirmed,
-        'p_restate_rate_e9': restateRateE9,
+        'p_currency_change_confirmed': currencyChangeConfirmed,
       });
       return Person.fromJson(Map<String, dynamic>.from(data as Map));
     } catch (error, stack) {

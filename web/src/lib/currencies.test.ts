@@ -8,6 +8,7 @@ import {
   decimalsFor,
   isSupportedCurrency,
   minorPerMajor,
+  personCurrencies,
   rateSentence,
   rateToE9,
 } from './currencies';
@@ -137,5 +138,64 @@ describe('conversion', () => {
 
   it('states the rate in the direction the user reads it', () => {
     expect(rateSentence('AED', 'INR', rateToE9(24.01))).toBe('1 AED = ₹24.01 INR');
+  });
+});
+
+/**
+ * Per-person currency resolution (v1.1.1, db/migrations/0013).
+ *
+ * These pin the fallback chain that the database and both clients each
+ * implement separately. Getting it wrong in one place is how a person's history
+ * gets read in the wrong currency, which is the bug this release corrects.
+ */
+describe('personCurrencies', () => {
+  it('gives each person their own currency', () => {
+    const base = 'INR';
+    expect(personCurrencies({ currency: 'AED' }, base).entry).toBe('AED');
+    expect(personCurrencies({ currency: 'INR' }, base).entry).toBe('INR');
+    expect(personCurrencies({ currency: 'USD' }, base).entry).toBe('USD');
+    expect(personCurrencies({ currency: 'EUR' }, base).entry).toBe('EUR');
+  });
+
+  it('falls back to the account currency when the person has none', () => {
+    expect(personCurrencies({ currency: null }, 'INR')).toEqual({
+      entry: 'INR',
+      ledger: 'INR',
+    });
+    expect(personCurrencies({ currency: null, ledger_currency: null }, 'AED')).toEqual({
+      entry: 'AED',
+      ledger: 'AED',
+    });
+  });
+
+  it('follows the account currency rather than freezing a copy of it', () => {
+    const person = { currency: null };
+    expect(personCurrencies(person, 'INR').entry).toBe('INR');
+    expect(personCurrencies(person, 'GBP').entry).toBe('GBP');
+  });
+
+  it('keeps the ledger on the frozen currency once a person has switched', () => {
+    // Ahmed's history is in dirhams; his new entries are in dollars.
+    expect(personCurrencies({ currency: 'USD', ledger_currency: 'AED' }, 'INR')).toEqual({
+      entry: 'USD',
+      ledger: 'AED',
+    });
+  });
+
+  it('treats a person who has never switched as having one currency', () => {
+    const { entry, ledger } = personCurrencies({ currency: 'AED' }, 'INR');
+    expect(entry).toBe(ledger);
+  });
+
+  it('survives an absent person and a missing base', () => {
+    expect(personCurrencies(null, null)).toEqual({ entry: 'INR', ledger: 'INR' });
+    expect(personCurrencies(undefined, '')).toEqual({ entry: 'INR', ledger: 'INR' });
+  });
+
+  it('normalises whatever case the caller had', () => {
+    expect(personCurrencies({ currency: 'aed', ledger_currency: 'inr' }, 'inr')).toEqual({
+      entry: 'AED',
+      ledger: 'INR',
+    });
   });
 });

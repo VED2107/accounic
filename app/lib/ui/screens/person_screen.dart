@@ -38,7 +38,9 @@ class PersonScreen extends ConsumerWidget {
 
     return AppPage(
       title: page?.person.name ?? 'Account',
-      subtitle: page == null ? null : _subtitle(page.person, page.currency),
+      subtitle: page == null
+          ? null
+          : _subtitle(page.person, page.currency, page.defaultCurrency),
       width: ContentWidth.standard,
       bottomPadding: context.isCompact ? 48 : 48,
       leading: _BackButton(),
@@ -62,9 +64,14 @@ class PersonScreen extends ConsumerWidget {
     );
   }
 
-  static String _subtitle(Person person, String currency) => [
+  /// [currency] is what this person's figures are denominated in. [entry] is
+  /// what a new transaction with them defaults to, and is stated only when the
+  /// two differ — a person who has never switched has one currency and should
+  /// be told about exactly one (db/migrations/0013).
+  static String _subtitle(Person person, String currency, [String? entry]) => [
         person.type.label,
         currency,
+        if (entry != null && entry != currency) 'new entries in $entry',
         if (person.phone != null) person.phone!,
         if (person.isArchived) 'Archived',
       ].join(' · ');
@@ -76,7 +83,13 @@ class PersonScreen extends ConsumerWidget {
       // On a phone the app bar has only room for the name, so the identity row
       // is repeated here where the avatar and the metadata actually fit.
       if (context.isCompact) ...[
-        Reveal(child: _Identity(person: page.person, currency: page.currency)),
+        Reveal(
+          child: _Identity(
+            person: page.person,
+            currency: page.currency,
+            entryCurrency: page.defaultCurrency,
+          ),
+        ),
         const SizedBox(height: AppSpacing.lg),
       ],
 
@@ -173,9 +186,16 @@ class _BackButton extends StatelessWidget {
 }
 
 class _Identity extends StatelessWidget {
-  const _Identity({required this.person, required this.currency});
+  const _Identity({
+    required this.person,
+    required this.currency,
+    required this.entryCurrency,
+  });
 
   final Person person;
+
+  /// What a new entry for this person defaults to. Shown only when it differs.
+  final String entryCurrency;
 
   /// The account's currency, stated in the identity line rather than left to be
   /// inferred from a symbol (upgrade §10).
@@ -203,7 +223,7 @@ class _Identity extends StatelessWidget {
               ),
               const SizedBox(height: 2),
               Text(
-                PersonScreen._subtitle(person, currency),
+                PersonScreen._subtitle(person, currency, entryCurrency),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontSize: 13, color: context.money.inkMuted),
@@ -356,6 +376,7 @@ class _ActionRow extends ConsumerWidget {
         page.person.id,
         page.person.name,
         currency: page.currency,
+        defaultCurrency: page.defaultCurrency,
       ),
       defaultType: TxnType.forFlow(flow),
     );
@@ -942,6 +963,7 @@ class _RowActions extends ConsumerWidget {
                                 page.person.id,
                                 page.person.name,
                                 currency: page.currency,
+                                defaultCurrency: page.defaultCurrency,
                               ),
                               transaction: EditableTransaction(
                                 id: entry.id,
