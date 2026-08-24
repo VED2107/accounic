@@ -35,9 +35,7 @@ export function ActivityRow({
   // where two of them sit next to each other (upgrade §9).
   const rowCurrency = item.currency ?? currency;
 
-  const meta = [item.note, showDate ? friendlyDate(item.entry_date) : null]
-    .filter(Boolean)
-    .join(' · ');
+  const when = showDate ? friendlyDate(item.entry_date) : null;
 
   return (
     <Link
@@ -67,11 +65,38 @@ export function ActivityRow({
       </span>
 
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[0.8125rem] font-medium text-ink">
+        <span className="block truncate text-[0.875rem] font-medium text-ink">
           {item.person_name}
         </span>
-        <span className="block truncate text-[0.75rem] text-ink-faint">
-          {meta ? `${kind} · ${meta}` : kind}
+
+        {/* Three levels, not one run-on line: what kind of entry this is, then
+            when, then the note. Rows used to read as one undifferentiated grey
+            string, which is why a feed of them was hard to scan (§15). */}
+        <span className="flex min-w-0 items-center gap-1.5 text-[0.75rem]">
+          <span
+            className={cn(
+              'shrink-0 font-medium',
+              isSettlement
+                ? 'text-ink-muted'
+                : receivable
+                  ? 'text-receivable/90'
+                  : 'text-payable/90',
+            )}
+          >
+            {kind}
+          </span>
+          {when ? (
+            <>
+              <span className="text-ink-subtle">·</span>
+              <span className="shrink-0 text-ink-faint">{when}</span>
+            </>
+          ) : null}
+          {item.note ? (
+            <>
+              <span className="text-ink-subtle">·</span>
+              <span className="truncate text-ink-faint">{item.note}</span>
+            </>
+          ) : null}
         </span>
         {/* What was actually handed over, when that was not this account's
             currency — and whether the figure beside it was the rate's or the
@@ -93,7 +118,7 @@ export function ActivityRow({
         minor={item.amount_minor}
         currency={rowCurrency}
         tone={isSettlement ? 'neutral' : receivable ? 'receivable' : 'payable'}
-        className="shrink-0 text-[0.875rem] font-semibold"
+        className="money shrink-0"
       />
     </Link>
   );

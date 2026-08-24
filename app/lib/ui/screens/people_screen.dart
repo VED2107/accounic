@@ -521,12 +521,44 @@ class _PersonTile extends StatelessWidget {
                               ],
                             ],
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            _meta(person),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 12, color: palette.inkFaint),
+                          const SizedBox(height: 3),
+                          Row(
+                            children: [
+                              // The account's own currency, when it is not the
+                              // workspace's. A multi-currency directory where a
+                              // row does not say what it is denominated in is a
+                              // directory you have to open to read (upgrade 42).
+                              if (person.currency != person.baseCurrency) ...[
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 5,
+                                    vertical: 1,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: palette.sunken,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: palette.lineStrong),
+                                  ),
+                                  child: Text(
+                                    person.currency,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: palette.inkMuted,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: AppSpacing.sm),
+                              ],
+                              Flexible(
+                                child: Text(
+                                  _meta(person),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -534,7 +566,12 @@ class _PersonTile extends StatelessWidget {
                     const SizedBox(width: AppSpacing.md),
                     // Each account is shown in its own currency; the totals
                     // at the top are the only converted figures here.
-                    NetBadge(netMinor: person.netBalance, currency: person.currency),
+                    NetBadge(
+                      netMinor: person.netBalance,
+                      currency: person.currency,
+                      approxMinor: person.netBalanceBase,
+                      approxCurrency: person.baseCurrency,
+                    ),
                     const SizedBox(width: AppSpacing.xs),
                     HoverSlide(
                       offset: Offset(hovered ? 0.2 : 0, 0),

@@ -38,16 +38,18 @@ function halfOverHalf(values: number[]): number | null {
   return ((second - first) / first) * 100;
 }
 
-/** Cumulative credit, debit and net across the buckets, oldest first. */
+/** Cumulative credit, debit, settled and net across the buckets, oldest first. */
 export function trendsFromBuckets(buckets: ActivityBucket[]): {
   credit: Trend;
   debit: Trend;
+  settled: Trend;
   net: Trend;
 } {
   // The RPC returns newest first; a chart reads left to right in time order.
   const ordered = [...buckets].sort((a, b) => (a.bucket < b.bucket ? -1 : 1));
   const credit = ordered.map((bucket) => bucket.credit);
   const debit = ordered.map((bucket) => bucket.debit);
+  const settled = ordered.map((bucket) => bucket.settled);
   const net = ordered.map((_, index) => (credit[index] ?? 0) - (debit[index] ?? 0));
 
   const make = (values: number[]): Trend => ({
@@ -56,7 +58,7 @@ export function trendsFromBuckets(buckets: ActivityBucket[]): {
     total: values.reduce((a, b) => a + b, 0),
   });
 
-  return { credit: make(credit), debit: make(debit), net: make(net) };
+  return { credit: make(credit), debit: make(debit), settled: make(settled), net: make(net) };
 }
 
 /**

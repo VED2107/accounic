@@ -13,6 +13,7 @@ import {
   ArrowRightIcon,
   ArrowUpIcon,
   PeopleIcon,
+  SettleIcon,
   SparkIcon,
   TrendUpIcon,
 } from '@/components/icons';
@@ -87,10 +88,94 @@ export default async function DashboardPage() {
       </Reveal>
 
       {/* ------------------------------------------------------------------ */}
-      {/* The three numbers (context.md §13)                                  */}
+      {/* Net position leads; the rest is its working (context.md §13).       */}
+      {/*                                                                     */}
+      {/* The three figures used to sit in one equal row, which made the      */}
+      {/* dashboard say three things at once and none of them loudest. Net is */}
+      {/* the answer to "how am I doing", so it takes the full measure and    */}
+      {/* the largest number on the page; receivable, payable and settled sit */}
+      {/* under it as the arithmetic behind it.                               */}
       {/* ------------------------------------------------------------------ */}
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-        <Reveal delay={40}>
+      <Reveal delay={40}>
+        <Card className="brand-rule lift relative overflow-hidden bg-raised p-5 shadow-[var(--shadow-raised)] sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="grid size-6 place-items-center rounded-md border border-accent-line bg-accent-soft text-accent">
+                  <TrendUpIcon className="size-3.5" />
+                </span>
+                <p className="stat-label">Net position</p>
+              </div>
+
+              <p className="money-hero mt-2.5 truncate">
+                <Money
+                  minor={Math.abs(net)}
+                  currency={currency}
+                  tone={
+                    netTone === 'receivable'
+                      ? 'receivable'
+                      : netTone === 'payable'
+                        ? 'payable'
+                        : 'neutral'
+                  }
+                />
+              </p>
+
+              {/* The state in words as well as in colour (§29). */}
+              <p
+                className={cn(
+                  'mt-1.5 text-[0.9375rem] font-medium',
+                  netTone === 'receivable' && 'text-receivable',
+                  netTone === 'payable' && 'text-payable',
+                  netTone === 'settled' && 'text-ink-muted',
+                )}
+              >
+                {net > 0 ? 'You are ahead' : net < 0 ? 'You are behind' : 'Everything is settled'}
+              </p>
+              <p className="stat-note mt-0.5">
+                Across {summary.people_with_balance}{' '}
+                {summary.people_with_balance === 1 ? 'account' : 'accounts'}
+                {summary.currency_count > 1 ? ` · totalled in ${currency}` : ''}
+              </p>
+
+              {/* Totals across currencies are only as complete as the rates
+                  behind them. Saying how many accounts could not be converted
+                  is more honest than quietly leaving them out (upgrade §9). */}
+              {summary.unconverted_people > 0 ? (
+                <p className="mt-2 rounded-lg border border-payable-line bg-payable-soft px-2.5 py-1.5 text-[0.8125rem] text-payable">
+                  {summary.unconverted_people}{' '}
+                  {summary.unconverted_people === 1 ? 'account is' : 'accounts are'} not included —
+                  no exchange rate yet
+                </p>
+              ) : null}
+            </div>
+
+            <div className="flex min-w-0 flex-1 flex-col items-end gap-2">
+              <span className="stat-label">Last 30 days</span>
+              <div className="w-full max-w-[16rem]">
+                <Sparkline id="net" points={trends.net.points} tone="accent" />
+              </div>
+            </div>
+          </div>
+
+          {summary.total_receivable > 0 && summary.total_payable > 0 ? (
+            <div className="mt-5 border-t border-line pt-3">
+              <SplitBar receivable={summary.total_receivable} payable={summary.total_payable} />
+              <p className="mt-2 flex items-center justify-between text-[0.75rem]">
+                <span className="text-receivable">
+                  in {formatMinor(summary.total_receivable, currency)}
+                </span>
+                <span className="text-payable">
+                  out {formatMinor(summary.total_payable, currency)}
+                </span>
+              </p>
+            </div>
+          ) : null}
+        </Card>
+      </Reveal>
+
+      <section className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <Reveal delay={80}>
           <StatCard
             id="recv"
             tone="receivable"
@@ -105,7 +190,7 @@ export default async function DashboardPage() {
           />
         </Reveal>
 
-        <Reveal delay={80}>
+        <Reveal delay={110}>
           <StatCard
             id="pay"
             tone="payable"
@@ -120,71 +205,19 @@ export default async function DashboardPage() {
           />
         </Reveal>
 
-        {/* Net is the answer; the other two are its working. It gets the one
-            brand hairline on the page and nothing else. */}
-        <Reveal delay={120} className="col-span-2 lg:col-span-1">
-          <Card className="brand-rule lift relative h-full overflow-hidden bg-raised p-5 shadow-[var(--shadow-raised)]">
-            <div className="flex items-center gap-2">
-              <span className="grid size-7 place-items-center rounded-lg border border-accent-line bg-accent-soft text-accent">
-                <TrendUpIcon className="size-4" />
-              </span>
-              <p className="text-[0.8125rem] font-medium text-ink">Net balance</p>
-            </div>
-
-            <div className="mt-3 flex items-end justify-between gap-4">
-              <div className="min-w-0">
-                <p className="truncate font-display text-[1.9rem] font-semibold leading-none tracking-tight">
-                  <Money
-                    minor={Math.abs(net)}
-                    currency={currency}
-                    tone={
-                      netTone === 'receivable'
-                        ? 'receivable'
-                        : netTone === 'payable'
-                          ? 'payable'
-                          : 'neutral'
-                    }
-                  />
-                </p>
-                <p className="mt-1.5 text-[0.8125rem] text-ink-muted">
-                  {net > 0 ? 'In your favour' : net < 0 ? 'Against you' : 'Everything is settled'}
-                  {summary.currency_count > 1 ? ` · in ${currency}` : ''}
-                </p>
-                {/* Totals across currencies are only as complete as the rates
-                    behind them. Saying how many accounts could not be converted
-                    is more honest than quietly leaving them out (upgrade §9). */}
-                {summary.unconverted_people > 0 ? (
-                  <p className="mt-1 text-[0.75rem] text-payable">
-                    {summary.unconverted_people}{' '}
-                    {summary.unconverted_people === 1 ? 'account is' : 'accounts are'} not
-                    included — no exchange rate yet
-                  </p>
-                ) : null}
-              </div>
-              <div className="w-24 shrink-0 sm:w-36">
-                <Sparkline id="net" points={trends.net.points} tone="accent" />
-              </div>
-            </div>
-
-            <div className="mt-4 border-t border-line pt-2.5">
-              <SplitBar receivable={summary.total_receivable} payable={summary.total_payable} />
-              {summary.total_receivable > 0 && summary.total_payable > 0 ? (
-                <p className="mt-2 flex items-center justify-between text-[0.6875rem]">
-                  <span className="text-receivable">
-                    in {formatMinor(summary.total_receivable, currency)}
-                  </span>
-                  <span className="text-payable">
-                    out {formatMinor(summary.total_payable, currency)}
-                  </span>
-                </p>
-              ) : (
-                <p className="mt-2 text-[0.6875rem] text-ink-faint">
-                  {summary.people_with_balance}{' '}
-                  {summary.people_with_balance === 1 ? 'account' : 'accounts'} with an open balance
-                </p>
-              )}
-            </div>
-          </Card>
+        <Reveal delay={140} className="sm:col-span-2 lg:col-span-1">
+          <StatCard
+            id="settled"
+            tone="neutral"
+            icon={<SettleIcon className="size-4" />}
+            label="Settled"
+            caption="Cleared, either way"
+            amount={summary.gross_settled}
+            currency={currency}
+            trend={trends.settled}
+            goodWhenUp
+            footnote="All time"
+          />
         </Reveal>
       </section>
 
@@ -422,7 +455,7 @@ function StatCard({
   goodWhenUp,
 }: {
   id: string;
-  tone: 'receivable' | 'payable';
+  tone: 'receivable' | 'payable' | 'neutral';
   icon: React.ReactNode;
   label: string;
   caption: string;
@@ -437,29 +470,31 @@ function StatCard({
       <div className="flex items-center gap-2">
         <span
           className={cn(
-            'grid size-7 place-items-center rounded-lg border',
-            tone === 'receivable'
-              ? 'border-receivable-line bg-receivable-soft text-receivable'
-              : 'border-payable-line bg-payable-soft text-payable',
+            'grid size-6 place-items-center rounded-md border',
+            tone === 'receivable' && 'border-receivable-line bg-receivable-soft text-receivable',
+            tone === 'payable' && 'border-payable-line bg-payable-soft text-payable',
+            tone === 'neutral' && 'border-line-strong bg-sunken text-ink-muted',
           )}
         >
           {icon}
         </span>
-        <p className="text-[0.8125rem] font-medium text-ink">{label}</p>
+        <p className="stat-label">{label}</p>
       </div>
 
       <div className="mt-3 flex items-end justify-between gap-4">
         <div className="min-w-0">
-          <p className="truncate font-display text-[1.5rem] font-semibold leading-none tracking-tight sm:text-[1.9rem]">
+          <p className="money-lg truncate">
             <Money minor={amount} currency={currency} tone={tone} />
           </p>
-          <p className="mt-1.5 text-[0.75rem] text-ink-muted sm:text-[0.8125rem]">{caption}</p>
+          <p className="stat-note mt-1">{caption}</p>
           {/* On a phone this card is half a screen wide; the count belongs
               here rather than in a footer row that would not fit. */}
-          <p className="mt-1 text-[0.6875rem] text-ink-faint md:hidden">{footnote}</p>
+          <p className="mt-1 text-[0.75rem] text-ink-faint md:hidden">{footnote}</p>
         </div>
         <div className="hidden w-24 shrink-0 md:block lg:w-32">
-          <Sparkline id={id} points={trend.points} tone={tone} />
+          {/* Settled money is not a direction, so its line takes the brand
+              accent rather than a money colour (§3). */}
+          <Sparkline id={id} points={trend.points} tone={tone === 'neutral' ? 'accent' : tone} />
         </div>
       </div>
 
@@ -469,7 +504,7 @@ function StatCard({
           goodWhenUp={goodWhenUp}
           suffix="vs prior 15 days"
         />
-        <span className="text-[0.6875rem] text-ink-faint">{footnote}</span>
+        <span className="text-[0.75rem] text-ink-faint">{footnote}</span>
       </div>
     </Card>
   );
@@ -510,11 +545,26 @@ function BalanceRow({ person, currency }: { person: DashboardPeopleRow; currency
       <Avatar identity={person.name}>{initials(person.name)}</Avatar>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[0.875rem] font-medium text-ink">{person.name}</span>
-        <span className="block truncate text-[0.75rem] text-ink-faint">
-          {person.last_activity_at ? friendlyDate(person.last_activity_at) : 'No activity yet'}
+        <span className="flex min-w-0 items-center gap-1.5 text-[0.75rem] text-ink-faint">
+          {/* The account's own currency, when it is not the workspace's. A
+              multi-currency ledger where a row does not say what it is
+              denominated in is a ledger you have to click to read (§8). */}
+          {person.currency && person.currency !== currency ? (
+            <span className="shrink-0 rounded border border-line-strong bg-sunken px-1 py-px text-[0.6875rem] font-medium text-ink-muted">
+              {person.currency}
+            </span>
+          ) : null}
+          <span className="truncate">
+            {person.last_activity_at ? friendlyDate(person.last_activity_at) : 'No activity yet'}
+          </span>
         </span>
       </span>
-      <NetBadge netMinor={person.net_balance} currency={person.currency ?? currency} />
+      <NetBadge
+        netMinor={person.net_balance}
+        currency={person.currency ?? currency}
+        approxMinor={person.net_balance_base}
+        approxCurrency={currency}
+      />
       <ArrowRightIcon className="size-4 shrink-0 text-ink-faint/60 transition-transform duration-[var(--dur)] ease-[var(--ease)] group-hover:translate-x-0.5 group-hover:text-ink-muted" />
     </Link>
   );

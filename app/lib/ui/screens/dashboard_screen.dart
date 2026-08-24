@@ -243,15 +243,7 @@ class PositionCard extends ConsumerWidget {
                         children: [
                           Icon(AppIcons.net, size: AppIconSize.xs, color: palette.inkFaint),
                           const SizedBox(width: AppSpacing.xs + 2),
-                          Text(
-                            'NET POSITION',
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.7,
-                              color: palette.inkFaint,
-                            ),
-                          ),
+                          Text('NET POSITION', style: context.statLabel),
                         ],
                       ),
                       const SizedBox(height: AppSpacing.sm + 2),
@@ -262,7 +254,11 @@ class PositionCard extends ConsumerWidget {
                           net.abs(),
                           currency: currency,
                           color: color,
-                          style: context.display(context.isCompact ? 34 : 40),
+                          // The one number this screen is about. One size
+                          // token, not a hand-tuned figure per breakpoint.
+                          style: context
+                              .moneyStyle(MoneySize.hero)
+                              .copyWith(fontSize: context.isCompact ? 34 : 40),
                         ),
                       ),
                       const SizedBox(height: AppSpacing.sm - 1),
@@ -273,9 +269,9 @@ class PositionCard extends ConsumerWidget {
                           BalanceTone.settled => 'Everything is settled',
                         },
                         style: TextStyle(
-                          fontSize: 13,
+                          fontSize: 14.5,
                           fontWeight: FontWeight.w600,
-                          color: tone == BalanceTone.settled ? palette.inkFaint : color,
+                          color: tone == BalanceTone.settled ? palette.inkMuted : color,
                         ),
                       ),
                       // Totals across currencies are only as complete as the
@@ -286,7 +282,7 @@ class PositionCard extends ConsumerWidget {
                         const SizedBox(height: 2),
                         Text(
                           'Converted to $currency',
-                          style: TextStyle(fontSize: 11.5, color: palette.inkFaint),
+                          style: context.statNote,
                         ),
                       ],
                       if (summary.unconvertedPeople > 0) ...[
@@ -295,7 +291,7 @@ class PositionCard extends ConsumerWidget {
                           '${summary.unconvertedPeople} '
                           '${summary.unconvertedPeople == 1 ? 'account is' : 'accounts are'} '
                           'not included — no exchange rate yet',
-                          style: TextStyle(fontSize: 11.5, color: palette.payable),
+                          style: TextStyle(fontSize: 12.5, height: 1.35, color: palette.payable),
                         ),
                       ],
                     ],
@@ -430,7 +426,7 @@ class _Side extends StatelessWidget {
                 : '$caption · $accounts ${accounts == 1 ? 'account' : 'accounts'}',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 11.5, color: palette.inkFaint),
+            style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
           ),
         ],
       ),
@@ -649,13 +645,18 @@ class PersonRow extends StatelessWidget {
                             meta,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 12, color: palette.inkFaint),
+                            style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
                           ),
                         ],
                       ),
                     ),
                     const SizedBox(width: AppSpacing.md),
-                    NetBadge(netMinor: person.netBalance, currency: person.currency),
+                    NetBadge(
+                      netMinor: person.netBalance,
+                      currency: person.currency,
+                      approxMinor: person.netBalanceBase,
+                      approxCurrency: person.baseCurrency,
+                    ),
                     const SizedBox(width: AppSpacing.xs),
                     AnimatedSlide(
                       duration: Motion.fast,
@@ -766,7 +767,7 @@ class ActivityRow extends StatelessWidget {
                             meta,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 12, color: palette.inkFaint),
+                            style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
                           ),
                         ],
                       ),

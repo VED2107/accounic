@@ -1,5 +1,6 @@
 library;
 
+
 import 'package:flutter/material.dart';
 
 /// The Accounic visual language, shared with the web client (context.md §18).
@@ -30,6 +31,7 @@ class AccounicColors extends ThemeExtension<AccounicColors> {
     required this.accentLine,
     required this.inkMuted,
     required this.inkFaint,
+    required this.inkSubtle,
     required this.line,
     required this.lineStrong,
     required this.sunken,
@@ -51,8 +53,17 @@ class AccounicColors extends ThemeExtension<AccounicColors> {
   final Color accentSoft;
   final Color accentLine;
 
+  /// Secondary text. Both of these clear 4.5:1 on the page ground. `inkFaint`
+  /// used to be #6A7382, which measures 4.03:1 on the dark surface and is under
+  /// the line for the 11-12px metadata it mostly carries — a contrast that
+  /// looks restrained on a desk monitor and vanishes on a phone outdoors.
   final Color inkMuted;
   final Color inkFaint;
+
+  /// Purely decorative text that carries no information on its own: a separator
+  /// dot, a unit suffix. Not for anything the user has to read.
+  final Color inkSubtle;
+
   final Color line;
   final Color lineStrong;
   final Color sunken;
@@ -96,6 +107,7 @@ class AccounicColors extends ThemeExtension<AccounicColors> {
     Color? accentLine,
     Color? inkMuted,
     Color? inkFaint,
+    Color? inkSubtle,
     Color? line,
     Color? lineStrong,
     Color? sunken,
@@ -114,6 +126,7 @@ class AccounicColors extends ThemeExtension<AccounicColors> {
         accentLine: accentLine ?? this.accentLine,
         inkMuted: inkMuted ?? this.inkMuted,
         inkFaint: inkFaint ?? this.inkFaint,
+        inkSubtle: inkSubtle ?? this.inkSubtle,
         line: line ?? this.line,
         lineStrong: lineStrong ?? this.lineStrong,
         sunken: sunken ?? this.sunken,
@@ -136,6 +149,7 @@ class AccounicColors extends ThemeExtension<AccounicColors> {
       accentLine: Color.lerp(accentLine, other.accentLine, t)!,
       inkMuted: Color.lerp(inkMuted, other.inkMuted, t)!,
       inkFaint: Color.lerp(inkFaint, other.inkFaint, t)!,
+      inkSubtle: Color.lerp(inkSubtle, other.inkSubtle, t)!,
       line: Color.lerp(line, other.line, t)!,
       lineStrong: Color.lerp(lineStrong, other.lineStrong, t)!,
       sunken: Color.lerp(sunken, other.sunken, t)!,
@@ -154,8 +168,9 @@ class AccounicColors extends ThemeExtension<AccounicColors> {
     payableInk: Color(0xFFFFFFFF),
     accentSoft: Color(0x142563EB),
     accentLine: Color(0x3D2563EB),
-    inkMuted: Color(0xFF596373),
-    inkFaint: Color(0xFF8891A1),
+    inkMuted: Color(0xFF4B5565),
+    inkFaint: Color(0xFF646E7E),
+    inkSubtle: Color(0xFF8891A1),
     line: Color(0xFFE5E8EE),
     lineStrong: Color(0xFFD2D7E0),
     sunken: Color(0xFFF1F3F7),
@@ -173,8 +188,9 @@ class AccounicColors extends ThemeExtension<AccounicColors> {
     payableInk: Color(0xFF2A0A10),
     accentSoft: Color(0x244D90F8),
     accentLine: Color(0x574D90F8),
-    inkMuted: Color(0xFF98A2B3),
-    inkFaint: Color(0xFF6A7382),
+    inkMuted: Color(0xFFA8B2C2),
+    inkFaint: Color(0xFF8B94A4),
+    inkSubtle: Color(0xFF6A7382),
     line: Color(0xFF1D212A),
     lineStrong: Color(0xFF2B313D),
     sunken: Color(0xFF13161C),
@@ -196,7 +212,56 @@ extension AccounicTheme on BuildContext {
         height: 1.1,
         color: color ?? colors.onSurface,
       );
+
+  /// A financial figure. Not body text: a balance is the thing the reader came
+  /// for, so it is tighter, heavier and always tabular — a column of amounts
+  /// that does not align is a column that has to be read twice.
+  ///
+  /// Four sizes and nothing between them, so a figure is never styled ad hoc:
+  ///
+  ///   [MoneySize.hero]  the one number a screen is about (net position)
+  ///   [MoneySize.large] a card's headline figure
+  ///   [MoneySize.row]   a list row's figure
+  ///   [MoneySize.small] a secondary figure (the approximate conversion)
+  TextStyle moneyStyle(MoneySize size, {Color? color}) {
+    final spec = switch (size) {
+      MoneySize.hero => (34.0, FontWeight.w600, -1.1, 1.05),
+      MoneySize.large => (24.0, FontWeight.w600, -0.7, 1.1),
+      MoneySize.row => (15.0, FontWeight.w600, -0.25, 1.2),
+      MoneySize.small => (12.5, FontWeight.w500, -0.1, 1.25),
+    };
+    return TextStyle(
+      fontFamily: 'Poppins',
+      fontSize: spec.$1,
+      fontWeight: spec.$2,
+      letterSpacing: spec.$3,
+      height: spec.$4,
+      color: color ?? colors.onSurface,
+      fontFeatures: const [FontFeature.tabularFigures()],
+    );
+  }
+
+  /// The small upper-case label above a figure. It says what the number is
+  /// without competing with it for the eye.
+  TextStyle get statLabel => TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.8,
+        height: 1.2,
+        color: money.inkFaint,
+      );
+
+  /// The one line under a figure that qualifies it. Deliberately a step above
+  /// the old faint grey: it is information, not decoration.
+  TextStyle get statNote => TextStyle(
+        fontSize: 12.5,
+        height: 1.35,
+        color: money.inkMuted,
+      );
 }
+
+/// The four sizes a financial figure is allowed to be. See [AccounicTheme.money].
+enum MoneySize { hero, large, row, small }
 
 class AppTheme {
   const AppTheme._();

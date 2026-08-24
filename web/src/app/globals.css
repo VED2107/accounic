@@ -52,10 +52,18 @@
   --line: #1d212a;
   --line-strong: #2b313d;
 
-  /* Ink */
+  /* Ink.
+
+     Four steps, and every one of them clears 4.5:1 on --paper. `ink-faint` was
+     #6a7382, which measures 4.03:1 and is below the line for the 12px metadata
+     it is mostly used on — a contrast that looks restrained on a designer's
+     monitor and disappears on a phone in daylight. Dimness is not a style.
+     `ink-subtle` is the new step for genuinely decorative text (a separator, a
+     unit suffix) that carries no information on its own. */
   --ink: #f2f5f9;
-  --ink-muted: #98a2b3;
-  --ink-faint: #6a7382;
+  --ink-muted: #a8b2c2;
+  --ink-faint: #8b94a4;
+  --ink-subtle: #6a7382;
 
   /* Accent — brand blue. `accent` is for type and icons, `accent-solid` for
      filled controls, which need a darker field to keep white legible. */
@@ -113,8 +121,9 @@
     --line-strong: #d2d7e0;
 
     --ink: #0b0f17;
-    --ink-muted: #596373;
-    --ink-faint: #8891a1;
+    --ink-muted: #4b5565;
+    --ink-faint: #646e7e;
+    --ink-subtle: #8891a1;
 
     --accent: #2563eb;
     --accent-hover: #1d4ed8;
@@ -152,8 +161,9 @@
     --line-strong: #d2d7e0;
 
     --ink: #0b0f17;
-    --ink-muted: #596373;
-    --ink-faint: #8891a1;
+    --ink-muted: #4b5565;
+    --ink-faint: #646e7e;
+    --ink-subtle: #8891a1;
 
     --accent: #2563eb;
     --accent-hover: #1d4ed8;
@@ -198,6 +208,7 @@
   --color-ink: var(--ink);
   --color-ink-muted: var(--ink-muted);
   --color-ink-faint: var(--ink-faint);
+  --color-ink-subtle: var(--ink-subtle);
 
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
@@ -363,6 +374,78 @@
   .tnum {
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.01em;
+  }
+
+  /* ------------------------------------------------------------------------
+     Financial numbers are not body text.
+
+     A balance is the thing the user came to read. It should be the largest,
+     tightest, highest-contrast element in its container, and it should stay
+     legible at a glance across a room — which body-text weight and tracking do
+     not do. Four sizes, one rule each, so a figure is never styled ad hoc:
+
+       .money-hero   the one number a screen is about (net position)
+       .money-lg     a card's headline figure (receivable, payable, settled)
+       .money        a row's figure (a person, a timeline entry)
+       .money-sm     a secondary figure (the ≈ conversion under a row)
+
+     All four are tabular and negatively tracked, because a column of amounts
+     that does not align is a column that has to be read twice.
+     ------------------------------------------------------------------------ */
+  .money-hero,
+  .money-lg,
+  .money,
+  .money-sm {
+    font-family: var(--font-display);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1, 'lnum' 1;
+  }
+
+  .money-hero {
+    font-size: clamp(2rem, 1.4rem + 2.2vw, 2.75rem);
+    font-weight: 600;
+    line-height: 1.05;
+    letter-spacing: -0.032em;
+  }
+
+  .money-lg {
+    font-size: clamp(1.375rem, 1.15rem + 0.9vw, 1.75rem);
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: -0.026em;
+  }
+
+  .money {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: -0.014em;
+  }
+
+  .money-sm {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    line-height: 1.25;
+    letter-spacing: -0.008em;
+  }
+
+  /* A label above a figure: small, wide-tracked, upper-case. It says what the
+     number is without competing with it for the eye. */
+  .stat-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  /* The one line under a figure that qualifies it — "Money you owe · 1 account".
+     Deliberately a step above the old faint grey: it is information. */
+  .stat-note {
+    font-size: 0.8125rem;
+    line-height: 1.35;
+    color: var(--ink-muted);
   }
 
   .font-display {

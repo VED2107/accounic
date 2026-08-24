@@ -849,3 +849,60 @@ same bug wearing a workaround — a second source of truth for "is a form open",
 drifts the first time a sheet is dismissed by a gesture rather than by a button. And no
 nested bottom navigation was introduced; `SheetScaffold`'s pinned actions (§33) already
 are the form's action area, keyboard insets and all.
+
+---
+
+## 41. Dimness is not a style
+
+The premium-UI pass began as a list of visual complaints and resolved into one
+measurable defect. `--ink-faint`, the token carrying nearly every row's metadata — the
+date under a name, the note under an entry, the caption under a figure — was `#6a7382`
+on a `#08090c` ground. That measures **4.03:1**, under the 4.5:1 WCAG AA floor for body
+text, and 12px grey at 4:1 looks restrained on a colour-calibrated desk monitor and
+disappears on a phone in daylight.
+
+The fix is a token change, not a sweep of components: `ink-muted` and `ink-faint` both
+move up until they clear the line in both schemes, and a genuinely decorative step,
+`ink-subtle`, is added underneath for things that carry no information on their own —
+a separator dot, a unit suffix. Nothing that has to be read is allowed to use it.
+
+`app/test/design_tokens_test.dart` computes the WCAG luminance ratio for both schemes
+and fails under 4.5:1, so this cannot drift back by eye. It covers the money colours and
+the ink on filled money buttons too, which had never been checked at all.
+
+## 42. A financial figure is not body text
+
+The second half of the same pass. A balance was styled wherever it appeared — `fontSize:
+17` here, `text-[1.75rem]` there, `display(40)` on the dashboard — which is how a figure
+ends up the same visual weight as the note beside it, and how two screens showing the
+same number show it differently.
+
+Four sizes now exist and nothing between them, in both clients:
+
+| | web | Flutter |
+|---|---|---|
+| the one number a screen is about | `.money-hero` | `MoneySize.hero` |
+| a card's headline figure | `.money-lg` | `MoneySize.large` |
+| a list row's figure | `.money` | `MoneySize.row` |
+| a secondary figure (an ≈ conversion) | `.money-sm` | `MoneySize.small` |
+
+All four are tabular and negatively tracked. Tabular is not cosmetic here: a column of
+amounts whose digits do not align is a column that has to be read twice, which is the
+one thing an accounting screen may not cost. `.stat-label` and `.stat-note` complete the
+set — the small upper-case name above a figure, and the qualifying line under it.
+
+Two consequences fell out of having the vocabulary:
+
+* **The dashboard has one headline again.** Receivable, payable and net used to sit in
+  one equal three-up row, so the screen said three things at once and none of them
+  loudest. Net position now takes the full measure at `hero`, and receivable, payable
+  and settled sit underneath at `large` as the arithmetic behind it.
+* **A row states its own currency.** `NetBadge` gained the approximate base-currency
+  figure under the account figure, and the people list gained a currency chip. In a
+  multi-currency ledger a row that does not say what it is denominated in is a row you
+  have to open to read.
+
+And one rule applied throughout, from the brief: **colour never carries meaning alone.**
+The state under a balance is now a bordered, tinted pill containing the word — tint,
+border and word all saying the same thing — so it survives a colour-blind reader and a
+bad monitor alike.

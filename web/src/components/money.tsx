@@ -68,11 +68,11 @@ export function MoneyStat({
 }) {
   return (
     <div className={cn('min-w-0', className)}>
-      <p className="text-[0.8125rem] font-medium text-ink-muted">{label}</p>
-      <p className="mt-1 truncate font-display text-[1.75rem] font-semibold leading-tight tracking-tight">
+      <p className="stat-label">{label}</p>
+      <p className="money-lg mt-1.5 truncate">
         <Money minor={minor} currency={currency} tone={tone} />
       </p>
-      {sublabel ? <p className="mt-0.5 text-[0.8125rem] text-ink-faint">{sublabel}</p> : null}
+      {sublabel ? <p className="stat-note mt-1">{sublabel}</p> : null}
     </div>
   );
 }
@@ -86,37 +86,61 @@ export function MoneyStat({
 export function NetBadge({
   netMinor,
   currency = 'INR',
+  approxMinor,
+  approxCurrency,
   className,
 }: {
   netMinor: number;
   currency?: string;
+  /**
+   * The same position in the workspace's own currency, when this row is kept in
+   * a different one. A dirham balance in a rupee workspace is two facts, and a
+   * row that shows only one of them makes the user do the conversion in their
+   * head (upgrade §42).
+   */
+  approxMinor?: number | null;
+  approxCurrency?: string;
   className?: string;
 }) {
   const tone = balanceTone(netMinor);
+  const showApprox =
+    approxMinor != null &&
+    approxCurrency != null &&
+    approxCurrency !== currency &&
+    tone !== 'settled';
+
   return (
-    <span className={cn('flex shrink-0 flex-col items-end leading-tight', className)}>
+    <span className={cn('flex shrink-0 flex-col items-end gap-0.5 leading-tight', className)}>
       <span
         className={cn(
-          'tnum font-display text-[0.9375rem] font-semibold tracking-tight',
+          'money',
           tone === 'receivable' && 'text-receivable',
           tone === 'payable' && 'text-payable',
-          tone === 'settled' && 'text-ink-faint',
+          tone === 'settled' && 'text-ink-muted',
         )}
       >
         {tone === 'settled' ? 'Settled' : formatMinor(Math.abs(netMinor), currency)}
       </span>
-      {tone === 'settled' ? (
-        <span className="text-[0.6875rem] text-ink-faint">up</span>
-      ) : (
-        <span
-          className={cn(
-            'text-[0.6875rem] font-medium',
-            tone === 'receivable' ? 'text-receivable/75' : 'text-payable/75',
-          )}
-        >
-          {tone}
+
+      {showApprox ? (
+        <span className="tnum text-[0.75rem] text-ink-faint">
+          ≈ {formatMinor(Math.abs(approxMinor), approxCurrency)}
         </span>
-      )}
+      ) : null}
+
+      {/* The state in a word, and in a shape. Colour alone never carries it:
+          the pill's tint, its border and the word all say the same thing, so it
+          survives a colour-blind reader and a bad monitor alike (§29). */}
+      <span
+        className={cn(
+          'rounded-full border px-1.5 py-px text-[0.6875rem] font-medium',
+          tone === 'receivable' && 'border-receivable-line bg-receivable-soft text-receivable',
+          tone === 'payable' && 'border-payable-line bg-payable-soft text-payable',
+          tone === 'settled' && 'border-line bg-sunken text-ink-muted',
+        )}
+      >
+        {tone === 'settled' ? 'up to date' : tone}
+      </span>
     </span>
   );
 }

@@ -3,8 +3,8 @@
 Status of the Accounic build against `context.md`. This is the file to read first when
 picking the work back up.
 
-**Last updated:** 2026-08-25 (seventh session)
-**Current release:** [v1.1.2](https://github.com/VED2107/accounic/releases/latest)
+**Last updated:** 2026-08-25 (eighth session)
+**Current release:** [v1.1.3](https://github.com/VED2107/accounic/releases/latest)
 **Overall:** Phases 1–4 complete and verified against the live database. Phase 5
 (performance) measured and the client half tuned — see `docs/performance.md`. Phase 6
 (hardening) partly done.
@@ -539,3 +539,80 @@ navigator, and `showModalBottomSheet` defaults to the nearest one — so every s
 One argument, `useRootNavigator: true`, fixes it in the three places that open a modal.
 Hiding the bar behind a flag would have been a second source of truth for "is a form open",
 and it would have drifted the first time a sheet was dismissed by a gesture.
+
+---
+
+## 13. Eighth session — the premium UI pass, first slice (v1.1.3)
+
+A visual-polish brief arrived covering typography, colour, the sidebar, the dashboard,
+every list row, forms, loading, empty and error states, density and accessibility across
+all three clients. This release is the **first slice**: the parts that are token-level, so
+that everything downstream of them improves at once rather than screen by screen.
+
+### 13.0 A regression in v1.1.2, found by opening the app
+
+The dashboard failed to render at all: **`TypeError: Cannot read properties of undefined
+(reading 'currency')`**, shown to the user as the generic error boundary with a digest.
+
+`0014` rewrote `dashboard()`, `person_page()` and `activity_page()` in order to add two
+columns to their select lists. The first cut of `dashboard()` was transcribed from `0013`
+starting at the wrong line and **silently lost its `profile` key** — which every dashboard
+render reads on its second line — along with the empty-workspace `summary` fallback.
+
+Nothing caught it. The migration applied cleanly, 172 SQL assertions passed, the data
+snapshot was clean, `tsc` was clean, the production build succeeded, and the screen was
+blank. It was found the way every serious defect in this project has been found: by
+opening the thing and looking at it.
+
+`db/tests/06_manual_conversion.sql` now asserts the **key set** of all four page RPCs,
+which is the actual contract between the database and every client. A read RPC that
+silently stops returning a key is otherwise invisible until a screen goes white.
+
+**If you applied `0014` from the v1.1.2 tag, re-apply the corrected file** — the RPC is
+replaced in place, nothing else changes, and no row is touched.
+
+### 13.1 What shipped
+
+| Area | What changed |
+|---|---|
+| Contrast | `ink-muted` and `ink-faint` lifted until both clear 4.5:1 in both schemes; `ink-subtle` added underneath for genuinely decorative text. `ink-faint` was 4.03:1 — under the AA floor for the 12px metadata it carries |
+| Money typography | four sizes and nothing between them, in both clients: hero / large / row / small. All tabular, all negatively tracked |
+| Labels | `.stat-label` and `.stat-note` (web), `context.statLabel` / `context.statNote` (Flutter) — the name above a figure and the line under it |
+| Dashboard | net position promoted to a full-measure hero card; receivable, payable and **settled** below it as the working behind it. The web dashboard's three-up row is gone |
+| Rows | activity rows split into kind / when / note instead of one grey run-on string; a person row states its own currency, and a balance carries its ≈ base-currency equivalent |
+| State | the direction under a balance is a bordered tinted pill containing the word — never colour alone |
+| Sidebar | selected reads as *you are here* (tint + hairline + brand rule) rather than as a filled button; the primary action sized as a control at 44px |
+
+Reasoning in `docs/decisions.md` §41 (dimness is not a style) and §42 (a financial figure
+is not body text).
+
+### 13.2 Verification evidence
+
+| Check | Result |
+|---|---|
+| `cd app && flutter analyze` | no issues |
+| `cd app && flutter test` | 133 pass (119 + 14 new token tests) |
+| `node db/tools/run-sql.mjs test` | 216 assertions (210 + 6 key-set assertions) |
+| `node db/tools/smoke-currency.mjs` | 34/34 |
+| Browser | dashboard reproduced broken, fixed, and re-rendered against live data |
+| `app/test/design_tokens_test.dart` | computes WCAG luminance for both schemes; fails under 4.5:1 |
+| `cd web && npx tsc --noEmit` | clean |
+| `cd web && npm test` | 64 pass |
+| `cd web && npx next build` | succeeds, 9 routes, 103 kB shared |
+| Windows binary | rebuilt, launched and screenshotted against live data |
+
+### 13.3 What is deliberately still open
+
+The brief is larger than one release. Not yet done, and worth doing next in this order:
+
+1. **Forms** — grouping the person and transaction sheets into labelled sections
+   (identity / currency / opening balance / contact) rather than one flat column.
+2. **Loading and empty states** — skeletons that match the final layout on every screen,
+   and empty states that carry the action that fixes them.
+3. **Error states** — naming the thing that failed and offering the retry, rather than
+   "something went wrong".
+4. **Profile and Administration** — the two screens with the most unused space.
+5. **The dashboard chart** — hover readout, axis labels, and a real empty state.
+
+None of them are blocked; they were left because a token pass first means each of them is
+smaller than it would have been.

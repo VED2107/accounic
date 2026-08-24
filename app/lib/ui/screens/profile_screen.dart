@@ -416,7 +416,7 @@ class _IdentityCard extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       'Joined ${fullDate(me.createdAt)}',
-                      style: TextStyle(fontSize: 12, color: palette.inkFaint),
+                      style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
                     ),
                   ],
                 ],

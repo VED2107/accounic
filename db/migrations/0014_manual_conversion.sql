@@ -776,16 +776,40 @@ security invoker
 set search_path = public
 as $$
 declare
-  v_owner  uuid := public.assert_caller();
-  v_base   text := public.owner_base_currency(v_owner);
+  v_owner uuid := public.current_owner();
+  v_base  text;
   v_result jsonb;
 begin
+  if v_owner is null then
+    raise exception 'Not authorised.' using errcode = 'insufficient_privilege';
+  end if;
+
+  v_base := public.owner_base_currency(v_owner);
   p_activity_limit := least(greatest(coalesce(p_activity_limit, 10), 1), 50);
   p_people_limit   := least(greatest(coalesce(p_people_limit, 8), 1), 50);
 
   select jsonb_build_object(
-    'summary', (select to_jsonb(s) from public.owner_summary s where s.owner_id = v_owner),
+    'profile', (
+      select to_jsonb(x) from (
+        select p.id, p.name, p.email, p.phone, p.business_name, p.avatar_url, p.currency
+        from public.profiles p where p.id = v_owner
+      ) x
+    ),
     'base_currency', v_base,
+    'summary', coalesce(
+      (select to_jsonb(s) from public.owner_summary s where s.owner_id = v_owner),
+      jsonb_build_object(
+        'owner_id', v_owner, 'base_currency', v_base,
+        'total_receivable', 0, 'total_payable', 0, 'net_position', 0,
+        'people_with_balance', 0, 'people_count', 0, 'unconverted_people', 0,
+        'currency_count', 0,
+        'gross_credit', 0, 'gross_debit', 0, 'gross_settled', 0
+      )
+    ),
+    -- Today's totals are converted to the base currency: adding a dirham to a
+    -- rupee because both happened today would be arithmetic on two different
+    -- things. Entries whose currency has no cached rate are left out rather
+    -- than counted at par.
     'today', (
       select jsonb_build_object(
         'credit',  coalesce(sum(public.convert_for_owner(v_owner, a.amount_minor, pc.currency, v_base))

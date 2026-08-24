@@ -161,7 +161,7 @@ class _AmountFieldState extends State<AmountField> {
                 child: Text(
                   '${formatMinor(widget.maxMinor!, currency: widget.currency)} outstanding',
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11.5, color: context.money.inkFaint),
+                  style: TextStyle(fontSize: 12.5, color: context.money.inkFaint),
                 ),
               ),
             ],

@@ -310,25 +310,25 @@ class _Totals extends ConsumerWidget {
                     const SizedBox(width: AppSpacing.xs + 2),
                     Flexible(
                       child: Text(
-                        label,
+                        label.toUpperCase(),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: color,
-                        ),
+                        // Upper-case, wide-tracked, small: it names the figure
+                        // without competing with it for the eye.
+                        style: context.statLabel.copyWith(color: color),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: AppSpacing.xs + 2),
+                const SizedBox(height: AppSpacing.sm),
                 FittedBox(
                   fit: BoxFit.scaleDown,
                   alignment: Alignment.centerLeft,
                   child: Text(
                     formatMinor(minor, currency: currency),
-                    style: context.display(17),
+                    style: context.moneyStyle(MoneySize.large).copyWith(
+                          fontSize: context.isCompact ? 19 : 22,
+                        ),
                   ),
                 ),
                 const SizedBox(height: 3),
@@ -336,7 +336,7 @@ class _Totals extends ConsumerWidget {
                   caption,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11, color: palette.inkFaint),
+                  style: TextStyle(fontSize: 12, color: palette.inkFaint),
                 ),
               ],
             ),

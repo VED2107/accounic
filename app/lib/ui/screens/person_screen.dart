@@ -341,7 +341,7 @@ class _PositionCard extends StatelessWidget {
                     'Includes an opening balance of '
                     '${formatMinor(balance.openingMinor.abs(), currency: currency)} '
                     '${balance.openingMinor > 0 ? 'in your favour' : 'against you'}',
-                    style: TextStyle(fontSize: 11.5, color: palette.inkFaint),
+                    style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
                   ),
                 ],
                 const SizedBox(height: AppSpacing.lg + 2),
@@ -806,7 +806,7 @@ class _TimelineTileState extends ConsumerState<TimelineTile> {
                                 entry.note!,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: TextStyle(fontSize: 12, color: palette.inkFaint),
+                                style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
                               ),
                             ],
                             // What was actually handed over, when that was not
@@ -918,7 +918,7 @@ class _RowActions extends ConsumerWidget {
               if (!entry.isSettlement && (entry.remainingMinor ?? 0) > 0)
                 '${formatMinor(entry.remainingMinor!, currency: currency)} still outstanding',
             ].join('  ·  '),
-            style: TextStyle(fontSize: 12, color: palette.inkFaint),
+            style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
           ),
           const SizedBox(height: AppSpacing.md),
           if (entry.isVoid)

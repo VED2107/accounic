@@ -530,7 +530,7 @@ class _OpeningBalance extends StatelessWidget {
             Text(
               'Recorded as an opening balance dated to when this account starts, '
               'not as a transaction today.',
-              style: TextStyle(fontSize: 11.5, height: 1.4, color: palette.inkFaint),
+              style: TextStyle(fontSize: 12.5, height: 1.4, color: palette.inkFaint),
             ),
           ],
         ],

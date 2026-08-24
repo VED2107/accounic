@@ -464,6 +464,52 @@ begin
     'and the dashboard',
     v_item ->> 'conversion_mode' = 'manual');
 
+  -- ---------------------------------------------------------------------------
+  -- 13. The page RPCs still return every key their clients read.
+  --
+  -- 0014 rewrote dashboard(), person_page() and activity_page() in order to add
+  -- two columns to their select lists, and the first cut of dashboard() silently
+  -- lost its 'profile' key -- which every web dashboard render reads on its
+  -- second line. Nothing caught it: the migration applied, 172 assertions
+  -- passed, the snapshot was clean, and the screen was blank.
+  --
+  -- A read RPC's contract is its key set. This asserts the key set.
+  -- ---------------------------------------------------------------------------
+  v_page := public.dashboard();
+  perform pg_temp.assert(
+    'dashboard() returns every key its clients read',
+    v_page ? 'profile' and v_page ? 'summary' and v_page ? 'base_currency'
+      and v_page ? 'today' and v_page ? 'recent_activity'
+      and v_page ? 'people_with_balance');
+  perform pg_temp.assert(
+    'and the profile it returns carries the currency the screen is denominated in',
+    v_page -> 'profile' ? 'currency' and v_page -> 'profile' ? 'name'
+      and v_page -> 'profile' ? 'id');
+  perform pg_temp.assert(
+    'and a summary, even for a workspace with nothing in it',
+    v_page -> 'summary' ? 'total_receivable'
+      and v_page -> 'summary' ? 'total_payable'
+      and v_page -> 'summary' ? 'net_position'
+      and v_page -> 'summary' ? 'gross_settled');
+
+  v_page := public.person_page(v_ahmed);
+  perform pg_temp.assert(
+    'person_page() returns every key its clients read',
+    v_page ? 'person' and v_page ? 'balance' and v_page ? 'currency'
+      and v_page ? 'default_currency' and v_page ? 'base_currency'
+      and v_page ? 'timeline' and v_page ? 'timeline_total'
+      and v_page ? 'open_transactions');
+
+  v_page := public.activity_page();
+  perform pg_temp.assert(
+    'activity_page() returns every key its clients read',
+    v_page ? 'items' and v_page ? 'total' and v_page ? 'has_more');
+
+  v_page := public.search_all('a');
+  perform pg_temp.assert(
+    'search_all() returns every key its clients read',
+    v_page ? 'people' and v_page ? 'transactions');
+
   raise notice '=== ALL MANUAL CONVERSION TESTS PASSED ===';
 end $$;
 

@@ -332,7 +332,7 @@ class _Stat extends StatelessWidget {
               ),
               if (note != null) ...[
                 const SizedBox(width: AppSpacing.xs + 1),
-                Text(note, style: TextStyle(fontSize: 11.5, color: palette.inkFaint)),
+                Text(note, style: TextStyle(fontSize: 12.5, color: palette.inkFaint)),
               ],
             ],
           ),
@@ -473,7 +473,7 @@ class _UserRow extends StatelessWidget {
                           ].join('  ·  '),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 11.5, color: palette.inkFaint),
+                          style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
                         ),
                       ],
                     ],

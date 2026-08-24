@@ -314,7 +314,7 @@ class _ConversionPanelState extends ConsumerState<ConversionPanel> {
                 ),
                 Text(
                   rateSentence(source, target, quote.rateE9),
-                  style: TextStyle(fontSize: 12, color: palette.inkFaint),
+                  style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
                 ),
                 Text(
                   quote.provenance,

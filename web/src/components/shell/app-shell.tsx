@@ -154,11 +154,15 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
                   aria-current={active ? 'page' : undefined}
                   title={rail ? item.label : undefined}
                   className={cn(
-                    'group relative flex items-center rounded-field text-[0.8125rem] font-medium',
-                    'transition-[background-color,color] duration-[var(--dur)] ease-[var(--ease)]',
+                    'group relative flex items-center rounded-field text-[0.875rem] font-medium',
+                    'transition-[background-color,color,box-shadow] duration-[var(--dur)] ease-[var(--ease)]',
                     rail ? 'h-10 justify-center' : 'gap-3 px-3 py-2.5',
+                    // Selected reads as "you are here", not as a button: a tinted
+                    // field, a hairline border and the brand rule at the left
+                    // edge, rather than a filled block competing with the primary
+                    // action below it (§4).
                     active
-                      ? 'bg-accent-soft text-accent'
+                      ? 'bg-accent-soft text-accent shadow-[inset_0_0_0_1px_var(--accent-line)]'
                       : 'text-ink-muted hover:bg-sunken hover:text-ink',
                   )}
                 >
@@ -166,7 +170,7 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
                   <span
                     aria-hidden
                     className={cn(
-                      'absolute left-0 top-1/2 h-5 w-[2px] -translate-y-1/2 rounded-full brand-fill',
+                      'absolute left-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-r-full brand-fill',
                       'transition-opacity duration-[var(--dur)] ease-[var(--ease)]',
                       active ? 'opacity-100' : 'opacity-0',
                     )}
@@ -190,12 +194,16 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
               aria-label="Add transaction"
               title={rail ? 'Add transaction' : undefined}
               className={cn(
+                // Prominent, but sized like a control rather than a banner:
+                // 44px is the touch minimum and the same height as a nav row
+                // plus its padding, so the sidebar reads as one system (§4).
                 'flex w-full items-center justify-center gap-2 rounded-field bg-accent-solid',
-                '[background-image:var(--grad-action)] text-[0.8125rem] font-medium text-accent-ink',
-                'shadow-[0_1px_0_0_rgb(255_255_255/0.14)_inset,0_6px_16px_-8px_rgb(37_99_235/0.7)]',
-                'transition-[filter,transform] duration-[var(--dur)] ease-[var(--ease)]',
-                'hover:brightness-110 active:scale-[0.985] motion-reduce:active:scale-100',
-                rail ? 'h-10' : 'px-4 py-2.5',
+                '[background-image:var(--grad-action)] text-[0.875rem] font-semibold text-accent-ink',
+                'shadow-[0_1px_0_0_rgb(255_255_255/0.14)_inset,0_6px_16px_-10px_rgb(37_99_235/0.65)]',
+                'transition-[filter,transform,box-shadow] duration-[var(--dur)] ease-[var(--ease)]',
+                'hover:brightness-110 hover:shadow-[0_1px_0_0_rgb(255_255_255/0.18)_inset,0_10px_22px_-10px_rgb(37_99_235/0.8)]',
+                'active:scale-[0.985] motion-reduce:active:scale-100',
+                rail ? 'h-11' : 'h-11 px-4',
               )}
             >
               <PlusIcon className="size-4 shrink-0" />

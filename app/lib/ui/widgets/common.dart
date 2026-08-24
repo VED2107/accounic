@@ -128,10 +128,23 @@ class MoneyStat extends StatelessWidget {
 /// The balance at the end of a list row — the visual anchor of that row
 /// (context.md §5). Amount first, then the one word that says which way it runs.
 class NetBadge extends StatelessWidget {
-  const NetBadge({super.key, required this.netMinor, required this.currency});
+  const NetBadge({
+    super.key,
+    required this.netMinor,
+    required this.currency,
+    this.approxMinor,
+    this.approxCurrency,
+  });
 
   final int netMinor;
   final String currency;
+
+  /// The same position in the workspace's own currency, when this row is kept
+  /// in a different one. A dirham balance in a rupee workspace is two facts,
+  /// and a row showing only one of them makes the reader convert in their head
+  /// (upgrade 42).
+  final int? approxMinor;
+  final String? approxCurrency;
 
   @override
   Widget build(BuildContext context) {
@@ -140,8 +153,15 @@ class NetBadge extends StatelessWidget {
     final color = switch (tone) {
       BalanceTone.receivable => palette.receivable,
       BalanceTone.payable => palette.payable,
-      BalanceTone.settled => palette.inkFaint,
+      BalanceTone.settled => palette.inkMuted,
     };
+
+    final approx = approxMinor;
+    final approxCode = approxCurrency;
+    final showApprox = approx != null &&
+        approxCode != null &&
+        approxCode != currency &&
+        tone != BalanceTone.settled;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -151,25 +171,44 @@ class NetBadge extends StatelessWidget {
           tone == BalanceTone.settled
               ? 'Settled'
               : formatMinor(netMinor.abs(), currency: currency),
-          style: TextStyle(
-            fontFamily: 'Poppins',
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            letterSpacing: -0.3,
-            color: color,
-            fontFeatures: const [FontFeature.tabularFigures()],
-          ),
+          style: context.moneyStyle(MoneySize.row, color: color),
         ),
-        Text(
-          switch (tone) {
-            BalanceTone.receivable => 'receivable',
-            BalanceTone.payable => 'payable',
-            BalanceTone.settled => 'up',
-          },
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w500,
-            color: tone == BalanceTone.settled ? palette.inkFaint : color.withValues(alpha: 0.75),
+        if (showApprox)
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Text(
+              '≈ ${formatMinor(approx.abs(), currency: approxCode)}',
+              style: context.moneyStyle(MoneySize.small, color: palette.inkFaint),
+            ),
+          ),
+        const SizedBox(height: 3),
+        // The state in a word AND in a shape. Colour alone never carries it:
+        // the pill's tint, its border and the word all say the same thing, so
+        // it survives a colour-blind reader and a bad monitor alike.
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+          decoration: BoxDecoration(
+            color: switch (tone) {
+              BalanceTone.receivable => palette.receivableSoft,
+              BalanceTone.payable => palette.payableSoft,
+              BalanceTone.settled => palette.sunken,
+            },
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: switch (tone) {
+                BalanceTone.receivable => palette.receivableLine,
+                BalanceTone.payable => palette.payableLine,
+                BalanceTone.settled => palette.line,
+              },
+            ),
+          ),
+          child: Text(
+            switch (tone) {
+              BalanceTone.receivable => 'receivable',
+              BalanceTone.payable => 'payable',
+              BalanceTone.settled => 'up to date',
+            },
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: color),
           ),
         ),
       ],
