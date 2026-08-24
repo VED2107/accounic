@@ -19,8 +19,12 @@ app/windows/flutter/ephemeral/
 # Generated brand rasters are reproducible: node brand/build-assets.mjs
 brand/png/
 
-# Ad-hoc screenshots dropped in the repo root while reviewing the UI.
+# Ad-hoc screenshots and design references dropped in the repo root.
 Screenshot*.png
+error.jpeg
+logo.png
+logo\ reffrances.png
+ui.png
 
 # Packaged desktop artifacts (built by app/windows/installer/accounic.iss).
 app/build/installer/
