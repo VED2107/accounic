@@ -372,6 +372,34 @@ export async function deletePerson(personId: string): Promise<ActionResult<null>
   return ok(null);
 }
 
+/**
+ * Retract a person's whole history in one call (db/migrations/0014).
+ *
+ * A void, not a delete. Every row stays in the database with its amount, date
+ * and rate intact; the balance goes to zero and the entries leave the activity
+ * feed, while the person's own timeline keeps showing them marked voided.
+ *
+ * The reason is stored on each row, so a later reader can tell a bulk
+ * retraction apart from thirty individual ones.
+ */
+export async function voidPersonHistory(
+  personId: string,
+  reason?: string,
+): Promise<ActionResult<null>> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('void_person_history', {
+    p_person_id: personId,
+    p_reason: reason?.trim() || null,
+  });
+  if (error) return fail(error, 'That history could not be retracted.');
+
+  revalidatePath('/people');
+  revalidatePath(`/people/${personId}`);
+  revalidatePath('/activity');
+  revalidatePath('/');
+  return ok(null);
+}
+
 /* --------------------------------------------------------------------------
  * Transactions (context.md §7, §14)
  * ----------------------------------------------------------------------- */
