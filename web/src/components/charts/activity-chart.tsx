@@ -272,9 +272,22 @@ function TipRow({
   );
 }
 
-/** "24 Aug" — the axis and the tooltip agree on how a day is written. */
+const MONTHS = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+] as const;
+
+/**
+ * "24 Aug" — the axis and the tooltip agree on how a day is written.
+ *
+ * Built by hand rather than by `toLocaleDateString`. The locale one renders
+ * "28 Jul" on the server and "Jul 28" in a US-English browser, which is a
+ * hydration mismatch: React throws the server tree away and rebuilds it, and
+ * every date on the page flickers as it does. It also has to agree with the
+ * Flutter client, which writes the day this way.
+ */
 function dayLabel(bucket: string): string {
-  const date = new Date(`${bucket.slice(0, 10)}T00:00:00`);
+  const date = new Date(`${bucket.slice(0, 10)}T00:00:00Z`);
   if (Number.isNaN(date.getTime())) return bucket;
-  return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  return `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]}`;
 }

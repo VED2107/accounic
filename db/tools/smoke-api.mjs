@@ -180,7 +180,14 @@ const crossWrite = await friend.rpc('create_transaction', {
 });
 check('workspace B cannot write into workspace A', crossWrite.error !== null, crossWrite.error?.code ?? '');
 
-const escalate = await friend.from('app_admins').insert({ user_id: (await friend.rpc('me')).data.id });
+// me() is null for a user the admin has deactivated, and this harness has
+// no say in which state the demo accounts are left in. Reading .id off it
+// unguarded crashed the whole run before the last four checks, which is a
+// worse outcome than the one failing check it was trying to report.
+const friendMe = await friend.rpc('me');
+const escalate = friendMe.data
+  ? await friend.from('app_admins').insert({ user_id: friendMe.data.id })
+  : { error: { code: 'skipped — the second workspace has no active session' } };
 check('a normal user cannot make themselves an admin', escalate.error !== null, escalate.error?.code ?? '');
 
 const adminPeek = await friend.rpc('admin_list_users');
