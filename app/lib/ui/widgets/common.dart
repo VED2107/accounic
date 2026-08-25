@@ -431,7 +431,7 @@ class EmptyState extends StatelessWidget {
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: context.money.line),
               ),
-              child: Icon(icon, size: 22, color: context.money.inkFaint),
+              child: Icon(icon, size: AppIconSize.lg, color: context.money.inkFaint),
             ),
             const SizedBox(height: 16),
           ],

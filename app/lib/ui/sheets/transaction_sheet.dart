@@ -444,7 +444,7 @@ class _TypeOption extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Icon(icon, size: 16, color: selected ? color : context.colors.onSurface),
+                    Icon(icon, size: AppIconSize.sm, color: selected ? color : context.colors.onSurface),
                     const SizedBox(width: 6),
                     Text(
                       flow.label,
@@ -467,7 +467,7 @@ class _TypeOption extends StatelessWidget {
                 Text(
                   flow.effect,
                   style: TextStyle(
-                    fontSize: 11.5,
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color: color,
                   ),

@@ -12,6 +12,7 @@ import '../../providers.dart';
 import '../motion.dart';
 import '../widgets/app_page.dart';
 import '../widgets/brand.dart';
+import '../sheets/transaction_sheet.dart';
 import '../widgets/activity_chart.dart';
 import '../widgets/common.dart';
 import '../widgets/sparkline.dart';
@@ -177,10 +178,21 @@ class DashboardScreen extends ConsumerWidget {
                   child: const Text('View all'),
                 ),
           child: data.recentActivity.isEmpty
-              ? const EmptyState(
+              ? EmptyState(
                   icon: AppIcons.quiet,
                   title: 'Your ledger is quiet',
                   description: 'Record a transaction and it will appear here straight away.',
+                  // An empty state that explains but does not help leaves the
+                  // user to go and find the fix themselves (upgrade §11).
+                  // A Consumer rather than threading a ref through _body: the
+                  // sheet is the only thing on this branch that needs one.
+                  action: Consumer(
+                    builder: (context, ref, _) => FilledButton.icon(
+                      onPressed: () => showTransactionSheet(context, ref),
+                      icon: const Icon(AppIcons.add, size: AppIconSize.sm),
+                      label: const Text('Add transaction'),
+                    ),
+                  ),
                 )
               : Builder(
                   builder: (context) {
@@ -503,7 +515,7 @@ class _NetTrend extends ConsumerWidget {
         Text(
           'LAST 30 DAYS',
           style: TextStyle(
-            fontSize: 9.5,
+            fontSize: 11,
             fontWeight: FontWeight.w700,
             letterSpacing: 0.7,
             color: context.money.inkFaint,
@@ -551,7 +563,7 @@ class _TodayStrip extends StatelessWidget {
               Text(
                 'TODAY',
                 style: TextStyle(
-                  fontSize: 10.5,
+                  fontSize: 11,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.7,
                   color: palette.inkFaint,

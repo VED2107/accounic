@@ -434,7 +434,7 @@ class _Arithmetic extends StatelessWidget {
                 Text(label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 11.5, color: palette.inkMuted)),
+                    style: TextStyle(fontSize: 12, color: palette.inkMuted)),
                 const SizedBox(height: 3),
                 FittedBox(
                   fit: BoxFit.scaleDown,

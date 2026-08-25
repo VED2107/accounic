@@ -294,7 +294,7 @@ export function ConversionPanel({
             setManual(!manual);
           }}
           className={cn(
-            'rounded-full border px-3 py-1.5 text-[0.75rem] font-medium',
+            'tap rounded-full border px-3 py-1.5 text-[0.75rem] font-medium',
             'transition-[background-color,border-color,color] duration-[var(--dur)] ease-[var(--ease)]',
             manual
               ? 'border-accent-line bg-accent-soft text-accent'

@@ -275,7 +275,7 @@ class _PositionCard extends StatelessWidget {
                     Text(
                       'CURRENT POSITION',
                       style: TextStyle(
-                        fontSize: 10.5,
+                        fontSize: 11,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 0.7,
                         color: palette.inkFaint,
@@ -479,7 +479,7 @@ class _Action extends StatelessWidget {
             boxShadow: [
               if (hovered && filled)
                 BoxShadow(
-                  color: const Color(0xFF1D4ED8).withValues(alpha: 0.34),
+                  color: AccounicColors.actionGlow.withValues(alpha: 0.34),
                   blurRadius: 16,
                   offset: const Offset(0, 4),
                 ),
@@ -552,7 +552,7 @@ class PersonMenu extends ConsumerWidget {
                     Text(
                       note,
                       style: TextStyle(
-                        fontSize: 11.5,
+                        fontSize: 12,
                         height: 1.35,
                         color: palette.inkFaint,
                       ),
@@ -1134,7 +1134,7 @@ class _Figures extends StatelessWidget {
                         label,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 11.5, color: palette.inkMuted),
+                        style: TextStyle(fontSize: 12, color: palette.inkMuted),
                       ),
                     ),
                   ],

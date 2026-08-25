@@ -229,7 +229,7 @@ export function PageHeader({
         {eyebrow ? (
           <p className="text-[0.8125rem] font-medium text-ink-muted">{eyebrow}</p>
         ) : null}
-        <h1 className="font-display text-[1.6rem] font-semibold tracking-tight text-ink sm:text-[1.75rem]">
+        <h1 className="page-title text-ink">
           {title}
         </h1>
         {description ? (
@@ -279,7 +279,7 @@ export function Avatar({
   className?: string;
 }) {
   const sizes = {
-    sm: 'size-8 rounded-[0.625rem] text-[0.6875rem]',
+    sm: 'size-8 rounded-field text-[0.6875rem]',
     md: 'size-10 rounded-xl text-[0.8125rem]',
     lg: 'size-14 rounded-2xl text-base',
   };
@@ -353,7 +353,7 @@ export const SEGMENT_GROUP =
 
 export function segmentClass(active: boolean) {
   return cn(
-    'rounded-[0.5rem] px-3 py-1.5 text-center text-[0.8125rem] font-medium',
+    'tap rounded-lg px-3 py-1.5 text-center text-[0.8125rem] font-medium',
     'transition-[background-color,color,box-shadow] duration-[var(--dur)] ease-[var(--ease)]',
     active
       ? 'bg-surface text-ink shadow-[var(--shadow-card)]'

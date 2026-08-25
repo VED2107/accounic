@@ -633,7 +633,7 @@ class ConvertedFrom extends StatelessWidget {
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: TextStyle(
-        fontSize: 11.5,
+        fontSize: 12,
         color: conversionMode == 'manual'
             ? context.colors.primary
             : context.money.inkFaint,

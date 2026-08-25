@@ -366,7 +366,7 @@ function Cell({
       <p className="truncate text-[0.6875rem] text-ink-muted">{label}</p>
       <p
         className={cn(
-          'tnum mt-0.5 truncate text-[0.875rem] font-semibold',
+          'tnum mt-0.5 text-[0.875rem] font-semibold [overflow-wrap:anywhere]',
           tone === 'receivable' && 'text-receivable',
           tone === 'payable' && 'text-payable',
           tone === 'settled' && 'text-ink-faint',

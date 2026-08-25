@@ -96,7 +96,7 @@ export default async function PersonPage({
         </Avatar>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="truncate font-display text-[1.5rem] font-semibold tracking-tight sm:text-[1.75rem]">
+            <h1 className="page-title truncate">
               {person.name}
             </h1>
             {person.is_archived ? <Badge tone="muted">Archived</Badge> : null}
@@ -129,7 +129,10 @@ export default async function PersonPage({
               <p className="text-[0.8125rem] font-medium text-ink-muted">Current position</p>
               <p
                 className={cn(
-                  'mt-1.5 truncate font-display text-[2.25rem] font-semibold leading-none tracking-tight sm:text-[2.75rem]',
+                  // The account's headline figure, on the money scale like every other
+                  // figure in the product — it was hand-sized at 2.25/2.75rem, which is
+                  // the one place a balance was not using the money typography.
+                  'money-hero mt-1.5',
                   tone === 'receivable' && 'text-receivable',
                   tone === 'payable' && 'text-payable',
                   tone === 'settled' && 'text-ink',

@@ -192,13 +192,13 @@ class AddTransactionButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF1D4ED8).withValues(alpha: 0.42),
+                color: AccounicColors.actionGlow.withValues(alpha: 0.42),
                 blurRadius: 18,
                 offset: const Offset(0, 6),
               ),
             ],
           ),
-          child: const Icon(AppIcons.add, size: 24, color: Colors.white),
+          child: const Icon(AppIcons.add, size: AppIconSize.xl, color: Colors.white),
         ),
       ),
     );
@@ -250,7 +250,7 @@ class _NavItem extends StatelessWidget {
                 duration: Motion.micro,
                 curve: Motion.enter,
                 style: TextStyle(
-                  fontSize: 10.5,
+                  fontSize: 11,
                   fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                   color: color,
                 ),

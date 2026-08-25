@@ -93,6 +93,13 @@ class AccounicColors extends ThemeExtension<AccounicColors> {
     colors: [Color(0xFF2F6BEF), Color(0xFF1D4ED8)],
   );
 
+  /// The gradient's deep end, which is also the colour every hover glow under a
+  /// primary action is tinted with. It was written out as a literal in four
+  /// separate widgets — the sheet footer, the person screen, the shell's add
+  /// button and the settings save button — which is exactly how a palette stops
+  /// being a palette.
+  static const actionGlow = Color(0xFF1D4ED8);
+
   @override
   AccounicColors copyWith({
     Color? receivable,

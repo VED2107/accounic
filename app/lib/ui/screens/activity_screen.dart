@@ -9,6 +9,7 @@ import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../providers.dart';
 import '../motion.dart';
+import '../sheets/transaction_sheet.dart';
 import '../widgets/app_page.dart';
 import '../widgets/common.dart';
 import 'dashboard_screen.dart' show ActivityRow;
@@ -103,6 +104,12 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                       _ =>
                         'Transactions and settlements will appear here as you record them.',
                     },
+                    // The way out of the empty state, on the empty state.
+                    action: FilledButton.icon(
+                      onPressed: () => showTransactionSheet(context, ref),
+                      icon: const Icon(AppIcons.add, size: AppIconSize.sm),
+                      label: const Text('Add transaction'),
+                    ),
                   ),
                 ),
               AsyncData(:final value) => _Timeline(

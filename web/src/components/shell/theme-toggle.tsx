@@ -79,7 +79,7 @@ export function ThemeChooser() {
             }}
             aria-pressed={active}
             className={cn(
-              'flex items-center gap-1.5 rounded-[0.5rem] px-3 py-1.5 text-[0.8125rem] font-medium',
+              'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[0.8125rem] font-medium',
               'transition-[background-color,color] duration-[var(--dur)] ease-[var(--ease)]',
               active ? 'bg-surface text-ink shadow-[var(--shadow-card)]' : 'text-ink-muted hover:text-ink',
             )}
