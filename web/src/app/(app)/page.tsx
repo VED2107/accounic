@@ -1,7 +1,15 @@
 import Link from 'next/link';
 import { getActivitySummary, getDashboard } from '@/lib/queries';
-import { Avatar, Card, EmptyState, buttonClass, cn } from '@/components/ui/primitives';
+import {
+  Avatar,
+  Card,
+  CardHeader,
+  EmptyState,
+  buttonClass,
+  cn,
+} from '@/components/ui/primitives';
 import { Money, NetBadge, SplitBar } from '@/components/money';
+import { ActivityChart } from '@/components/charts/activity-chart';
 import { Sparkline, TrendChip } from '@/components/charts/sparkline';
 import { ActivityRow } from '@/components/ledger/activity-row';
 import { Reveal, staggerStyle } from '@/components/motion/reveal';
@@ -220,6 +228,23 @@ export default async function DashboardPage() {
           />
         </Reveal>
       </section>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* The month in flows (upgrade §8)                                     */}
+      {/* ------------------------------------------------------------------ */}
+      {buckets.length > 1 ? (
+        <Reveal delay={150} className="mt-4 block">
+          <Card className="overflow-hidden">
+            <CardHeader
+              title="Last 30 days"
+              description="What moved each day. Hover or tap a column for that day."
+            />
+            <div className="px-5 py-5">
+              <ActivityChart buckets={buckets} currency={currency} />
+            </div>
+          </Card>
+        </Reveal>
+      ) : null}
 
       {/* ------------------------------------------------------------------ */}
       {/* Who, and what just happened                                         */}

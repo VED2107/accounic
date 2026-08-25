@@ -31,6 +31,26 @@ export default function DashboardLoading() {
         ))}
       </div>
 
+      {/* The 30-day chart. Its own height is reserved so the two cards below
+          do not jump up the page when the buckets land. */}
+      <Card className="mt-4 overflow-hidden">
+        <div className="border-b border-line px-5 py-3.5">
+          <Skeleton className="h-4 w-32" />
+        </div>
+        <div className="px-5 py-5">
+          <div className="mb-4 flex flex-wrap gap-x-5 gap-y-1.5">
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-4 w-32" />
+            ))}
+          </div>
+          <Skeleton className="h-28 w-full rounded-md" />
+          <div className="mt-2 flex justify-between">
+            <Skeleton className="h-3 w-12" />
+            <Skeleton className="h-3 w-12" />
+          </div>
+        </div>
+      </Card>
+
       <div className="mt-4 grid gap-4 lg:grid-cols-[1.05fr_1fr]">
         {[0, 1].map((card) => (
           <Card key={card} className="overflow-hidden">

@@ -12,6 +12,7 @@ import '../../providers.dart';
 import '../motion.dart';
 import '../widgets/app_page.dart';
 import '../widgets/brand.dart';
+import '../widgets/activity_chart.dart';
 import '../widgets/common.dart';
 import '../widgets/sparkline.dart';
 import 'search_sheet.dart';
@@ -117,6 +118,14 @@ class DashboardScreen extends ConsumerWidget {
       ],
 
       const SizedBox(height: AppSpacing.xxl),
+
+      // The month in flows (upgrade §8). Below the position, above the lists:
+      // it answers "what has been happening", which comes after "where do I
+      // stand" and before "with whom".
+      Reveal(
+        delay: const Duration(milliseconds: 100),
+        child: _ActivityChartCard(currency: currency),
+      ),
 
       Reveal(
         delay: const Duration(milliseconds: 120),
@@ -429,6 +438,32 @@ class _Side extends StatelessWidget {
             style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Thirty days of daily flow, tappable for one day at a time.
+///
+/// Renders nothing at all until there are at least two days of history: an
+/// empty chart is worse than no chart, because it looks like a chart that
+/// failed rather than a ledger that is new.
+class _ActivityChartCard extends ConsumerWidget {
+  const _ActivityChartCard({required this.currency});
+
+  final String currency;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final buckets = ref.watch(activitySummaryProvider).valueOrNull;
+    if (buckets == null || buckets.length < 2) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.xxl),
+      child: SectionCard(
+        title: 'Last 30 days',
+        padding: context.cardPadding,
+        child: ActivityChart(buckets: buckets, currency: currency),
       ),
     );
   }
