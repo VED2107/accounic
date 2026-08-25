@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -71,7 +72,45 @@ class AccounicApp extends StatelessWidget {
       // resolves the auth redirect and the first screen paints underneath while
       // the sequence plays, so the handover has nothing left to load — and no
       // navigation the user performs later can ever land back on a splash.
-      builder: (context, child) => SplashGate(child: child ?? const SizedBox.shrink()),
+      builder: (context, child) => _SystemBars(
+        child: SplashGate(child: child ?? const SizedBox.shrink()),
+      ),
+    );
+  }
+}
+
+/// Tells Android which way to draw the status and navigation bar glyphs.
+///
+/// Found on a real device, and invisible everywhere else: the app never set an
+/// overlay style, so Android kept its default of *light* (white) glyphs. On the
+/// dark scheme that is right by accident. On the light scheme — a #f6f7f9 page —
+/// the clock, the battery and the signal bars are white on near-white, and the
+/// top of the screen reads as broken.
+///
+/// The rule is the inverse of the page: a light page takes dark glyphs.
+/// `statusBarBrightness` is the iOS spelling of the same idea and is set too, so
+/// the one widget covers both. The bars themselves stay transparent — the app
+/// draws its own ground behind them.
+class _SystemBars extends StatelessWidget {
+  const _SystemBars({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final light = Theme.of(context).brightness == Brightness.light;
+    final glyphs = light ? Brightness.dark : Brightness.light;
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: glyphs,
+        statusBarBrightness: light ? Brightness.light : Brightness.dark,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarIconBrightness: glyphs,
+        systemNavigationBarDividerColor: Colors.transparent,
+      ),
+      child: child,
     );
   }
 }

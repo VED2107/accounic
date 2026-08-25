@@ -361,7 +361,25 @@ export function SubmitRow({
 }) {
   const { pending } = useFormStatus();
   return (
-    <div className="flex gap-2 pt-1">
+    // Pinned to the foot of the sheet, not the foot of the fields.
+    //
+    // These used to be the last children in the modal's scroll view, which
+    // meant that whenever the form was taller than the panel — the person form
+    // on any laptop, every form on a phone — the only way to reach Save was to
+    // scroll past every field. A control that has to be hunted for reads as a
+    // control that is not there. The Flutter client fixed this in 1.0.7 by
+    // pinning its actions outside the scroll view; the web client never did.
+    //
+    // Sticky rather than a restructured Modal, because these buttons have to
+    // stay inside the <form> for useFormStatus to see the submission at all.
+    // The negative margins cancel the scroll container's padding so the bar
+    // sits flush against the panel edge and the fields scroll under it.
+    <div
+      className={cn(
+        'sticky bottom-0 z-10 -mx-5 -mb-5 mt-1 flex gap-2',
+        'border-t border-line bg-raised px-5 pb-5 pt-3',
+      )}
+    >
       <Button type="button" variant="secondary" onClick={onCancel} disabled={pending}>
         Cancel
       </Button>
