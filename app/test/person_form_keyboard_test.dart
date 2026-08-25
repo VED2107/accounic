@@ -104,7 +104,7 @@ void main() {
 
     expectWithinViewport(tester, find.text('Add person'), 0, 'Save');
     expect(find.text('Name'), findsOneWidget);
-    expect(find.text('Existing balance'), findsOneWidget);
+    expect(find.text('OPENING BALANCE'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -153,8 +153,11 @@ void main() {
   testWidgets('the currency and opening balance controls are present', (tester) async {
     await pumpForm(tester);
 
-    expect(find.text('Currency'), findsOneWidget);
-    expect(find.text('Existing balance'), findsOneWidget);
+    // The form is grouped into sections (upgrade §1): the heading names the
+    // group and the control names itself inside it.
+    expect(find.text('CURRENCY'), findsOneWidget);
+    expect(find.text('Account currency'), findsOneWidget);
+    expect(find.text('OPENING BALANCE'), findsOneWidget);
     expect(find.text('No opening balance'), findsOneWidget);
     expect(find.text('I owe them'), findsOneWidget);
     expect(find.text('They owe me'), findsOneWidget);

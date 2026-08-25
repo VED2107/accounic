@@ -14,6 +14,8 @@ import '../../core/currencies.dart';
 import '../widgets/amount_field.dart';
 import '../widgets/common.dart';
 import '../widgets/currency_field.dart';
+import '../../core/layout.dart';
+import '../widgets/forms.dart';
 import 'sheet_scaffold.dart';
 
 /// Fast transaction entry (context.md §14).
@@ -253,82 +255,92 @@ class _TransactionSheetState extends ConsumerState<_TransactionSheet> {
       onPrimary: _canSave ? _save : null,
       busy: _saving,
       children: [
-        if (!_isEdit) ...[
-          PersonPickerField(
-            value: _person,
-            onChanged: (person) => setState(() {
-              _person = person;
-              // Picking a dirham account means typing dirhams until the user
-              // says otherwise.
-              _entryCurrency = null;
-            }),
+        if (!_isEdit)
+          FormSection(
+            first: true,
+            title: 'Who',
+            children: [
+              PersonPickerField(
+                value: _person,
+                onChanged: (person) => setState(() {
+                  _person = person;
+                  // Picking a dirham account means typing dirhams until the user
+                  // says otherwise.
+                  _entryCurrency = null;
+                }),
+              ),
+            ],
           ),
-          const SizedBox(height: 18),
-        ],
 
-        _TypeToggle(value: _type, onChanged: (type) => setState(() => _type = type)),
-        const SizedBox(height: 18),
-
-        AmountField(
-          currency: entry,
-          autofocus: _person != null,
-          initial: widget.transaction?.enteredAmountMinor ?? widget.transaction?.amountMinor,
-          onChanged: (minor) => setState(() => _amount = minor),
-        ),
-        const SizedBox(height: 12),
-
-        CurrencyField(
-          label: 'Entered in',
-          value: entry,
-          onChanged: (next) => setState(() => _entryCurrency = next),
-          helper: entry == account
-              ? 'This account is kept in $account'
-              : 'Converted into $account when it is saved',
-        ),
-
-        if (entry != account) ...[
-          const SizedBox(height: 12),
-          ConversionPanel(
-            amountMinor: _amount,
-            from: entry,
-            to: account,
-            manual: _manual,
-            onManualChanged: (manual) => setState(() => _manual = manual),
-            onActualChanged: (minor) => setState(() => _actual = minor),
-            initialActualMinor: widget.transaction?.isManualConversion ?? false
-                ? widget.transaction?.amountMinor
-                : null,
-          ),
-        ],
-        const SizedBox(height: 18),
-
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        FormSection(
+          first: _isEdit,
+          title: 'Direction',
           children: [
-            Expanded(
-              child: _DateField(
-                value: _date,
-                onChanged: (value) => setState(() => _date = value),
-              ),
+            _TypeToggle(value: _type, onChanged: (type) => setState(() => _type = type)),
+          ],
+        ),
+
+        FormSection(
+          title: 'Amount',
+          aside: entry == account ? null : 'Account keeps $account',
+          children: [
+            AmountField(
+              currency: entry,
+              autofocus: _person != null,
+              initial: widget.transaction?.enteredAmountMinor ?? widget.transaction?.amountMinor,
+              onChanged: (minor) => setState(() => _amount = minor),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Note',
-                      style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 6),
-                  TextField(
-                    controller: _note,
-                    maxLength: 500,
-                    decoration: const InputDecoration(
-                      hintText: 'Invoice #102',
-                      counterText: '',
-                    ),
-                  ),
-                ],
+            const SizedBox(height: AppSpacing.md),
+            CurrencyField(
+              label: 'Entered in',
+              value: entry,
+              onChanged: (next) => setState(() => _entryCurrency = next),
+              helper: entry == account
+                  ? 'This account is kept in $account'
+                  : 'Converted into $account when it is saved',
+            ),
+            if (entry != account) ...[
+              const SizedBox(height: AppSpacing.md),
+              ConversionPanel(
+                amountMinor: _amount,
+                from: entry,
+                to: account,
+                manual: _manual,
+                onManualChanged: (manual) => setState(() => _manual = manual),
+                onActualChanged: (minor) => setState(() => _actual = minor),
+                initialActualMinor: widget.transaction?.isManualConversion ?? false
+                    ? widget.transaction?.amountMinor
+                    : null,
               ),
+            ],
+          ],
+        ),
+
+        FormSection(
+          title: 'Details',
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _DateField(
+                    value: _date,
+                    onChanged: (value) => setState(() => _date = value),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: AppTextField(
+                    label: 'Note',
+                    controller: _note,
+                    icon: AppIcons.note,
+                    maxLength: 500,
+                    textInputAction: TextInputAction.done,
+                    textCapitalization: TextCapitalization.sentences,
+                    hint: 'Invoice #102',
+                  ),
+                ),
+              ],
             ),
           ],
         ),

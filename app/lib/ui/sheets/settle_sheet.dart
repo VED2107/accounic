@@ -9,6 +9,9 @@ import '../../data/models.dart';
 import '../../providers.dart';
 import '../motion.dart';
 import '../widgets/amount_field.dart';
+import '../../core/icons.dart';
+import '../../core/layout.dart';
+import '../widgets/forms.dart';
 import 'sheet_scaffold.dart';
 
 /// Settlement (context.md §9).
@@ -189,141 +192,153 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
       primaryLabel: 'Settle now',
       onPrimary: _amount == null ? null : _save,
       children: [
-        if (_bothSides)
-          Row(
-            children: [
-              Expanded(
-                child: _SideOption(
-                  selected: incoming,
-                  title: 'I received',
-                  amount: formatMinor(widget.balance.outstandingReceivable,
-                      currency: currency),
-                  color: context.money.receivable,
-                  background: context.money.receivableSoft,
-                  onTap: () => setState(() {
-                    _direction = SettlementDirection.moneyIn;
-                    _transactionId = null;
-                  }),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _SideOption(
-                  selected: !incoming,
-                  title: 'I paid',
-                  amount:
-                      formatMinor(widget.balance.outstandingPayable, currency: currency),
-                  color: context.money.payable,
-                  background: context.money.payableSoft,
-                  onTap: () => setState(() {
-                    _direction = SettlementDirection.moneyOut;
-                    _transactionId = null;
-                  }),
-                ),
-              ),
-            ],
-          )
-        else
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: incoming ? context.money.receivableSoft : context.money.payableSoft,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: accent.withValues(alpha: 0.3)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  incoming ? 'You will receive' : 'You will pay',
-                  style: TextStyle(fontSize: 13, color: context.money.inkMuted),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  formatMinor(_max, currency: currency),
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w600,
-                    color: accent,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-        const SizedBox(height: 18),
-
-        if (_matching.isNotEmpty) ...[
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Against',
-                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 6),
-              DropdownButtonFormField<String?>(
-                value: _transactionId,
-                isExpanded: true,
-                items: [
-                  const DropdownMenuItem<String?>(
-                    value: null,
-                    child: Text('The whole account'),
-                  ),
-                  for (final txn in _matching)
-                    DropdownMenuItem<String?>(
-                      value: txn.id,
-                      child: Text(
-                        '${friendlyDate(txn.transactionDate)} · '
-                        '${formatMinor(txn.remainingMinor, currency: currency)} left'
-                        '${txn.description == null ? '' : ' · ${txn.description}'}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                ],
-                onChanged: (value) => setState(() => _transactionId = value),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Leave on the whole account to settle the oldest entries first.',
-                style: TextStyle(fontSize: 12, color: context.money.inkFaint),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-        ],
-
-        _Arithmetic(
-          outstanding: _max,
-          settling: (_amount ?? 0).clamp(0, _max),
-          currency: currency,
-          accent: accent,
-        ),
-
-        const SizedBox(height: 18),
-
-        AmountField(
-          key: ValueKey('settle-$_direction-$_transactionId'),
-          currency: currency,
-          autofocus: true,
-          maxMinor: _max,
-          onChanged: (minor) => setState(() => _amount = minor),
-        ),
-
-        const SizedBox(height: 18),
-
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        FormSection(
+          first: true,
+          title: 'What is being settled',
           children: [
-            const Text('Note', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _note,
-              maxLength: 500,
-              decoration: InputDecoration(
-                hintText: incoming ? 'Cash received' : 'Paid by UPI',
-                counterText: '',
+            if (_bothSides)
+              Row(
+                children: [
+                  Expanded(
+                    child: _SideOption(
+                      selected: incoming,
+                      title: 'I received',
+                      amount: formatMinor(widget.balance.outstandingReceivable,
+                          currency: currency),
+                      color: context.money.receivable,
+                      background: context.money.receivableSoft,
+                      onTap: () => setState(() {
+                        _direction = SettlementDirection.moneyIn;
+                        _transactionId = null;
+                      }),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm + 2),
+                  Expanded(
+                    child: _SideOption(
+                      selected: !incoming,
+                      title: 'I paid',
+                      amount:
+                          formatMinor(widget.balance.outstandingPayable, currency: currency),
+                      color: context.money.payable,
+                      background: context.money.payableSoft,
+                      onTap: () => setState(() {
+                        _direction = SettlementDirection.moneyOut;
+                        _transactionId = null;
+                      }),
+                    ),
+                  ),
+                ],
+              )
+            else
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.lg,
+                  vertical: AppSpacing.md,
+                ),
+                decoration: BoxDecoration(
+                  color: incoming ? context.money.receivableSoft : context.money.payableSoft,
+                  borderRadius: AppRadius.fieldAll,
+                  border: Border.all(color: accent.withValues(alpha: 0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      incoming ? 'You will receive' : 'You will pay',
+                      style: TextStyle(fontSize: 13, color: context.money.inkMuted),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      formatMinor(_max, currency: currency),
+                      style: context.moneyStyle(MoneySize.large, color: accent),
+                    ),
+                  ],
+                ),
               ),
+
+            if (_matching.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.md),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Against',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.1,
+                      color: context.money.inkMuted,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm - 2),
+                  DropdownButtonFormField<String?>(
+                    value: _transactionId,
+                    isExpanded: true,
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('The whole account'),
+                      ),
+                      for (final txn in _matching)
+                        DropdownMenuItem<String?>(
+                          value: txn.id,
+                          child: Text(
+                            '${friendlyDate(txn.transactionDate)} · '
+                            '${formatMinor(txn.remainingMinor, currency: currency)} left'
+                            '${txn.description == null ? '' : ' · ${txn.description}'}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    onChanged: (value) => setState(() => _transactionId = value),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    'Leave on the whole account to settle the oldest entries first.',
+                    style: TextStyle(fontSize: 12, color: context.money.inkFaint),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+
+        FormSection(
+          title: 'Amount',
+          aside: currency,
+          children: [
+            _Arithmetic(
+              outstanding: _max,
+              settling: (_amount ?? 0).clamp(0, _max),
+              currency: currency,
+              accent: accent,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            AmountField(
+              key: ValueKey('settle-$_direction-$_transactionId'),
+              currency: currency,
+              autofocus: true,
+              maxMinor: _max,
+              onChanged: (minor) => setState(() => _amount = minor),
+            ),
+          ],
+        ),
+
+        FormSection(
+          title: 'Details',
+          aside: 'Optional',
+          children: [
+            AppTextField(
+              label: 'Note',
+              controller: _note,
+              icon: AppIcons.note,
+              maxLength: 500,
+              textInputAction: TextInputAction.done,
+              textCapitalization: TextCapitalization.sentences,
+              hint: incoming ? 'Cash received' : 'Paid by UPI',
             ),
           ],
         ),

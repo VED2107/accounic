@@ -419,3 +419,95 @@ export function SuccessNote({ children }: { children: ReactNode }) {
     </p>
   );
 }
+
+/* -------------------------------------------------------------------------- */
+/* Form sections                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A group of related fields under one heading (upgrade §1).
+ *
+ * A form of nine controls where every control looks the same is nine decisions
+ * presented at once. Grouped — identity, currency, opening balance, contact —
+ * it is four, and each one can be read and dismissed before the next.
+ *
+ * The heading is a hairline label, not a card. Boxing every group would put six
+ * borders on one form and make the sheet read as a settings page; the rule
+ * above each group does the same separating job with a single pixel.
+ */
+export function FormSection({
+  title,
+  description,
+  aside,
+  children,
+  className,
+}: {
+  title: string;
+  description?: ReactNode;
+  /** Right-aligned note beside the heading — a hint, a count, a link. */
+  aside?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      className={cn(
+        // The rule belongs to the section, not to the gap, so the first one in a
+        // form drops it without the parent having to know which child is first.
+        'border-t border-line pt-5 first:border-t-0 first:pt-0',
+        className,
+      )}
+    >
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="stat-label">{title}</h3>
+          {description ? (
+            <p className="mt-1 text-[0.8125rem] leading-relaxed text-ink-muted">{description}</p>
+          ) : null}
+        </div>
+        {aside ? <div className="shrink-0 text-[0.75rem] text-ink-faint">{aside}</div> : null}
+      </div>
+      <div className="space-y-4">{children}</div>
+    </section>
+  );
+}
+
+/** The container every sectioned form uses, so the rhythm is identical. */
+export function FormSections({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return <div className={cn('space-y-5', className)}>{children}</div>;
+}
+
+/**
+ * A quiet explanatory block inside a form — what a choice will do, what a
+ * refusal means. Not an error and not a card: one tone below the field it
+ * qualifies.
+ */
+export function FormNote({
+  title,
+  children,
+  tone = 'neutral',
+}: {
+  title?: ReactNode;
+  children: ReactNode;
+  tone?: 'neutral' | 'accent';
+}) {
+  return (
+    <div
+      className={cn(
+        'rounded-field border px-3.5 py-3 text-[0.8125rem] leading-relaxed',
+        tone === 'accent'
+          ? 'border-accent-line bg-accent-soft text-ink-muted'
+          : 'border-line bg-sunken text-ink-muted',
+      )}
+    >
+      {title ? <p className="font-medium text-ink">{title}</p> : null}
+      {children}
+    </div>
+  );
+}

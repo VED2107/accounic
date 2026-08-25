@@ -3,7 +3,16 @@
 import { useActionState, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Modal } from '@/components/ui/modal';
-import { Button, ErrorNote, Field, Input, Select, cn } from '@/components/ui/primitives';
+import {
+  Button,
+  ErrorNote,
+  Field,
+  FormSection,
+  FormSections,
+  Input,
+  Select,
+  cn,
+} from '@/components/ui/primitives';
 import { SettledMark } from '@/components/ui/toast';
 import { AmountInput } from '@/components/ledger/amount-input';
 import { SubmitRow } from '@/components/ledger/transaction-sheet';
@@ -167,108 +176,116 @@ export function SettleSheet({
           <input type="hidden" name="entry_currency" value={currency} />
           <input type="hidden" name="account_currency" value={currency} />
 
-          {bothSides ? (
-            <fieldset className="space-y-1.5">
-              <legend className="mb-1.5 text-[0.8125rem] font-medium text-ink-muted">
-                What is being settled?
-              </legend>
-              <div className="grid grid-cols-2 gap-2">
-                <SideOption
-                  active={direction === 'in'}
-                  tone="receivable"
-                  title="I received"
-                  amount={formatMinor(balance.outstanding_receivable, currency)}
-                  onClick={() => {
-                    setDirection('in');
-                    setTransactionId('');
-                    setAmount(null);
-                  }}
+          <FormSections>
+            {bothSides || matching.length > 0 ? (
+              <FormSection title="What is being settled">
+                {bothSides ? (
+                  <fieldset>
+                    <legend className="sr-only">Which side</legend>
+                    <div className="grid grid-cols-2 gap-2">
+                      <SideOption
+                        active={direction === 'in'}
+                        tone="receivable"
+                        title="I received"
+                        amount={formatMinor(balance.outstanding_receivable, currency)}
+                        onClick={() => {
+                          setDirection('in');
+                          setTransactionId('');
+                          setAmount(null);
+                        }}
+                      />
+                      <SideOption
+                        active={direction === 'out'}
+                        tone="payable"
+                        title="I paid"
+                        amount={formatMinor(balance.outstanding_payable, currency)}
+                        onClick={() => {
+                          setDirection('out');
+                          setTransactionId('');
+                          setAmount(null);
+                        }}
+                      />
+                    </div>
+                  </fieldset>
+                ) : null}
+
+                {matching.length > 0 ? (
+                  <Field
+                    label="Against"
+                    htmlFor="against"
+                    hint="Leave on the whole account to settle the oldest entries first."
+                  >
+                    <Select
+                      id="against"
+                      value={transactionId}
+                      onChange={(event) => {
+                        setTransactionId(event.target.value);
+                        setAmount(null);
+                      }}
+                    >
+                      <option value="">The whole account</option>
+                      {matching.map((txn) => (
+                        <option key={txn.id} value={txn.id}>
+                          {friendlyDate(txn.transaction_date)} ·{' '}
+                          {formatMinor(txn.remaining_minor, currency)} left
+                          {txn.description ? ` · ${txn.description}` : ''}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                ) : null}
+              </FormSection>
+            ) : null}
+
+            <FormSection title="Amount" aside={currency}>
+              {/* The arithmetic, done for the reader (context.md §9). */}
+              <div className="grid grid-cols-3 divide-x divide-line rounded-card border border-line bg-sunken">
+                <Cell label="Outstanding" value={formatMinor(max, currency)} />
+                <Cell
+                  label="Settling"
+                  value={formatMinor(settling, currency)}
+                  tone={direction === 'in' ? 'receivable' : 'payable'}
                 />
-                <SideOption
-                  active={direction === 'out'}
-                  tone="payable"
-                  title="I paid"
-                  amount={formatMinor(balance.outstanding_payable, currency)}
-                  onClick={() => {
-                    setDirection('out');
-                    setTransactionId('');
-                    setAmount(null);
-                  }}
+                <Cell
+                  label="Remaining"
+                  value={formatMinor(remaining, currency)}
+                  tone={remaining === 0 ? 'settled' : undefined}
                 />
               </div>
-            </fieldset>
-          ) : null}
 
-          {matching.length > 0 ? (
-            <Field
-              label="Against"
-              htmlFor="against"
-              hint="Leave on the whole account to settle the oldest entries first."
-            >
-              <Select
-                id="against"
-                value={transactionId}
-                onChange={(event) => {
-                  setTransactionId(event.target.value);
-                  setAmount(null);
-                }}
-              >
-                <option value="">The whole account</option>
-                {matching.map((txn) => (
-                  <option key={txn.id} value={txn.id}>
-                    {friendlyDate(txn.transaction_date)} ·{' '}
-                    {formatMinor(txn.remaining_minor, currency)} left
-                    {txn.description ? ` · ${txn.description}` : ''}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          ) : null}
-
-          {/* The arithmetic, done for the reader (context.md §9). */}
-          <div className="grid grid-cols-3 divide-x divide-line rounded-card border border-line bg-sunken">
-            <Cell label="Outstanding" value={formatMinor(max, currency)} />
-            <Cell
-              label="Settling"
-              value={formatMinor(settling, currency)}
-              tone={direction === 'in' ? 'receivable' : 'payable'}
-            />
-            <Cell
-              label="Remaining"
-              value={formatMinor(remaining, currency)}
-              tone={remaining === 0 ? 'settled' : undefined}
-            />
-          </div>
-
-          <AmountInput
-            currency={currency}
-            autoFocus
-            max={max}
-            onValidChange={setAmount}
-            label="Settlement amount"
-            error={state && !state.ok && state.field === 'amount' ? state.error : undefined}
-          />
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Date" htmlFor="settle-date">
-              <Input
-                id="settle-date"
-                name="date"
-                type="date"
-                max={todayIso()}
-                defaultValue={todayIso()}
-                required
+              <AmountInput
+                currency={currency}
+                autoFocus
+                max={max}
+                onValidChange={setAmount}
+                label="Settlement amount"
+                error={state && !state.ok && state.field === 'amount' ? state.error : undefined}
               />
-            </Field>
-            <Field label="Note" htmlFor="settle-note" hint="Optional">
-              <Input
-                id="settle-note"
-                name="note"
-                placeholder={direction === 'in' ? 'Cash received' : 'Paid by UPI'}
-                maxLength={500}
-              />
-            </Field>
-          </div>
+            </FormSection>
+
+            <FormSection title="Details">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Date" htmlFor="settle-date">
+                  <Input
+                    id="settle-date"
+                    name="date"
+                    type="date"
+                    max={todayIso()}
+                    defaultValue={todayIso()}
+                    required
+                  />
+                </Field>
+                <Field label="Note" htmlFor="settle-note" hint="Optional">
+                  <Input
+                    id="settle-note"
+                    name="note"
+                    placeholder={direction === 'in' ? 'Cash received' : 'Paid by UPI'}
+                    maxLength={500}
+                  />
+                </Field>
+              </div>
+            </FormSection>
+          </FormSections>
 
           <SubmitRow
             label="Settle now"

@@ -4,7 +4,16 @@ import { useActionState, useEffect, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { Modal } from '@/components/ui/modal';
-import { Button, ErrorNote, Field, Input, Spinner, Textarea, cn } from '@/components/ui/primitives';
+import {
+  Button,
+  ErrorNote,
+  Field,
+  FormSection,
+  FormSections,
+  Input,
+  Spinner,
+  cn,
+} from '@/components/ui/primitives';
 import { AmountInput } from '@/components/ledger/amount-input';
 import { PersonPicker, type PickedPerson } from '@/components/ledger/person-picker';
 import { ArrowDownIcon, ArrowUpIcon } from '@/components/icons';
@@ -153,80 +162,91 @@ export function TransactionSheet({
       <form action={formAction} className="space-y-5" noValidate>
         {state && !state.ok && !state.field ? <ErrorNote>{state.error}</ErrorNote> : null}
 
-        {mode === 'edit' && transaction ? (
-          <input type="hidden" name="transaction_id" value={transaction.id} />
-        ) : (
-          <>
-            <PersonPicker value={picked} onChange={setPicked} currency={currency} />
-            <input type="hidden" name="person_id" value={picked?.id ?? ''} />
-          </>
-        )}
+        <FormSections>
+          {mode === 'edit' && transaction ? (
+            <input type="hidden" name="transaction_id" value={transaction.id} />
+          ) : (
+            <FormSection title="Who">
+              <PersonPicker value={picked} onChange={setPicked} currency={currency} />
+              <input type="hidden" name="person_id" value={picked?.id ?? ''} />
+            </FormSection>
+          )}
 
-        <TypeToggle value={type} onChange={setType} />
-        <input type="hidden" name="type" value={type} />
+          <FormSection title="Direction">
+            <TypeToggle value={type} onChange={setType} />
+            <input type="hidden" name="type" value={type} />
+          </FormSection>
 
-        <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
-          <AmountInput
-            currency={entryCurrency}
-            autoFocus={mode === 'edit' || Boolean(person)}
-            defaultValue={
-              transaction
-                ? minorToInput(
-                    transaction.entered_amount_minor ?? transaction.amount_minor,
-                    transaction.entered_currency ?? accountCurrency,
-                  )
-                : ''
-            }
-            error={fieldError('amount')}
-            onValidChange={setAmountMinor}
-          />
-          <CurrencySelect
-            name="entry_currency_visible"
-            label="In"
-            value={entryCurrency}
-            onChange={setEntryCurrency}
-            hint={entryCurrency === accountCurrency ? 'Account currency' : undefined}
-            className="sm:w-56"
-          />
-        </div>
+          <FormSection
+            title="Amount"
+            aside={entryCurrency === accountCurrency ? undefined : `Account keeps ${accountCurrency}`}
+          >
+            <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
+              <AmountInput
+                currency={entryCurrency}
+                autoFocus={mode === 'edit' || Boolean(person)}
+                defaultValue={
+                  transaction
+                    ? minorToInput(
+                        transaction.entered_amount_minor ?? transaction.amount_minor,
+                        transaction.entered_currency ?? accountCurrency,
+                      )
+                    : ''
+                }
+                error={fieldError('amount')}
+                onValidChange={setAmountMinor}
+              />
+              <CurrencySelect
+                name="entry_currency_visible"
+                label="Entered in"
+                value={entryCurrency}
+                onChange={setEntryCurrency}
+                hint={entryCurrency === accountCurrency ? 'Account currency' : undefined}
+                className="sm:w-56"
+              />
+            </div>
 
-        <ConversionPanel
-          amountMinor={amountMinor}
-          from={entryCurrency}
-          to={accountCurrency}
-          state={rate}
-          defaultMode={transaction?.conversion_mode === 'manual' ? 'manual' : 'automatic'}
-          defaultConvertedMinor={
-            transaction?.conversion_mode === 'manual' ? transaction.amount_minor : null
-          }
-        />
-        <ConversionFields
-          entryCurrency={entryCurrency}
-          accountCurrency={accountCurrency}
-          state={rate}
-        />
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Date" htmlFor="date" error={fieldError('date')}>
-            <Input
-              id="date"
-              name="date"
-              type="date"
-              max={todayIso()}
-              defaultValue={transaction?.transaction_date ?? todayIso()}
-              required
+            <ConversionPanel
+              amountMinor={amountMinor}
+              from={entryCurrency}
+              to={accountCurrency}
+              state={rate}
+              defaultMode={transaction?.conversion_mode === 'manual' ? 'manual' : 'automatic'}
+              defaultConvertedMinor={
+                transaction?.conversion_mode === 'manual' ? transaction.amount_minor : null
+              }
             />
-          </Field>
-          <Field label="Note" htmlFor="description" hint="Optional">
-            <Input
-              id="description"
-              name="description"
-              defaultValue={transaction?.description ?? ''}
-              placeholder="Invoice #102"
-              maxLength={500}
+            <ConversionFields
+              entryCurrency={entryCurrency}
+              accountCurrency={accountCurrency}
+              state={rate}
             />
-          </Field>
-        </div>
+          </FormSection>
+
+          <FormSection title="Details">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Date" htmlFor="date" error={fieldError('date')}>
+                <Input
+                  id="date"
+                  name="date"
+                  type="date"
+                  max={todayIso()}
+                  defaultValue={transaction?.transaction_date ?? todayIso()}
+                  required
+                />
+              </Field>
+              <Field label="Note" htmlFor="description" hint="Optional">
+                <Input
+                  id="description"
+                  name="description"
+                  defaultValue={transaction?.description ?? ''}
+                  placeholder="Invoice #102"
+                  maxLength={500}
+                />
+              </Field>
+            </div>
+          </FormSection>
+        </FormSections>
 
         <SubmitRow
           disabled={(mode === 'create' && !picked) || rate.unavailable || rate.loading}
@@ -248,8 +268,8 @@ export function TransactionSheet({
  */
 function TypeToggle({ value, onChange }: { value: TxnType; onChange: (next: TxnType) => void }) {
   return (
-    <fieldset className="space-y-1.5">
-      <legend className="mb-1.5 text-[0.8125rem] font-medium text-ink-muted">Type</legend>
+    <fieldset>
+      <legend className="sr-only">Transaction type</legend>
       <div className="grid grid-cols-2 gap-2">
         <TypeOption
           active={value === TYPE_FOR_FLOW.person_to_owner}
