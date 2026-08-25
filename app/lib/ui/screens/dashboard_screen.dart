@@ -755,11 +755,13 @@ class ActivityRow extends StatelessWidget {
             ? AppIcons.receivable
             : AppIcons.payable;
 
-    final meta = [
-      item.label,
-      if (item.note != null) item.note!,
-      if (showDate) friendlyDate(item.entryDate),
-    ].join(' · ');
+    // The row has three levels, not one grey string (upgrade §6): who, then
+    // what kind of entry and when, then the note. Joining all of them with
+    // middots made every row the same weight, so the eye had to read the whole
+    // line to find the one word that distinguished it — and an opening balance
+    // whose stored note is "Opening balance" printed the phrase twice.
+    final note = item.note?.trim();
+    final showNote = note != null && note.isNotEmpty && note != item.label;
 
     return Column(
       children: [
@@ -802,12 +804,48 @@ class ActivityRow extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: 2),
-                          Text(
-                            meta,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
+                          Row(
+                            children: [
+                              // The kind of entry carries its own colour, so
+                              // credit and debit are told apart before the row
+                              // is read. Never colour alone: the word is there.
+                              Flexible(
+                                child: Text(
+                                  item.label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: foreground,
+                                  ),
+                                ),
+                              ),
+                              if (showDate) ...[
+                                Text(
+                                  ' · ',
+                                  style: TextStyle(fontSize: 12.5, color: palette.inkSubtle),
+                                ),
+                                Flexible(
+                                  child: Text(
+                                    friendlyDate(item.entryDate),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
+                          if (showNote) ...[
+                            const SizedBox(height: 1),
+                            Text(
+                              note,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 12, color: palette.inkMuted),
+                            ),
+                          ],
                         ],
                       ),
                     ),
