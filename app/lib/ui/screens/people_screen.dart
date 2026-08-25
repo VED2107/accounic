@@ -111,7 +111,11 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
       onRefresh: () async => ref.invalidate(peopleProvider),
       children: switch (async) {
         AsyncError(:final error) => [
-            ErrorNote.forError(error, onRetry: () => ref.invalidate(peopleProvider)),
+            ErrorNote.forError(
+              error,
+              what: 'your people',
+              onRetry: () => ref.invalidate(peopleProvider),
+            ),
           ],
         AsyncData() when shown.isEmpty => [_emptyState()],
         AsyncData() => [

@@ -126,6 +126,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
             loading: () => const _StatsSkeleton(),
             error: (error, _) => ErrorNote.forError(
               error,
+              what: 'the system summary',
               onRetry: () => ref.invalidate(systemInfoProvider),
             ),
             data: (data) => _SystemStats(info: data),
@@ -176,6 +177,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                     padding: const EdgeInsets.all(AppSpacing.md),
                     child: ErrorNote.forError(
                       error,
+                      what: 'the user list',
                       onRetry: () => ref.invalidate(adminUsersProvider),
                     ),
                   ),

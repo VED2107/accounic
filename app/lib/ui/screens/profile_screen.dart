@@ -190,7 +190,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         title: 'Profile',
         width: ContentWidth.standard,
         children: [
-          ErrorNote.forError(error, onRetry: () => ref.invalidate(meProvider)),
+          ErrorNote.forError(
+            error,
+            what: 'your profile',
+            onRetry: () => ref.invalidate(meProvider),
+          ),
         ],
       ),
       data: (me) {

@@ -56,7 +56,11 @@ class DashboardScreen extends ConsumerWidget {
       children: switch (async) {
         AsyncData(:final value) => _body(context, value, compact),
         AsyncError(:final error) => [
-            ErrorNote.forError(error, onRetry: () => ref.invalidate(dashboardProvider)),
+            ErrorNote.forError(
+              error,
+              what: 'your dashboard',
+              onRetry: () => ref.invalidate(dashboardProvider),
+            ),
           ],
         _ => const [_DashboardSkeleton()],
       },

@@ -52,6 +52,7 @@ class PersonScreen extends ConsumerWidget {
         AsyncError(:final error) => [
             ErrorNote.forError(
               error,
+              what: 'this account',
               onRetry: () => ref.invalidate(personPageProvider(personId)),
             ),
           ],

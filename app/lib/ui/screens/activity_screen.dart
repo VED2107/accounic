@@ -84,6 +84,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
             child: switch (async) {
               AsyncError(:final error) => ErrorNote.forError(
                   error,
+                  what: 'your activity',
                   onRetry: () => ref.invalidate(activityProvider),
                 ),
               AsyncData(:final value) when value.items.isEmpty => Card(

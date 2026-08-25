@@ -170,14 +170,29 @@ function PersonRow({ person, currency }: { person: PersonBalance; currency: stri
           <span className="truncate text-[0.875rem] font-medium text-ink">{person.name}</span>
           {person.is_archived ? <Badge tone="muted">Archived</Badge> : null}
         </span>
-        <span className="block truncate text-[0.75rem] text-ink-faint">
-          {person.phone ? `${person.phone} · ${meta}` : meta}
+        <span className="flex min-w-0 items-center gap-1.5 text-[0.75rem] text-ink-faint">
+          {/* The account's own currency, when it is not the workspace's. A
+              multi-currency ledger where a row does not say what it is
+              denominated in is a ledger you have to click to read (§8). The
+              dashboard's balance rows have said this since the currency work;
+              this list is the same list and now says the same thing. */}
+          {person.currency && person.currency !== currency ? (
+            <span className="shrink-0 rounded border border-line-strong bg-sunken px-1 py-px text-[0.6875rem] font-medium text-ink-muted">
+              {person.currency}
+            </span>
+          ) : null}
+          <span className="truncate">{person.phone ? `${person.phone} · ${meta}` : meta}</span>
         </span>
       </span>
 
-      {/* Each account is shown in its own currency; the workspace total above
-          is the only converted figure on this page (upgrade §9). */}
-      <NetBadge netMinor={person.net_balance} currency={person.currency ?? currency} />
+      {/* The balance in the account's own currency, with the same position in
+          the workspace's underneath when the two differ (upgrade §42). */}
+      <NetBadge
+        netMinor={person.net_balance}
+        currency={person.currency ?? currency}
+        approxMinor={person.net_balance_base}
+        approxCurrency={currency}
+      />
       <ArrowRightIcon className="size-4 shrink-0 text-ink-faint/60 transition-transform duration-[var(--dur)] ease-[var(--ease)] group-hover:translate-x-0.5 group-hover:text-ink-muted" />
     </Link>
   );
