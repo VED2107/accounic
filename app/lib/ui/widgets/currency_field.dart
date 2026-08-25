@@ -223,19 +223,27 @@ class _ConversionPanelState extends ConsumerState<ConversionPanel> {
 
     return rate.when(
       loading: () => _Frame(
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: Text(
-                'Fetching today’s $source → $target rate…',
-                style: TextStyle(fontSize: 12.5, color: palette.inkMuted),
-              ),
+            Text('CONVERTED AMOUNT', style: context.statLabel),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Text(
+                    'Fetching today’s $source → $target rate…',
+                    style: TextStyle(fontSize: 12.5, color: palette.inkMuted),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -248,104 +256,145 @@ class _ConversionPanelState extends ConsumerState<ConversionPanel> {
             ? null
             : convertMinor(widget.amountMinor!, source, target, quote.rateE9);
 
-        return _Frame(
+        return Container(
+          width: double.infinity,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: palette.sunken,
+            borderRadius: AppRadius.cardAll,
+            border: Border.all(color: palette.line),
+          ),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      widget.manual ? 'Actual amount' : 'Converted amount',
-                      style: TextStyle(fontSize: 12.5, color: palette.inkMuted),
-                    ),
-                  ),
-                  if (!widget.manual)
-                    Text(
-                      automatic == null
-                          ? '—'
-                          : formatMinor(automatic, currency: target, withCode: true),
-                      style: context.display(17).copyWith(
-                            fontFeatures: const [FontFeature.tabularFigures()],
-                          ),
-                    ),
-                ],
+              // What was entered. Never hidden and never restated as the
+              // converted figure: it is the only number the user typed.
+              _ConversionRow(
+                label: 'Amount',
+                value: widget.amountMinor == null
+                    ? '—'
+                    : formatMinor(widget.amountMinor!, currency: source),
+                unit: source,
+                muted: true,
+                first: true,
               ),
-              if (widget.manual) ...[
-                const SizedBox(height: AppSpacing.sm),
-                TextField(
-                  controller: _actual,
-                  onChanged: _handle,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  style: context.display(17).copyWith(
-                        fontFeatures: const [FontFeature.tabularFigures()],
+
+              _ConversionRow(
+                label: 'Converted amount',
+                value: automatic == null
+                    ? '—'
+                    : '≈ ${formatMinor(automatic, currency: target)}',
+                unit: target,
+                dimmed: widget.manual,
+                // Provenance sits with the figure it qualifies rather than at
+                // the foot of the panel, so "where did this come from" is
+                // answered on the line the number is read.
+                meta: 'Automatic · ${rateSentence(source, target, quote.rateE9)}',
+                metaTrailing: quote.provenance,
+                metaTrailingAlert: quote.stale,
+              ),
+
+              if (widget.manual)
+                Container(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.md,
+                    AppSpacing.lg,
+                    AppSpacing.md,
+                  ),
+                  decoration: BoxDecoration(
+                    border: Border(top: BorderSide(color: palette.line)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Actual amount',
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                                color: context.colors.onSurface,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            'MANUAL',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.7,
+                              color: context.colors.primary,
+                            ),
+                          ),
+                        ],
                       ),
-                  decoration: InputDecoration(
-                    prefixText: '$target ',
-                    hintText:
-                        automatic == null ? '0' : minorToInput(automatic, currency: target),
-                    errorText: _error,
+                      const SizedBox(height: AppSpacing.sm),
+                      TextField(
+                        controller: _actual,
+                        onChanged: _handle,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        style: context.moneyStyle(MoneySize.row).copyWith(fontSize: 17),
+                        decoration: InputDecoration(
+                          prefixText: '$target ',
+                          hintText: automatic == null
+                              ? '0'
+                              : minorToInput(automatic, currency: target),
+                          errorText: _error,
+                        ),
+                      ),
+                      if (_error == null) ...[
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(
+                          'Recorded instead of the automatic estimate. The $source amount '
+                          'you entered and the rate above are both kept with the entry.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            height: 1.45,
+                            color: palette.inkMuted,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-                const SizedBox(height: AppSpacing.sm - 2),
-                Text(
-                  'Manual override',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: context.colors.primary,
-                  ),
+
+              Container(
+                decoration: BoxDecoration(
+                  border: Border(top: BorderSide(color: palette.line)),
                 ),
-                Text(
-                  'Automatic estimate: '
-                  '${automatic == null ? '—' : formatMinor(automatic, currency: target, withCode: true)}'
-                  ' · ${rateSentence(source, target, quote.rateE9)}',
-                  style: TextStyle(fontSize: 12, height: 1.4, color: palette.inkFaint),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.md,
+                  vertical: AppSpacing.xs,
                 ),
-              ] else ...[
-                const SizedBox(height: AppSpacing.sm - 2),
-                Text(
-                  'Automatic',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: palette.inkMuted,
-                  ),
-                ),
-                Text(
-                  rateSentence(source, target, quote.rateE9),
-                  style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
-                ),
-                Text(
-                  quote.provenance,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: quote.stale ? FontWeight.w600 : FontWeight.w400,
-                    color: quote.stale ? palette.payable : palette.inkFaint,
-                  ),
-                ),
-              ],
-              const SizedBox(height: AppSpacing.sm),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(
-                  onPressed: () {
-                    // Turning the override on pre-fills the automatic figure, so
-                    // the user edits a number rather than facing an empty box —
-                    // the common case is "nearly that, but 43".
-                    if (!widget.manual && _actual.text.trim().isEmpty && automatic != null) {
-                      _actual.text = minorToInput(automatic, currency: target);
-                      _handle(_actual.text);
-                    }
-                    widget.onManualChanged(!widget.manual);
-                  },
-                  style: TextButton.styleFrom(
-                    minimumSize: const Size(0, 40),
-                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-                  ),
-                  child: Text(
-                    widget.manual ? 'Use the automatic conversion' : 'Use actual amount',
-                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton(
+                    onPressed: () {
+                      // Turning the override on pre-fills the automatic figure,
+                      // so the user edits a number rather than facing an empty
+                      // box — the common case is "nearly that, but 43".
+                      if (!widget.manual && _actual.text.trim().isEmpty && automatic != null) {
+                        _actual.text = minorToInput(automatic, currency: target);
+                        _handle(_actual.text);
+                      }
+                      widget.onManualChanged(!widget.manual);
+                    },
+                    style: TextButton.styleFrom(
+                      // 44dp: this sits inside a form on a phone.
+                      minimumSize: const Size(0, 44),
+                      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+                    ),
+                    child: Text(
+                      widget.manual
+                          ? 'Use the automatic conversion'
+                          : 'Enter what actually changed hands',
+                      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                    ),
                   ),
                 ),
               ),
@@ -353,6 +402,117 @@ class _ConversionPanelState extends ConsumerState<ConversionPanel> {
           ),
         );
       },
+    );
+  }
+}
+
+/// One line of the conversion panel: what it is, what it is worth, and — under
+/// that — where the figure came from.
+///
+/// The label is on the left and the figure right-aligned, so the rows form a
+/// column of amounts that lines up rather than two sentences to be read in
+/// full. The web client's `ConversionRow` is the same shape.
+class _ConversionRow extends StatelessWidget {
+  const _ConversionRow({
+    required this.label,
+    required this.value,
+    required this.unit,
+    this.meta,
+    this.metaTrailing,
+    this.metaTrailingAlert = false,
+    this.muted = false,
+    this.dimmed = false,
+    this.first = false,
+  });
+
+  final String label;
+  final String value;
+  final String unit;
+  final String? meta;
+
+  /// Where the rate came from — live, cached, or cached and stale.
+  final String? metaTrailing;
+  final bool metaTrailingAlert;
+
+  /// The entered amount: present for reference, not the figure being decided.
+  final bool muted;
+
+  /// Superseded by a manual override — still shown, one step back.
+  final bool dimmed;
+  final bool first;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.money;
+
+    return Opacity(
+      opacity: dimmed ? 0.7 : 1,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg,
+          vertical: AppSpacing.md,
+        ),
+        decoration: first
+            ? null
+            : BoxDecoration(border: Border(top: BorderSide(color: palette.line))),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: palette.inkMuted,
+                    ),
+                  ),
+                ),
+                Flexible(
+                  child: Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: context.moneyStyle(
+                      MoneySize.row,
+                      color: muted ? palette.inkMuted : context.colors.onSurface,
+                    ).copyWith(fontSize: 17),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs + 1),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 1),
+                  child: Text(
+                    unit,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: palette.inkFaint,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (meta != null) ...[
+              const SizedBox(height: AppSpacing.xs + 1),
+              Text(
+                metaTrailing == null ? meta! : '$meta · $metaTrailing',
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.45,
+                  fontWeight: metaTrailingAlert ? FontWeight.w600 : FontWeight.w400,
+                  color: metaTrailingAlert ? palette.payable : palette.inkFaint,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
@@ -400,11 +560,25 @@ class _Unavailable extends StatelessWidget {
         borderRadius: AppRadius.fieldAll,
         border: Border.all(color: palette.payableLine),
       ),
-      child: Text(
-        'No $from → $to rate is available, and none is cached on this account. '
-        'Enter the amount in $to instead — nothing is lost, and the $from figure '
-        'can go in the note.',
-        style: TextStyle(fontSize: 12.5, height: 1.45, color: palette.payable),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Couldn’t get a $from → $to rate',
+            style: TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w600,
+              color: palette.payable,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'None is cached on this account either. Nothing you have entered is lost — '
+            'enter the amount in $to instead, and put the $from figure in the note.',
+            style: TextStyle(fontSize: 12.5, height: 1.45, color: palette.inkMuted),
+          ),
+        ],
       ),
     );
   }
@@ -459,7 +633,7 @@ class ConvertedFrom extends StatelessWidget {
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: TextStyle(
-        fontSize: 11.5,
+        fontSize: 12,
         color: conversionMode == 'manual'
             ? context.colors.primary
             : context.money.inkFaint,

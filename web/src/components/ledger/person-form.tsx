@@ -3,7 +3,16 @@
 import { useActionState, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Modal } from '@/components/ui/modal';
-import { ErrorNote, Field, Input, Textarea, cn } from '@/components/ui/primitives';
+import {
+  ErrorNote,
+  Field,
+  FormNote,
+  FormSection,
+  FormSections,
+  Input,
+  Textarea,
+  cn,
+} from '@/components/ui/primitives';
 import { SubmitRow } from '@/components/ledger/transaction-sheet';
 import { CurrencySelect } from '@/components/ledger/currency-select';
 import {
@@ -132,205 +141,226 @@ export function PersonForm({
       <form action={formAction} className="space-y-5" noValidate>
         {state && !state.ok && !state.field ? <ErrorNote>{state.error}</ErrorNote> : null}
 
-        <Field label="Name" htmlFor="name" error={fieldError('name')}>
-          <Input
-            id="name"
-            name="name"
-            data-autofocus="true"
-            defaultValue={person?.name ?? ''}
-            placeholder="Rahul Traders"
-            maxLength={120}
-            required
-          />
-        </Field>
+        <FormSections>
+          <FormSection title="Identity">
+            <Field label="Name" htmlFor="name" error={fieldError('name')}>
+              <Input
+                id="name"
+                name="name"
+                data-autofocus="true"
+                defaultValue={person?.name ?? ''}
+                placeholder="Rahul Traders"
+                maxLength={120}
+                required
+              />
+            </Field>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <fieldset className="space-y-1.5">
-            <legend className="text-sm font-medium text-ink">Type</legend>
-            <div className="grid grid-cols-2 gap-2">
-              {(['person', 'business'] as const).map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => setType(option)}
-                  aria-pressed={type === option}
-                  className={cn(
-                    'rounded-lg border px-3.5 py-2.5 text-sm font-medium capitalize transition',
-                    type === option
-                      ? 'border-accent bg-accent-soft text-accent'
-                      : 'border-line-strong bg-surface text-ink-muted hover:bg-sunken hover:text-ink',
-                  )}
-                >
-                  {option}
-                </button>
-              ))}
-            </div>
-            <input type="hidden" name="type" value={type} />
-          </fieldset>
-
-          <CurrencySelect
-            name="currency"
-            value={currency}
-            onChange={(next) => {
-              setCurrency(next);
-              // The opening balance follows the account currency until the user
-              // says otherwise, which is what they mean nine times in ten.
-              if (direction === 'none' || openingAmount === null) setOpeningCurrency(next);
-            }}
-            hint={currency === baseCurrency ? 'Same as your workspace' : undefined}
-            error={fieldError('currency')}
-          />
-        </div>
-
-        {currencyChanged ? (
-          <div className="rounded-lg border border-line bg-sunken px-3.5 py-3 text-[0.8125rem] text-ink-muted">
-            <p className="font-medium text-ink">
-              Changing this person’s currency affects future transactions only.
-            </p>
-            <p className="mt-1">
-              Existing transactions will remain unchanged. This account’s history stays
-              recorded in {ledgerCurrency}, exactly as it was entered, and its balance is
-              still reported in {ledgerCurrency}. New entries will default to {currency}.
-            </p>
-
-            {needsCurrencyConfirmation ? (
-              <label className="mt-3 flex items-start gap-2 text-ink">
-                <input
-                  type="checkbox"
-                  name="currency_change_confirmed"
-                  value="on"
-                  defaultChecked
-                  className="mt-0.5 size-4 rounded border-line-strong"
-                />
-                <span>
-                  Yes, use {currency} for new transactions with {person?.name ?? 'this person'}.
-                </span>
-              </label>
-            ) : null}
-          </div>
-        ) : null}
-
-        {!isEdit ? (
-          <fieldset className="space-y-3 rounded-card border border-line bg-sunken/60 p-4">
-            <legend className="px-1 text-sm font-medium text-ink">Existing balance</legend>
-            <p className="text-[0.8125rem] text-ink-muted">
-              Already have an amount to settle with this person? Start from it rather than
-              recording a transaction that never happened.
-            </p>
-
-            <div className="grid gap-2 sm:grid-cols-3">
-              {(
-                [
-                  ['none', 'No opening balance'],
-                  ['i_owe_them', 'I owe them'],
-                  ['they_owe_me', 'They owe me'],
-                ] as const
-              ).map(([option, label]) => (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => setDirection(option)}
-                  aria-pressed={direction === option}
-                  className={cn(
-                    'rounded-lg border px-3 py-2.5 text-[0.8125rem] font-medium transition',
-                    direction === option
-                      ? option === 'i_owe_them'
-                        ? 'border-payable bg-payable-soft text-payable'
-                        : option === 'they_owe_me'
-                          ? 'border-receivable bg-receivable-soft text-receivable'
-                          : 'border-accent bg-accent-soft text-accent'
-                      : 'border-line-strong bg-surface text-ink-muted hover:bg-sunken hover:text-ink',
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <input type="hidden" name="opening_direction" value={direction} />
-
-            {direction !== 'none' ? (
-              <div className="space-y-3">
-                <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
-                  <AmountInput
-                    name="opening_amount"
-                    label="Opening amount"
-                    currency={openingCurrency}
-                    error={fieldError('opening_amount')}
-                    onValidChange={setOpeningAmount}
-                  />
-                  <CurrencySelect
-                    name="opening_currency"
-                    label="In"
-                    value={openingCurrency}
-                    onChange={setOpeningCurrency}
-                    className="sm:w-56"
-                  />
-                </div>
-
-                <ConversionPanel
-                  amountMinor={openingAmount}
-                  from={openingCurrency}
-                  to={currency}
-                  state={openingRate}
-                  prefix="opening_"
-                />
-                <ConversionFields
-                  entryCurrency={openingCurrency}
-                  accountCurrency={currency}
-                  state={openingRate}
-                  prefix="opening_"
-                />
-
-                <p className="text-[0.75rem] text-ink-faint">
-                  Recorded as an opening balance dated to when this account starts, not as a
-                  transaction today.
-                </p>
+            <fieldset>
+              <legend className="mb-1.5 block text-[0.8125rem] font-medium text-ink-muted">
+                Type
+              </legend>
+              <div className="grid grid-cols-2 gap-2">
+                {(['person', 'business'] as const).map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => setType(option)}
+                    aria-pressed={type === option}
+                    className={cn(
+                      'h-11 rounded-field border px-3.5 text-sm font-medium capitalize',
+                      'transition-[background-color,border-color,color] duration-[var(--dur)] ease-[var(--ease)]',
+                      type === option
+                        ? 'border-accent bg-accent-soft text-accent'
+                        : 'border-line-strong bg-surface text-ink-muted hover:bg-sunken hover:text-ink',
+                    )}
+                  >
+                    {option}
+                  </button>
+                ))}
               </div>
+              <input type="hidden" name="type" value={type} />
+            </fieldset>
+          </FormSection>
+
+          <FormSection
+            title="Currency"
+            description={
+              isEdit
+                ? `This account’s history is denominated in ${ledgerCurrency}. Changing the currency below only changes what new entries default to.`
+                : 'What this account is kept in. Entries can still be made in another currency.'
+            }
+          >
+            <CurrencySelect
+              name="currency"
+              label="Account currency"
+              value={currency}
+              onChange={(next) => {
+                setCurrency(next);
+                // The opening balance follows the account currency until the user
+                // says otherwise, which is what they mean nine times in ten.
+                if (direction === 'none' || openingAmount === null) setOpeningCurrency(next);
+              }}
+              hint={currency === baseCurrency ? 'Same as your workspace' : undefined}
+              error={fieldError('currency')}
+            />
+
+            {currencyChanged ? (
+              <FormNote
+                tone="accent"
+                title="Changing this person’s currency affects future transactions only."
+              >
+                <p className="mt-1">
+                  Existing transactions will remain unchanged. This account’s history stays
+                  recorded in {ledgerCurrency}, exactly as it was entered, and its balance is
+                  still reported in {ledgerCurrency}. New entries will default to {currency}.
+                </p>
+
+                {needsCurrencyConfirmation ? (
+                  <label className="mt-3 flex items-start gap-2.5 text-ink">
+                    <input
+                      type="checkbox"
+                      name="currency_change_confirmed"
+                      value="on"
+                      defaultChecked
+                      className="mt-0.5 size-4 rounded border-line-strong accent-[var(--accent-solid)]"
+                    />
+                    <span>
+                      Yes, use {currency} for new transactions with{' '}
+                      {person?.name ?? 'this person'}.
+                    </span>
+                  </label>
+                ) : null}
+              </FormNote>
             ) : null}
-          </fieldset>
-        ) : null}
+          </FormSection>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Phone" htmlFor="phone" hint="Optional" error={fieldError('phone')}>
-            <Input
-              id="phone"
-              name="phone"
-              type="tel"
-              inputMode="tel"
-              defaultValue={person?.phone ?? ''}
-              placeholder="+91 98200 11223"
-              maxLength={32}
-            />
-          </Field>
-          <Field label="Email" htmlFor="email" hint="Optional" error={fieldError('email')}>
-            <Input
-              id="email"
-              name="email"
-              type="email"
-              defaultValue={person?.email ?? ''}
-              placeholder="accounts@example.com"
-            />
-          </Field>
-        </div>
+          {!isEdit ? (
+            <FormSection
+              title="Opening balance"
+              description="Already have an amount to settle with this person? Start from it rather than recording a transaction that never happened."
+            >
+              <fieldset>
+                <legend className="sr-only">Opening balance direction</legend>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {(
+                    [
+                      ['none', 'No opening balance'],
+                      ['i_owe_them', 'I owe them'],
+                      ['they_owe_me', 'They owe me'],
+                    ] as const
+                  ).map(([option, label]) => (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => setDirection(option)}
+                      aria-pressed={direction === option}
+                      className={cn(
+                        'min-h-11 rounded-field border px-3 py-2.5 text-[0.8125rem] font-medium',
+                        'transition-[background-color,border-color,color] duration-[var(--dur)] ease-[var(--ease)]',
+                        direction === option
+                          ? option === 'i_owe_them'
+                            ? 'border-payable bg-payable-soft text-payable'
+                            : option === 'they_owe_me'
+                              ? 'border-receivable bg-receivable-soft text-receivable'
+                              : 'border-accent bg-accent-soft text-accent'
+                          : 'border-line-strong bg-surface text-ink-muted hover:bg-sunken hover:text-ink',
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <input type="hidden" name="opening_direction" value={direction} />
+              </fieldset>
 
-        <Field label="Address" htmlFor="address" hint="Optional" error={fieldError('address')}>
-          <Input
-            id="address"
-            name="address"
-            defaultValue={person?.address ?? ''}
-            maxLength={500}
-          />
-        </Field>
+              {direction !== 'none' ? (
+                <div className="space-y-4">
+                  <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
+                    <AmountInput
+                      name="opening_amount"
+                      label="Opening amount"
+                      currency={openingCurrency}
+                      error={fieldError('opening_amount')}
+                      onValidChange={setOpeningAmount}
+                    />
+                    <CurrencySelect
+                      name="opening_currency"
+                      label="Stated in"
+                      value={openingCurrency}
+                      onChange={setOpeningCurrency}
+                      className="sm:w-56"
+                    />
+                  </div>
 
-        <Field label="Notes" htmlFor="notes" hint="Optional" error={fieldError('notes')}>
-          <Textarea
-            id="notes"
-            name="notes"
-            defaultValue={person?.notes ?? ''}
-            maxLength={2000}
-            placeholder="Payment terms, reference numbers, anything worth remembering."
-          />
-        </Field>
+                  <ConversionPanel
+                    amountMinor={openingAmount}
+                    from={openingCurrency}
+                    to={currency}
+                    state={openingRate}
+                    prefix="opening_"
+                  />
+                  <ConversionFields
+                    entryCurrency={openingCurrency}
+                    accountCurrency={currency}
+                    state={openingRate}
+                    prefix="opening_"
+                  />
+
+                  <p className="text-[0.8125rem] text-ink-faint">
+                    Recorded as an opening balance dated to when this account starts, not as a
+                    transaction today.
+                  </p>
+                </div>
+              ) : null}
+            </FormSection>
+          ) : null}
+
+          <FormSection title="Contact" aside="Optional">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Phone" htmlFor="phone" error={fieldError('phone')}>
+                <Input
+                  id="phone"
+                  name="phone"
+                  type="tel"
+                  inputMode="tel"
+                  defaultValue={person?.phone ?? ''}
+                  placeholder="+91 98200 11223"
+                  maxLength={32}
+                />
+              </Field>
+              <Field label="Email" htmlFor="email" error={fieldError('email')}>
+                <Input
+                  id="email"
+                  name="email"
+                  type="email"
+                  defaultValue={person?.email ?? ''}
+                  placeholder="accounts@example.com"
+                />
+              </Field>
+            </div>
+          </FormSection>
+
+          <FormSection title="Address &amp; notes" aside="Optional">
+            <Field label="Address" htmlFor="address" error={fieldError('address')}>
+              <Input
+                id="address"
+                name="address"
+                defaultValue={person?.address ?? ''}
+                maxLength={500}
+              />
+            </Field>
+
+            <Field label="Notes" htmlFor="notes" error={fieldError('notes')}>
+              <Textarea
+                id="notes"
+                name="notes"
+                defaultValue={person?.notes ?? ''}
+                maxLength={2000}
+                placeholder="Payment terms, reference numbers, anything worth remembering."
+              />
+            </Field>
+          </FormSection>
+        </FormSections>
 
         <SubmitRow
           label={

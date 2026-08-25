@@ -373,7 +373,7 @@ class _PrimaryButton extends StatelessWidget {
             boxShadow: [
               if (hovered && enabled)
                 BoxShadow(
-                  color: (color ?? const Color(0xFF1D4ED8)).withValues(alpha: 0.34),
+                  color: (color ?? AccounicColors.actionGlow).withValues(alpha: 0.34),
                   blurRadius: 16,
                   offset: const Offset(0, 4),
                 ),

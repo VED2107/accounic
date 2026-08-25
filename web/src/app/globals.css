@@ -399,6 +399,13 @@
     font-family: var(--font-display);
     font-variant-numeric: tabular-nums;
     font-feature-settings: 'tnum' 1, 'lnum' 1;
+    /* A financial figure is never ellipsised.
+
+       Several of these were `truncate`d, which on a narrow card renders
+       Rs 1,23,45,678.90 as "Rs 1,23,45,6…" — a string that reads as a complete
+       amount and is not one. Wrapping to a second line is uglier and honest,
+       and with the clamped sizes above it almost never happens. */
+    overflow-wrap: anywhere;
   }
 
   .money-hero {
@@ -427,6 +434,20 @@
     font-weight: 500;
     line-height: 1.25;
     letter-spacing: -0.008em;
+  }
+
+  /* The one h1 a screen gets.
+
+     Four screens had four different answers to "how big is a page title" —
+     1.6/1.8 on the dashboard, 1.6/1.75 in PageHeader, 1.5/1.75 on a person,
+     1.5 flat on login — which is how a set of screens stops reading as one
+     product. One rule, one clamp, no per-screen breakpoint to forget. */
+  .page-title {
+    font-family: var(--font-display);
+    font-size: clamp(1.5rem, 1.35rem + 0.7vw, 1.75rem);
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.022em;
   }
 
   /* A label above a figure: small, wide-tracked, upper-case. It says what the
@@ -519,6 +540,30 @@
     background-size: 200% 100%;
     animation: shimmer 1.4s linear infinite;
     border-radius: 0.5rem;
+  }
+
+  /* A genuine tap target.
+
+     The segmented filters, the quick-share chips and the conversion toggle are
+     all about 32px tall, which is comfortable under a mouse and under the
+     platform minimum under a thumb — and People and Activity are filtered far
+     more often on a phone than on a desktop. This keeps them compact for a
+     pointer and grows them for a finger, rather than picking one and making the
+     other worse.
+
+     The Flutter client already sizes its equivalents at 44–48dp by hand
+     (SheetScaffold, the currency toggle, the confirm checkbox); this is the web
+     half of the same rule. */
+  .tap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  @media (pointer: coarse) {
+    .tap {
+      min-height: 2.75rem;
+    }
   }
 
   .no-scrollbar::-webkit-scrollbar {

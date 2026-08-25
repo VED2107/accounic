@@ -383,7 +383,7 @@ class SaveButton extends StatelessWidget {
             boxShadow: [
               if (hovered && !saved && !busy)
                 BoxShadow(
-                  color: const Color(0xFF1D4ED8).withValues(alpha: 0.34),
+                  color: AccounicColors.actionGlow.withValues(alpha: 0.34),
                   blurRadius: 16,
                   offset: const Offset(0, 4),
                 ),
@@ -623,6 +623,145 @@ class SettingsForm extends StatelessWidget {
     return Padding(
       padding: context.cardPadding,
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
+    );
+  }
+}
+
+/// A group of related fields under one heading (upgrade §1).
+///
+/// A sheet of nine controls where every control looks alike is nine decisions
+/// presented at once. Grouped — identity, currency, opening balance, contact —
+/// it is four, and each can be read and dismissed before the next.
+///
+/// The heading is a hairline label rather than a card. Boxing every group would
+/// put six borders on one form and make a sheet read as a settings page; the
+/// rule above each group separates them with a single pixel instead. This is
+/// the Flutter half of the web's `FormSection`, and the two are deliberately
+/// the same shape.
+class FormSection extends StatelessWidget {
+  const FormSection({
+    super.key,
+    required this.title,
+    required this.children,
+    this.description,
+    this.aside,
+    this.first = false,
+  });
+
+  final String title;
+  final String? description;
+
+  /// A short right-aligned note beside the heading — "Optional", a currency
+  /// code, a count.
+  final String? aside;
+  final List<Widget> children;
+
+  /// The first section in a form drops its rule: there is nothing above it to
+  /// be separated from.
+  final bool first;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.money;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (!first) ...[
+          const SizedBox(height: AppSpacing.lg),
+          Divider(height: 1, thickness: 1, color: palette.line),
+          const SizedBox(height: AppSpacing.lg),
+        ],
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title.toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.7,
+                      color: palette.inkFaint,
+                    ),
+                  ),
+                  if (description != null) ...[
+                    const SizedBox(height: AppSpacing.xs + 1),
+                    Text(
+                      description!,
+                      style: TextStyle(fontSize: 12.5, height: 1.5, color: palette.inkMuted),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (aside != null)
+              Padding(
+                padding: const EdgeInsets.only(left: AppSpacing.md),
+                child: Text(
+                  aside!,
+                  style: TextStyle(fontSize: 12, color: palette.inkFaint),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        ...children,
+      ],
+    );
+  }
+}
+
+/// A quiet explanatory block inside a form — what a choice will do, what a
+/// refusal means. Not an error and not a card: one tone below the field it
+/// qualifies.
+class FormNote extends StatelessWidget {
+  const FormNote({
+    super.key,
+    required this.child,
+    this.title,
+    this.accent = false,
+  });
+
+  final String? title;
+  final Widget child;
+  final bool accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.money;
+
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md + 2),
+      decoration: BoxDecoration(
+        color: accent ? palette.accentSoft : palette.sunken,
+        borderRadius: AppRadius.fieldAll,
+        border: Border.all(color: accent ? palette.accentLine : palette.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (title != null) ...[
+            Text(
+              title!,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                height: 1.45,
+                color: context.colors.onSurface,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+          ],
+          child,
+        ],
+      ),
     );
   }
 }

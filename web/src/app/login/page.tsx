@@ -37,7 +37,7 @@ export default async function LoginPage({
       <div className="reveal relative w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center text-center">
           <AccounicMark id="login" className="size-14" />
-          <h1 className="mt-5 font-display text-[1.5rem] font-semibold tracking-tight">
+          <h1 className="page-title mt-5">
             Accoun<span className="brand-text">ic</span>
           </h1>
           <p className="mt-2 text-[0.8125rem] text-ink-muted">

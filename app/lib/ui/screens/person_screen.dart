@@ -52,6 +52,7 @@ class PersonScreen extends ConsumerWidget {
         AsyncError(:final error) => [
             ErrorNote.forError(
               error,
+              what: 'this account',
               onRetry: () => ref.invalidate(personPageProvider(personId)),
             ),
           ],
@@ -274,7 +275,7 @@ class _PositionCard extends StatelessWidget {
                     Text(
                       'CURRENT POSITION',
                       style: TextStyle(
-                        fontSize: 10.5,
+                        fontSize: 11,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 0.7,
                         color: palette.inkFaint,
@@ -478,7 +479,7 @@ class _Action extends StatelessWidget {
             boxShadow: [
               if (hovered && filled)
                 BoxShadow(
-                  color: const Color(0xFF1D4ED8).withValues(alpha: 0.34),
+                  color: AccounicColors.actionGlow.withValues(alpha: 0.34),
                   blurRadius: 16,
                   offset: const Offset(0, 4),
                 ),
@@ -551,7 +552,7 @@ class PersonMenu extends ConsumerWidget {
                     Text(
                       note,
                       style: TextStyle(
-                        fontSize: 11.5,
+                        fontSize: 12,
                         height: 1.35,
                         color: palette.inkFaint,
                       ),
@@ -612,6 +613,42 @@ class PersonMenu extends ConsumerWidget {
               if (context.mounted) showMessage(context, failure.message, error: true);
             }
 
+          // The way back from an account entered wrong. A void, never a
+          // delete: the rows stay, marked voided, which is exactly what makes
+          // it safe enough to offer from a menu.
+          case 'void-history':
+            final ok = await confirm(
+              context,
+              icon: AppIcons.warning,
+              title: 'Retract everything for ${person.name}?',
+              confirmLabel: 'Retract all history',
+              body: 'Every transaction and settlement on this account is marked '
+                  'voided. The balance goes to zero and the entries disappear '
+                  'from your dashboard and activity feed.\n\n'
+                  'Nothing is deleted — they stay on this person’s own timeline, '
+                  'marked voided, with their amounts and dates exactly as they '
+                  'were. Undoing it means restoring entries one at a time.',
+            );
+            if (!ok) return;
+            try {
+              final counts = await repository.voidPersonHistory(
+                person.id,
+                reason: 'Retracted from the person screen',
+              );
+              ref.refreshLedger(personId: person.id);
+              if (context.mounted) {
+                final entries = counts.transactions + counts.settlements;
+                showMessage(
+                  context,
+                  entries == 0
+                      ? 'There was nothing left to retract.'
+                      : '$entries ${entries == 1 ? 'entry' : 'entries'} retracted.',
+                );
+              }
+            } on Failure catch (failure) {
+              if (context.mounted) showMessage(context, failure.message, error: true);
+            }
+
           case 'delete':
             final ok = await confirm(
               context,
@@ -637,6 +674,16 @@ class PersonMenu extends ConsumerWidget {
           value: person.isArchived ? 'restore' : 'archive',
           child: item(AppIcons.archive, person.isArchived ? 'Restore' : 'Archive'),
         ),
+        if (!deletable)
+          PopupMenuItem(
+            value: 'void-history',
+            child: item(
+              AppIcons.warning,
+              'Retract all history',
+              tone: palette.payable,
+              note: 'Voids every entry — nothing is deleted',
+            ),
+          ),
         PopupMenuItem(
           value: 'delete',
           enabled: deletable,
@@ -1087,7 +1134,7 @@ class _Figures extends StatelessWidget {
                         label,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 11.5, color: palette.inkMuted),
+                        style: TextStyle(fontSize: 12, color: palette.inkMuted),
                       ),
                     ),
                   ],

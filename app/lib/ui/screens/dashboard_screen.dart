@@ -12,6 +12,8 @@ import '../../providers.dart';
 import '../motion.dart';
 import '../widgets/app_page.dart';
 import '../widgets/brand.dart';
+import '../sheets/transaction_sheet.dart';
+import '../widgets/activity_chart.dart';
 import '../widgets/common.dart';
 import '../widgets/sparkline.dart';
 import 'search_sheet.dart';
@@ -55,7 +57,11 @@ class DashboardScreen extends ConsumerWidget {
       children: switch (async) {
         AsyncData(:final value) => _body(context, value, compact),
         AsyncError(:final error) => [
-            ErrorNote.forError(error, onRetry: () => ref.invalidate(dashboardProvider)),
+            ErrorNote.forError(
+              error,
+              what: 'your dashboard',
+              onRetry: () => ref.invalidate(dashboardProvider),
+            ),
           ],
         _ => const [_DashboardSkeleton()],
       },
@@ -118,6 +124,14 @@ class DashboardScreen extends ConsumerWidget {
 
       const SizedBox(height: AppSpacing.xxl),
 
+      // The month in flows (upgrade §8). Below the position, above the lists:
+      // it answers "what has been happening", which comes after "where do I
+      // stand" and before "with whom".
+      Reveal(
+        delay: const Duration(milliseconds: 100),
+        child: _ActivityChartCard(currency: currency),
+      ),
+
       Reveal(
         delay: const Duration(milliseconds: 120),
         child: SectionCard(
@@ -164,10 +178,21 @@ class DashboardScreen extends ConsumerWidget {
                   child: const Text('View all'),
                 ),
           child: data.recentActivity.isEmpty
-              ? const EmptyState(
+              ? EmptyState(
                   icon: AppIcons.quiet,
                   title: 'Your ledger is quiet',
                   description: 'Record a transaction and it will appear here straight away.',
+                  // An empty state that explains but does not help leaves the
+                  // user to go and find the fix themselves (upgrade §11).
+                  // A Consumer rather than threading a ref through _body: the
+                  // sheet is the only thing on this branch that needs one.
+                  action: Consumer(
+                    builder: (context, ref, _) => FilledButton.icon(
+                      onPressed: () => showTransactionSheet(context, ref),
+                      icon: const Icon(AppIcons.add, size: AppIconSize.sm),
+                      label: const Text('Add transaction'),
+                    ),
+                  ),
                 )
               : Builder(
                   builder: (context) {
@@ -434,6 +459,32 @@ class _Side extends StatelessWidget {
   }
 }
 
+/// Thirty days of daily flow, tappable for one day at a time.
+///
+/// Renders nothing at all until there are at least two days of history: an
+/// empty chart is worse than no chart, because it looks like a chart that
+/// failed rather than a ledger that is new.
+class _ActivityChartCard extends ConsumerWidget {
+  const _ActivityChartCard({required this.currency});
+
+  final String currency;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final buckets = ref.watch(activitySummaryProvider).valueOrNull;
+    if (buckets == null || buckets.length < 2) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.xxl),
+      child: SectionCard(
+        title: 'Last 30 days',
+        padding: context.cardPadding,
+        child: ActivityChart(buckets: buckets, currency: currency),
+      ),
+    );
+  }
+}
+
 /// Where the position has been going, built from the same daily buckets the
 /// activity screen totals. Cumulative, because a chart of daily movement says
 /// nothing about where the ledger stands.
@@ -464,7 +515,7 @@ class _NetTrend extends ConsumerWidget {
         Text(
           'LAST 30 DAYS',
           style: TextStyle(
-            fontSize: 9.5,
+            fontSize: 11,
             fontWeight: FontWeight.w700,
             letterSpacing: 0.7,
             color: context.money.inkFaint,
@@ -512,7 +563,7 @@ class _TodayStrip extends StatelessWidget {
               Text(
                 'TODAY',
                 style: TextStyle(
-                  fontSize: 10.5,
+                  fontSize: 11,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.7,
                   color: palette.inkFaint,
@@ -716,11 +767,13 @@ class ActivityRow extends StatelessWidget {
             ? AppIcons.receivable
             : AppIcons.payable;
 
-    final meta = [
-      item.label,
-      if (item.note != null) item.note!,
-      if (showDate) friendlyDate(item.entryDate),
-    ].join(' · ');
+    // The row has three levels, not one grey string (upgrade §6): who, then
+    // what kind of entry and when, then the note. Joining all of them with
+    // middots made every row the same weight, so the eye had to read the whole
+    // line to find the one word that distinguished it — and an opening balance
+    // whose stored note is "Opening balance" printed the phrase twice.
+    final note = item.note?.trim();
+    final showNote = note != null && note.isNotEmpty && note != item.label;
 
     return Column(
       children: [
@@ -763,12 +816,48 @@ class ActivityRow extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: 2),
-                          Text(
-                            meta,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
+                          Row(
+                            children: [
+                              // The kind of entry carries its own colour, so
+                              // credit and debit are told apart before the row
+                              // is read. Never colour alone: the word is there.
+                              Flexible(
+                                child: Text(
+                                  item.label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: foreground,
+                                  ),
+                                ),
+                              ),
+                              if (showDate) ...[
+                                Text(
+                                  ' · ',
+                                  style: TextStyle(fontSize: 12.5, color: palette.inkSubtle),
+                                ),
+                                Flexible(
+                                  child: Text(
+                                    friendlyDate(item.entryDate),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
+                          if (showNote) ...[
+                            const SizedBox(height: 1),
+                            Text(
+                              note,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 12, color: palette.inkMuted),
+                            ),
+                          ],
                         ],
                       ),
                     ),

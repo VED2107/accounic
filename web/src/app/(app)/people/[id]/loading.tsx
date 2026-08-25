@@ -41,7 +41,7 @@ export default function PersonLoading() {
           <ul className="divide-y divide-line">
             {[0, 1, 2, 3].map((row) => (
               <li key={row} className="flex items-center gap-3 px-4 py-3 sm:px-5">
-                <Skeleton className="size-9 rounded-[0.625rem]" />
+                <Skeleton className="size-9 rounded-field" />
                 <div className="flex-1 space-y-1.5">
                   <Skeleton className="h-4 w-32" />
                   <Skeleton className="h-3 w-44" />

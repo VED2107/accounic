@@ -37,6 +37,12 @@ export function ActivityRow({
 
   const when = showDate ? friendlyDate(item.entry_date) : null;
 
+  // An opening balance is stored with "Opening balance" as its note, so the
+  // row printed the phrase twice — once as the kind and once as the note. A
+  // note that only repeats the label is not a note.
+  const note = item.note?.trim();
+  const showNote = Boolean(note) && note !== kind;
+
   return (
     <Link
       href={`/people/${item.person_id}`}
@@ -47,7 +53,7 @@ export function ActivityRow({
     >
       <span
         className={cn(
-          'grid size-9 shrink-0 place-items-center rounded-[0.625rem] border',
+          'grid size-9 shrink-0 place-items-center rounded-field border',
           isSettlement
             ? 'border-line bg-sunken text-ink-muted'
             : receivable
@@ -91,10 +97,10 @@ export function ActivityRow({
               <span className="shrink-0 text-ink-faint">{when}</span>
             </>
           ) : null}
-          {item.note ? (
+          {showNote ? (
             <>
               <span className="text-ink-subtle">·</span>
-              <span className="truncate text-ink-faint">{item.note}</span>
+              <span className="truncate text-ink-faint">{note}</span>
             </>
           ) : null}
         </span>

@@ -241,6 +241,33 @@ class LedgerRepository {
     }
   }
 
+  /// Retracts a person's whole history in one call (db/migrations/0014).
+  ///
+  /// A void, not a delete. Every row keeps its amount, date and rate; the
+  /// balance goes to zero and the entries leave the activity feed, while the
+  /// person's own timeline keeps showing them marked voided.
+  ///
+  /// Returns how many rows were retracted, so the caller can say what it did
+  /// rather than guess.
+  Future<({int transactions, int settlements})> voidPersonHistory(
+    String personId, {
+    String? reason,
+  }) async {
+    try {
+      final result = await _client.rpc('void_person_history', params: {
+        'p_person_id': personId,
+        'p_reason': (reason?.trim().isEmpty ?? true) ? null : reason!.trim(),
+      });
+      final map = (result as Map).cast<String, dynamic>();
+      return (
+        transactions: (map['transactions_voided'] as num?)?.toInt() ?? 0,
+        settlements: (map['settlements_voided'] as num?)?.toInt() ?? 0,
+      );
+    } catch (error, stack) {
+      throw Failure.from(error, 'That history could not be retracted.', stack);
+    }
+  }
+
   Future<void> deletePerson(String personId) async {
     try {
       await _client.rpc('delete_person', params: {'p_person_id': personId});

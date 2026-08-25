@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 import { convertMinor, normaliseCode, rateSentence } from '@/lib/currencies';
 import { formatMinor, minorToInput, parseAmountToMinor } from '@/lib/money';
 import { lookupRate, type RateQuote } from '@/lib/actions';
@@ -153,25 +153,40 @@ export function ConversionPanel({
 
   if (state.loading) {
     return (
-      <p className={cn('text-[0.8125rem] text-ink-faint', className)}>
-        Fetching today’s {source} → {target} rate…
-      </p>
+      <div
+        className={cn(
+          'rounded-card border border-line bg-sunken px-4 py-3.5',
+          className,
+        )}
+      >
+        <p className="stat-label">Converted amount</p>
+        <div className="mt-2 flex items-center gap-2.5">
+          <span aria-hidden className="skeleton h-6 w-32 rounded-md" />
+        </div>
+        <p className="mt-2 text-[0.8125rem] text-ink-muted" role="status">
+          Fetching today’s {source} → {target} rate…
+        </p>
+      </div>
     );
   }
 
   if (state.unavailable || !state.rate) {
     return (
-      <p
+      <div
+        role="alert"
         className={cn(
-          'rounded-lg border border-payable/40 bg-payable-soft px-3 py-2 text-[0.8125rem] text-payable',
+          'rounded-card border border-payable-line bg-payable-soft px-4 py-3.5',
           className,
         )}
-        role="alert"
       >
-        No {source} → {target} rate is available, and none is cached on this account.
-        Enter the amount in {target} instead — nothing is lost, and you can add the{' '}
-        {source} figure to the note.
-      </p>
+        <p className="text-[0.875rem] font-semibold text-payable">
+          Couldn’t get a {source} → {target} rate
+        </p>
+        <p className="mt-1 text-[0.8125rem] leading-relaxed text-ink-muted">
+          None is cached on this account either. Nothing you have entered is lost — enter the
+          amount in {target} instead, and put the {source} figure in the note.
+        </p>
+      </div>
     );
   }
 
@@ -183,23 +198,54 @@ export function ConversionPanel({
   const manualInvalid = manual && typed !== '' && manualMinor === null;
 
   return (
-    <div className={cn('rounded-lg border border-line bg-sunken px-3.5 py-3', className)}>
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-[0.8125rem] text-ink-muted">
-          {manual ? 'Actual amount' : 'Converted amount'}
-        </span>
-        {manual ? null : (
-          <span className="tnum font-display text-[1.0625rem] font-semibold text-ink">
-            {automatic === null ? '—' : formatMinor(automatic, target, { withCode: true })}
-          </span>
-        )}
-      </div>
+    <div className={cn('overflow-hidden rounded-card border border-line bg-sunken', className)}>
+      {/* What was entered. Never hidden, never restated as the converted figure:
+          it is the only number the user actually typed (upgrade §2). */}
+      <ConversionRow
+        label="Amount"
+        value={amountMinor === null ? '—' : formatMinor(amountMinor, source)}
+        unit={source}
+        muted
+      />
+
+      <ConversionRow
+        label="Converted amount"
+        value={
+          automatic === null ? '—' : `≈ ${formatMinor(automatic, target, { withCode: false })}`
+        }
+        unit={target}
+        // The provenance sits with the figure it qualifies rather than at the
+        // foot of the panel, so "where did this number come from" is answered
+        // on the same line the number is read.
+        meta={
+          <>
+            <span className="font-medium text-ink-muted">Automatic</span>
+            <span aria-hidden className="text-ink-subtle"> · </span>
+            {rateSentence(source, target, state.rate.rate_e9)}
+            <span aria-hidden className="text-ink-subtle"> · </span>
+            <span className={state.rate.stale ? 'font-medium text-payable' : undefined}>
+              {state.rate.provenance}
+            </span>
+          </>
+        }
+        dimmed={manual}
+      />
 
       {manual ? (
-        <div className="mt-2 space-y-2">
+        <div className="border-t border-line px-4 py-3.5">
+          <div className="flex items-baseline justify-between gap-3">
+            <label htmlFor={id} className="text-[0.8125rem] font-medium text-ink">
+              Actual amount
+            </label>
+            <span className="text-[0.6875rem] font-medium uppercase tracking-[0.07em] text-accent">
+              Manual
+            </span>
+          </div>
+
           <div
             className={cn(
-              'flex items-center gap-2 rounded-field border bg-surface px-3',
+              'mt-2 flex items-center gap-2 rounded-field border bg-surface px-3',
+              'transition-[border-color,box-shadow] duration-[var(--dur)] ease-[var(--ease)]',
               manualInvalid
                 ? 'border-payable ring-2 ring-payable/20'
                 : 'border-line-strong focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/25',
@@ -215,57 +261,98 @@ export function ConversionPanel({
               placeholder={automatic === null ? '0' : minorToInput(automatic, target)}
               aria-label={`Actual amount in ${target}`}
               aria-invalid={manualInvalid}
-              className="tnum h-11 w-full bg-transparent font-display text-[1.0625rem] font-semibold text-ink outline-none placeholder:text-ink-faint/60"
+              aria-describedby={`${id}-note`}
+              className="money tnum h-11 w-full bg-transparent text-[1.0625rem] text-ink outline-none placeholder:text-ink-subtle"
             />
           </div>
 
-          <p className="text-[0.75rem] font-medium text-accent">Manual override</p>
-          {manualInvalid ? (
-            <p className="text-[0.75rem] text-payable" role="alert">
-              Enter a valid amount in {target}.
-            </p>
-          ) : null}
-          <p className="text-[0.75rem] text-ink-faint">
-            Automatic estimate:{' '}
-            {automatic === null ? '—' : formatMinor(automatic, target, { withCode: true })} ·{' '}
-            {rateSentence(source, target, state.rate.rate_e9)}
+          <p id={`${id}-note`} className="mt-2 text-[0.8125rem] leading-relaxed">
+            {manualInvalid ? (
+              <span className="text-payable" role="alert">
+                Enter a valid amount in {target}.
+              </span>
+            ) : (
+              <span className="text-ink-muted">
+                Recorded instead of the automatic estimate. The {source} amount you entered and
+                the rate above are both kept with the entry.
+              </span>
+            )}
           </p>
         </div>
-      ) : (
-        <>
-          <p className="mt-1.5 text-[0.75rem] font-medium text-ink-muted">Automatic</p>
-          <p className="mt-0.5 text-[0.8125rem] text-ink-faint">
-            {rateSentence(source, target, state.rate.rate_e9)}
-          </p>
-          <p
-            className={cn(
-              'mt-0.5 text-[0.8125rem]',
-              state.rate.stale ? 'font-medium text-payable' : 'text-ink-faint',
-            )}
-          >
-            {state.rate.provenance}
-          </p>
-        </>
-      )}
+      ) : null}
 
-      <button
-        type="button"
-        onClick={() => {
-          // Turning the override on pre-fills the automatic figure, so the user
-          // edits a number rather than facing an empty box — the common case is
-          // "nearly that, but 43".
-          if (!manual && typed === '' && automatic !== null) {
-            setText(minorToInput(automatic, target));
-          }
-          setManual(!manual);
-        }}
-        className="mt-2.5 rounded-full border border-line-strong bg-surface px-3 py-1 text-[0.75rem] font-medium text-ink-muted transition hover:border-accent-line hover:text-accent"
-      >
-        {manual ? 'Use the automatic conversion' : 'Use actual amount'}
-      </button>
+      <div className="border-t border-line px-4 py-2.5">
+        <button
+          type="button"
+          onClick={() => {
+            // Turning the override on pre-fills the automatic figure, so the user
+            // edits a number rather than facing an empty box — the common case is
+            // "nearly that, but 43".
+            if (!manual && typed === '' && automatic !== null) {
+              setText(minorToInput(automatic, target));
+            }
+            setManual(!manual);
+          }}
+          className={cn(
+            'tap rounded-full border px-3 py-1.5 text-[0.75rem] font-medium',
+            'transition-[background-color,border-color,color] duration-[var(--dur)] ease-[var(--ease)]',
+            manual
+              ? 'border-accent-line bg-accent-soft text-accent'
+              : 'border-line-strong bg-surface text-ink-muted hover:border-accent-line hover:text-accent',
+          )}
+        >
+          {manual ? 'Use the automatic conversion' : 'Enter what actually changed hands'}
+        </button>
+      </div>
 
       <input type="hidden" name={names.conversionMode} value={manual ? 'manual' : 'automatic'} />
       <input type="hidden" name={names.convertedAmount} value={manual ? typed : ''} />
+    </div>
+  );
+}
+
+/**
+ * One line of the conversion panel: what it is, what it is worth, and — under
+ * that — where the figure came from.
+ *
+ * The label is on the left and the figure right-aligned, so the two rows form a
+ * column of amounts that lines up rather than two sentences that have to be
+ * read in full.
+ */
+function ConversionRow({
+  label,
+  value,
+  unit,
+  meta,
+  muted = false,
+  dimmed = false,
+}: {
+  label: string;
+  value: string;
+  unit: string;
+  meta?: ReactNode;
+  /** The entered amount: present for reference, not the figure being decided. */
+  muted?: boolean;
+  /** Superseded by a manual override — still shown, one step back. */
+  dimmed?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        'px-4 py-3.5 not-first:border-t not-first:border-line',
+        dimmed && 'opacity-70',
+      )}
+    >
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-[0.8125rem] font-medium text-ink-muted">{label}</span>
+        <span className="flex items-baseline gap-1.5">
+          <span className={cn('money tnum text-[1.0625rem]', muted ? 'text-ink-muted' : 'text-ink')}>
+            {value}
+          </span>
+          <span className="text-[0.75rem] font-medium text-ink-faint">{unit}</span>
+        </span>
+      </div>
+      {meta ? <p className="mt-1.5 text-[0.75rem] leading-relaxed text-ink-faint">{meta}</p> : null}
     </div>
   );
 }

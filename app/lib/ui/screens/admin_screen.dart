@@ -126,6 +126,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
             loading: () => const _StatsSkeleton(),
             error: (error, _) => ErrorNote.forError(
               error,
+              what: 'the system summary',
               onRetry: () => ref.invalidate(systemInfoProvider),
             ),
             data: (data) => _SystemStats(info: data),
@@ -176,6 +177,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                     padding: const EdgeInsets.all(AppSpacing.md),
                     child: ErrorNote.forError(
                       error,
+                      what: 'the user list',
                       onRetry: () => ref.invalidate(adminUsersProvider),
                     ),
                   ),
@@ -311,7 +313,7 @@ class _Stat extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontSize: 10.5,
+              fontSize: 11,
               letterSpacing: 0.7,
               fontWeight: FontWeight.w700,
               color: palette.inkFaint,
@@ -543,7 +545,7 @@ class _AccountMenu extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       note,
-                      style: TextStyle(fontSize: 11.5, height: 1.35, color: palette.inkFaint),
+                      style: TextStyle(fontSize: 12, height: 1.35, color: palette.inkFaint),
                     ),
                   ],
                 ],

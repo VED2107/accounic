@@ -12,6 +12,7 @@ import {
 import { Money } from '@/components/money';
 import { Sparkline } from '@/components/charts/sparkline';
 import { ActivityRow } from '@/components/ledger/activity-row';
+import { AddTransactionButton } from '@/components/ledger/add-transaction-button';
 import { Reveal, staggerStyle } from '@/components/motion/reveal';
 import { ActivityIcon } from '@/components/icons';
 import { dayGroupLabel, groupByDate } from '@/lib/dates';
@@ -136,6 +137,7 @@ export default async function ActivityPage({
             icon={<ActivityIcon />}
             title="Nothing here yet"
             description="Transactions and settlements will appear here as you record them."
+            action={<AddTransactionButton currency={currency} />}
           />
         </Card>
       ) : (

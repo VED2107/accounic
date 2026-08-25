@@ -117,7 +117,7 @@ export function Timeline({
                     >
                       <span
                         className={cn(
-                          'grid size-9 shrink-0 place-items-center rounded-[0.625rem] border',
+                          'grid size-9 shrink-0 place-items-center rounded-field border',
                           isSettlement
                             ? 'border-line bg-sunken text-ink-muted'
                             : receivable

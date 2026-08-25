@@ -215,7 +215,7 @@ export function PersonPicker({
               disabled={creating}
               className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors duration-[var(--dur)] hover:bg-sunken disabled:opacity-60"
             >
-              <span className="grid size-8 shrink-0 place-items-center rounded-[0.625rem] border border-accent-line bg-accent-soft text-accent">
+              <span className="grid size-8 shrink-0 place-items-center rounded-field border border-accent-line bg-accent-soft text-accent">
                 {creating ? <Spinner className="size-3.5" /> : <PlusIcon className="size-4" />}
               </span>
               <span className="min-w-0 flex-1 truncate text-[0.875rem] text-ink">

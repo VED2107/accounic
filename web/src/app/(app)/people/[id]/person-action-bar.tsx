@@ -8,7 +8,7 @@ import { ArchiveIcon, ArrowDownIcon, ArrowUpIcon, EditIcon, SettleIcon } from '@
 import { TransactionSheet } from '@/components/ledger/transaction-sheet';
 import { SettleSheet } from '@/components/ledger/settle-sheet';
 import { PersonForm } from '@/components/ledger/person-form';
-import { deletePerson, setPersonArchived } from '@/lib/actions';
+import { deletePerson, setPersonArchived, voidPersonHistory } from '@/lib/actions';
 import type { OpenTransaction, Person, PersonBalance, TxnType } from '@/lib/types';
 import { TYPE_FOR_FLOW } from '@/lib/direction';
 
@@ -38,12 +38,19 @@ export function PersonActionBar({
   const [addType, setAddType] = useState<TxnType | null>(null);
   const [settleOpen, setSettleOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const [confirm, setConfirm] = useState<'archive' | 'restore' | 'delete' | null>(null);
+  const [confirm, setConfirm] = useState<
+    'archive' | 'restore' | 'delete' | 'void-history' | null
+  >(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const hasOutstanding =
     balance.outstanding_receivable > 0 || balance.outstanding_payable > 0;
+
+  // What a retraction would actually touch. Both counts exclude voided rows
+  // already, so an account that has been retracted once stops offering it.
+  const liveEntries = balance.transaction_count;
+  const hasHistory = liveEntries > 0 || balance.total_settled > 0;
 
   function run(operation: () => Promise<{ ok: boolean; error?: string }>, after?: () => void) {
     setError(null);
@@ -114,7 +121,7 @@ export function PersonActionBar({
           delete_person() now counts live rows only, so the two agree — which
           they did not before: an account whose transactions had all been voided
           reported zero here, offered Delete, and was then refused. */}
-      {balance.transaction_count === 0 && balance.total_settled === 0 ? (
+      {!hasHistory ? (
         <button
           type="button"
           onClick={() => setConfirm('delete')}
@@ -123,16 +130,31 @@ export function PersonActionBar({
           Delete this person
         </button>
       ) : (
-        <p className="text-[0.75rem] text-ink-faint">
-          <span className="text-ink-muted">Delete this person</span>
-          {' — '}
-          {balance.transaction_count > 0
-            ? `${balance.transaction_count} ${
-                balance.transaction_count === 1 ? 'transaction' : 'transactions'
-              } on this account.`
-            : 'a settlement is still recorded here.'}{' '}
-          Archive them instead.
-        </p>
+        <div className="space-y-1.5">
+          <p className="text-[0.75rem] text-ink-faint">
+            <span className="text-ink-muted">Delete this person</span>
+            {' — '}
+            {liveEntries > 0
+              ? `${liveEntries} ${
+                  liveEntries === 1 ? 'transaction' : 'transactions'
+                } on this account.`
+              : 'a settlement is still recorded here.'}{' '}
+            Archive them instead.
+          </p>
+
+          {/*
+            The way back from an account entered wrong. Deliberately the quietest
+            control on the screen and never the one the eye lands on first: it is
+            reached only by someone who came looking for it.
+          */}
+          <button
+            type="button"
+            onClick={() => setConfirm('void-history')}
+            className="text-[0.75rem] text-ink-faint transition-colors duration-[var(--dur)] hover:text-payable"
+          >
+            Retract all history for this person
+          </button>
+        </div>
       )}
 
       <TransactionSheet
@@ -189,6 +211,33 @@ export function PersonActionBar({
         title={`Restore ${person.name}?`}
         confirmLabel="Restore"
         body="They will appear in your people list and totals again."
+      />
+
+      <ConfirmDialog
+        open={confirm === 'void-history'}
+        onClose={() => setConfirm(null)}
+        onConfirm={() =>
+          run(() => voidPersonHistory(person.id, 'Retracted from the person page'))
+        }
+        pending={pending}
+        title={`Retract everything for ${person.name}?`}
+        confirmLabel="Retract all history"
+        body={
+          <>
+            <p>
+              Every transaction and settlement on this account is marked voided. The balance
+              goes to zero and the entries disappear from your dashboard and activity feed.
+            </p>
+            <p className="mt-2">
+              Nothing is deleted. The entries stay on this person&rsquo;s own timeline, marked
+              voided, with their amounts and dates exactly as they were — that record is what
+              makes this safe to do.
+            </p>
+            <p className="mt-2 text-ink-faint">
+              Undoing this means restoring entries one at a time, so it is worth being sure.
+            </p>
+          </>
+        }
       />
 
       <ConfirmDialog

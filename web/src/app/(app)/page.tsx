@@ -1,9 +1,18 @@
 import Link from 'next/link';
 import { getActivitySummary, getDashboard } from '@/lib/queries';
-import { Avatar, Card, EmptyState, buttonClass, cn } from '@/components/ui/primitives';
+import {
+  Avatar,
+  Card,
+  CardHeader,
+  EmptyState,
+  buttonClass,
+  cn,
+} from '@/components/ui/primitives';
 import { Money, NetBadge, SplitBar } from '@/components/money';
+import { ActivityChart } from '@/components/charts/activity-chart';
 import { Sparkline, TrendChip } from '@/components/charts/sparkline';
 import { ActivityRow } from '@/components/ledger/activity-row';
+import { AddTransactionButton } from '@/components/ledger/add-transaction-button';
 import { Reveal, staggerStyle } from '@/components/motion/reveal';
 import { QuickActions } from './dashboard-quick-actions';
 import { initials } from '@/lib/names';
@@ -60,7 +69,7 @@ export default async function DashboardPage() {
           <p className="text-[0.8125rem] text-ink-muted">
             {greeting()}, {profile.name.split(' ')[0]}
           </p>
-          <h1 className="mt-0.5 font-display text-[1.6rem] font-semibold tracking-tight sm:text-[1.8rem]">
+          <h1 className="page-title mt-0.5">
             Here’s your money overview
           </h1>
         </div>
@@ -107,7 +116,7 @@ export default async function DashboardPage() {
                 <p className="stat-label">Net position</p>
               </div>
 
-              <p className="money-hero mt-2.5 truncate">
+              <p className="money-hero mt-2.5">
                 <Money
                   minor={Math.abs(net)}
                   currency={currency}
@@ -222,6 +231,23 @@ export default async function DashboardPage() {
       </section>
 
       {/* ------------------------------------------------------------------ */}
+      {/* The month in flows (upgrade §8)                                     */}
+      {/* ------------------------------------------------------------------ */}
+      {buckets.length > 1 ? (
+        <Reveal delay={150} className="mt-4 block">
+          <Card className="overflow-hidden">
+            <CardHeader
+              title="Last 30 days"
+              description="What moved each day. Hover or tap a column for that day."
+            />
+            <div className="px-5 py-5">
+              <ActivityChart buckets={buckets} currency={currency} />
+            </div>
+          </Card>
+        </Reveal>
+      ) : null}
+
+      {/* ------------------------------------------------------------------ */}
       {/* Who, and what just happened                                         */}
       {/* ------------------------------------------------------------------ */}
       <div className="mt-4 grid items-start gap-4 lg:grid-cols-[1.05fr_1fr]">
@@ -267,6 +293,7 @@ export default async function DashboardPage() {
                 icon={<ActivityIcon />}
                 title="No transactions yet"
                 description="Record one and it will appear here straight away."
+                action={<AddTransactionButton currency={currency} />}
               />
             ) : (
               <ul className="divide-y divide-line">
@@ -483,7 +510,7 @@ function StatCard({
 
       <div className="mt-3 flex items-end justify-between gap-4">
         <div className="min-w-0">
-          <p className="money-lg truncate">
+          <p className="money-lg">
             <Money minor={amount} currency={currency} tone={tone} />
           </p>
           <p className="stat-note mt-1">{caption}</p>

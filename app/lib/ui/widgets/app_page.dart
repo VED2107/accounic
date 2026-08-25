@@ -363,7 +363,7 @@ class DirectionTag extends StatelessWidget {
           const SizedBox(width: AppSpacing.xs + 1),
           Text(
             label,
-            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: color),
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color),
           ),
         ],
       ),

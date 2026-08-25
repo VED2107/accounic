@@ -286,128 +286,153 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
               : 'Add person',
       onPrimary: _saving ? null : _save,
       children: [
-        AppTextField(
-          label: 'Name',
-          controller: _name,
-          focusNode: _nameFocus,
-          autofocus: true,
-          icon: AppIcons.person,
-          textInputAction: TextInputAction.next,
-          textCapitalization: TextCapitalization.words,
-          onSubmitted: (_) => _phoneFocus.requestFocus(),
-          maxLength: 120,
-          hint: 'Rahul Traders',
+        FormSection(
+          first: true,
+          title: 'Identity',
+          children: [
+            AppTextField(
+              label: 'Name',
+              controller: _name,
+              focusNode: _nameFocus,
+              autofocus: true,
+              icon: AppIcons.person,
+              textInputAction: TextInputAction.next,
+              textCapitalization: TextCapitalization.words,
+              onSubmitted: (_) => _phoneFocus.requestFocus(),
+              maxLength: 120,
+              hint: 'Rahul Traders',
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            _Labelled(
+              label: 'Type',
+              child: Row(
+                children: [
+                  for (final option in PartyType.values) ...[
+                    Expanded(
+                      child: _Choice(
+                        label: option.label,
+                        selected: _type == option,
+                        onTap: () => setState(() => _type = option),
+                      ),
+                    ),
+                    if (option != PartyType.values.last)
+                      const SizedBox(width: AppSpacing.sm + 2),
+                  ],
+                ],
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: AppSpacing.lg),
 
-        _Labelled(
-          label: 'Type',
-          child: Row(
+        FormSection(
+          title: 'Currency',
+          description: _isEdit
+              ? 'This account’s history is denominated in $ledgerCurrency. Changing '
+                  'the currency below only changes what new entries default to.'
+              : 'What this account is kept in. Entries can still be made in another '
+                  'currency.',
+          children: [
+            CurrencyField(
+              label: 'Account currency',
+              value: _currency,
+              onChanged: (next) => setState(() {
+                _currency = next;
+                if (_direction == OpeningDirection.none || _opening.text.trim().isEmpty) {
+                  _openingCurrency = next;
+                }
+              }),
+              helper: _currency == base ? 'Same as your workspace' : null,
+            ),
+            if (currencyChanged) ...[
+              const SizedBox(height: AppSpacing.md),
+              _CurrencyChangeNotice(
+                from: ledgerCurrency,
+                to: _currency,
+                offered: _currencyChangeOffered,
+                confirmed: _currencyChangeConfirmed,
+                onConfirmed: (value) => setState(() => _currencyChangeConfirmed = value),
+              ),
+            ],
+          ],
+        ),
+
+        if (!_isEdit)
+          FormSection(
+            title: 'Opening balance',
+            description: 'Already have an amount to settle with this person? Start from '
+                'it rather than recording a transaction that never happened.',
             children: [
-              for (final option in PartyType.values) ...[
-                Expanded(
-                  child: _Choice(
-                    label: option.label,
-                    selected: _type == option,
-                    onTap: () => setState(() => _type = option),
-                  ),
-                ),
-                if (option != PartyType.values.last)
-                  const SizedBox(width: AppSpacing.sm + 2),
-              ],
+              _OpeningBalance(
+                direction: _direction,
+                onDirection: (next) => setState(() {
+                  _direction = next;
+                  _openingError = null;
+                }),
+                controller: _opening,
+                focusNode: _openingFocus,
+                error: _openingError,
+                accountCurrency: _currency,
+                openingCurrency: _openingCurrency,
+                onOpeningCurrency: (next) => setState(() => _openingCurrency = next),
+                onChanged: (_) => setState(() {}),
+                manual: _openingManual,
+                onManualChanged: (manual) => setState(() => _openingManual = manual),
+                onActualChanged: (minor) => setState(() => _openingActual = minor),
+              ),
             ],
           ),
+
+        FormSection(
+          title: 'Contact',
+          aside: 'Optional',
+          children: [
+            if (compact) ...[
+              phone,
+              const SizedBox(height: AppSpacing.lg),
+              email,
+            ] else
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: phone),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(child: email),
+                ],
+              ),
+          ],
         ),
-        const SizedBox(height: AppSpacing.lg),
 
-        CurrencyField(
-          value: _currency,
-          onChanged: (next) => setState(() {
-            _currency = next;
-            if (_direction == OpeningDirection.none || _opening.text.trim().isEmpty) {
-              _openingCurrency = next;
-            }
-          }),
-          helper: _currency == base
-              ? 'Same as your workspace'
-              : 'This account is kept in $_currency',
-        ),
-
-        if (currencyChanged) ...[
-          const SizedBox(height: AppSpacing.lg),
-          _CurrencyChangeNotice(
-            from: ledgerCurrency,
-            to: _currency,
-            offered: _currencyChangeOffered,
-            confirmed: _currencyChangeConfirmed,
-            onConfirmed: (value) => setState(() => _currencyChangeConfirmed = value),
-          ),
-        ],
-
-        if (!_isEdit) ...[
-          const SizedBox(height: AppSpacing.lg),
-          _OpeningBalance(
-            direction: _direction,
-            onDirection: (next) => setState(() {
-              _direction = next;
-              _openingError = null;
-            }),
-            controller: _opening,
-            focusNode: _openingFocus,
-            error: _openingError,
-            accountCurrency: _currency,
-            openingCurrency: _openingCurrency,
-            onOpeningCurrency: (next) => setState(() => _openingCurrency = next),
-            onChanged: (_) => setState(() {}),
-            manual: _openingManual,
-            onManualChanged: (manual) => setState(() => _openingManual = manual),
-            onActualChanged: (minor) => setState(() => _openingActual = minor),
-          ),
-        ],
-
-        const SizedBox(height: AppSpacing.lg),
-
-        if (compact) ...[
-          phone,
-          const SizedBox(height: AppSpacing.lg),
-          email,
-        ] else
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: phone),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(child: email),
-            ],
-          ),
-        const SizedBox(height: AppSpacing.lg),
-
-        AppTextField(
-          label: 'Address',
-          controller: _address,
-          focusNode: _addressFocus,
-          icon: AppIcons.address,
-          textInputAction: TextInputAction.next,
-          textCapitalization: TextCapitalization.words,
-          onSubmitted: (_) => _notesFocus.requestFocus(),
-          maxLength: 500,
-          hint: 'Optional',
-        ),
-        const SizedBox(height: AppSpacing.lg),
-
-        AppTextField(
-          label: 'Notes',
-          controller: _notes,
-          focusNode: _notesFocus,
-          icon: AppIcons.note,
-          maxLines: 3,
-          maxLength: 2000,
-          // The last field submits rather than offering another Next that would
-          // go nowhere.
-          textInputAction: TextInputAction.done,
-          onSubmitted: (_) => _save(),
-          textCapitalization: TextCapitalization.sentences,
-          hint: 'Payment terms, reference numbers, anything worth remembering.',
+        FormSection(
+          title: 'Address & notes',
+          aside: 'Optional',
+          children: [
+            AppTextField(
+              label: 'Address',
+              controller: _address,
+              focusNode: _addressFocus,
+              icon: AppIcons.address,
+              textInputAction: TextInputAction.next,
+              textCapitalization: TextCapitalization.words,
+              onSubmitted: (_) => _notesFocus.requestFocus(),
+              maxLength: 500,
+              hint: 'Optional',
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            AppTextField(
+              label: 'Notes',
+              controller: _notes,
+              focusNode: _notesFocus,
+              icon: AppIcons.note,
+              maxLines: 3,
+              maxLength: 2000,
+              // The last field submits rather than offering another Next that
+              // would go nowhere.
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _save(),
+              textCapitalization: TextCapitalization.sentences,
+              hint: 'Payment terms, reference numbers, anything worth remembering.',
+            ),
+          ],
         ),
       ],
     );
@@ -453,31 +478,10 @@ class _OpeningBalance extends StatelessWidget {
     final palette = context.money;
     final amountMinor = parseAmountToMinor(controller.text, currency: openingCurrency);
 
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.md + 2),
-      decoration: BoxDecoration(
-        color: palette.sunken.withValues(alpha: 0.6),
-        borderRadius: AppRadius.panelAll,
-        border: Border.all(color: palette.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Existing balance',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: context.colors.onSurface,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            'Already have an amount to settle with this person? Start from it rather '
-            'than recording a transaction that never happened.',
-            style: TextStyle(fontSize: 12, height: 1.45, color: palette.inkMuted),
-          ),
-          const SizedBox(height: AppSpacing.md),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
           Column(
             children: [
               for (final option in OpeningDirection.values) ...[
@@ -533,8 +537,7 @@ class _OpeningBalance extends StatelessWidget {
               style: TextStyle(fontSize: 12.5, height: 1.4, color: palette.inkFaint),
             ),
           ],
-        ],
-      ),
+      ],
     );
   }
 }

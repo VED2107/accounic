@@ -69,7 +69,7 @@ export function MoneyStat({
   return (
     <div className={cn('min-w-0', className)}>
       <p className="stat-label">{label}</p>
-      <p className="money-lg mt-1.5 truncate">
+      <p className="money-lg mt-1.5">
         <Money minor={minor} currency={currency} tone={tone} />
       </p>
       {sublabel ? <p className="stat-note mt-1">{sublabel}</p> : null}

@@ -431,7 +431,7 @@ class EmptyState extends StatelessWidget {
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: context.money.line),
               ),
-              child: Icon(icon, size: 22, color: context.money.inkFaint),
+              child: Icon(icon, size: AppIconSize.lg, color: context.money.inkFaint),
             ),
             const SizedBox(height: 16),
           ],
@@ -551,23 +551,63 @@ class SkeletonList extends StatelessWidget {
 }
 
 /// Inline error with a retry, used by every async screen (context.md §26).
+/// What failed, what to do about it, and whether anything was lost
+/// (context.md §26; upgrade §10).
+///
+/// "Something went wrong" answers none of those three, and in a product that
+/// holds someone's money the third is the one they actually want. So a failure
+/// here is a heading that names what failed, a line saying what to do, and —
+/// where it applies — the sentence that says the stored ledger is untouched and
+/// only this screen failed to load. The database's own words never reach a
+/// normal user; the technical cause is kept for a debug build.
 class ErrorNote extends StatelessWidget {
-  const ErrorNote(this.message, {super.key, this.onRetry, this.detail});
+  const ErrorNote(
+    this.message, {
+    super.key,
+    this.onRetry,
+    this.detail,
+    this.title,
+    this.reassurance,
+  });
 
   /// Builds the note straight from a thrown error, so the user gets the safe
   /// sentence and — in a debug build only — the developer gets the cause.
   /// Screens use this rather than rendering nothing on failure.
-  factory ErrorNote.forError(Object error, {Key? key, VoidCallback? onRetry}) {
+  ///
+  /// [what] names the thing that did not load, e.g. `'transactions'`, and
+  /// becomes "Couldn't load transactions". A read that failed changed nothing,
+  /// so the reassurance is stated by default; a *write* that failed should pass
+  /// its own, because "your data is safe" is the wrong thing to say about a save
+  /// that may or may not have landed.
+  factory ErrorNote.forError(
+    Object error, {
+    Key? key,
+    VoidCallback? onRetry,
+    String? what,
+    String? reassurance,
+  }) {
     final failure = error is Failure ? error : null;
     return ErrorNote(
       failure?.message ?? '$error',
       key: key,
       onRetry: onRetry,
+      title: what == null ? null : 'Couldn’t load $what',
+      reassurance: reassurance ??
+          (what == null
+              ? null
+              : 'Nothing was changed — your people, transactions and balances '
+                  'are as you left them.'),
       detail: failure?.detail ?? (failure == null ? '${error.runtimeType}: $error' : null),
     );
   }
 
+  /// What failed, in the user's terms. Optional, because a refused *write*
+  /// already says what it refused in [message].
+  final String? title;
   final String message;
+
+  /// The sentence about the user's data. Rendered one step quieter.
+  final String? reassurance;
   final VoidCallback? onRetry;
 
   /// The technical cause. Rendered only in a debug build.
@@ -575,27 +615,52 @@ class ErrorNote extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.money;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: context.money.payableSoft,
+        color: palette.payableSoft,
         borderRadius: BorderRadius.circular(AppTheme.radiusField),
-        border: Border.all(color: context.money.payableLine),
+        border: Border.all(color: palette.payableLine),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (title != null) ...[
+            Text(
+              title!,
+              style: TextStyle(
+                color: palette.payable,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 4),
+          ],
           Text(
             message,
-            style: TextStyle(color: context.money.payable, fontSize: 13, height: 1.45),
+            style: TextStyle(
+              color: title == null ? palette.payable : palette.inkMuted,
+              fontSize: 13,
+              height: 1.45,
+            ),
           ),
+          if (reassurance != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              reassurance!,
+              style: TextStyle(color: palette.inkFaint, fontSize: 12.5, height: 1.45),
+            ),
+          ],
           if (kDebugMode && detail != null) ...[
             const SizedBox(height: 8),
             SelectableText(
               detail!,
               style: TextStyle(
-                color: context.money.inkFaint,
+                color: palette.inkFaint,
                 fontSize: 11,
                 height: 1.4,
                 fontFamily: 'monospace',
@@ -604,15 +669,18 @@ class ErrorNote extends StatelessWidget {
           ],
           if (onRetry != null) ...[
             const SizedBox(height: 8),
-            TextButton(
-              onPressed: onRetry,
-              style: TextButton.styleFrom(
-                padding: EdgeInsets.zero,
-                minimumSize: const Size(0, 32),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                foregroundColor: context.money.payable,
+            SizedBox(
+              // 44dp: this is the action the note is offering, and it is
+              // frequently the only tappable thing on a failed screen.
+              height: 44,
+              child: OutlinedButton(
+                onPressed: onRetry,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: palette.payable,
+                  side: BorderSide(color: palette.payableLine),
+                ),
+                child: const Text('Try again'),
               ),
-              child: const Text('Try again'),
             ),
           ],
         ],
