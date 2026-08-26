@@ -122,6 +122,23 @@ class DashboardScreen extends ConsumerWidget {
         ),
       ],
 
+      // Every currency that carries entries, kept apart (db/migrations/0015).
+      // The card above is the whole position in one number, which only exists
+      // because the dirhams were converted into rupees first. This is the same
+      // money before that step: one row per currency, summed only within
+      // itself, and never added across.
+      if (data.totalsByCurrency.isNotEmpty) ...[
+        const SizedBox(height: AppSpacing.md),
+        Reveal(
+          delay: const Duration(milliseconds: 90),
+          child: _CurrencyBreakdown(
+            totals: data.totalsByCurrency,
+            today: data.todayByCurrency,
+            baseCurrency: currency,
+          ),
+        ),
+      ],
+
       const SizedBox(height: AppSpacing.xxl),
 
       // The month in flows (upgrade §8). Below the position, above the lists:
@@ -524,6 +541,186 @@ class _NetTrend extends ConsumerWidget {
         const SizedBox(height: AppSpacing.sm),
         Sparkline(points: points, color: color, height: 46),
       ],
+    );
+  }
+}
+
+/// Every currency that carries entries, one row each (db/migrations/0015).
+///
+/// The position card above converts everything into the workspace currency,
+/// which is the only way one number can answer "how am I doing". That number
+/// cannot show what the dirham half of it was, so this does — unconverted, and
+/// summed only within each currency. The workspace currency gets the same row
+/// as any other, so a single-currency ledger reads exactly like a four-currency
+/// one rather than looking like a panel for foreign money.
+class _CurrencyBreakdown extends StatelessWidget {
+  const _CurrencyBreakdown({
+    required this.totals,
+    required this.today,
+    required this.baseCurrency,
+  });
+
+  final List<CurrencyTotals> totals;
+  final List<CurrencyToday> today;
+  final String baseCurrency;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.money;
+
+    return SectionCard(
+      title: 'By currency',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.sm,
+              AppSpacing.lg,
+              0,
+            ),
+            child: Text(
+              totals.length == 1
+                  ? 'Everything so far is in one currency.'
+                  : 'Each currency on its own terms. The $baseCurrency figures above '
+                      'convert all of these into one total.',
+              style: TextStyle(fontSize: 12.5, height: 1.4, color: palette.inkFaint),
+            ),
+          ),
+          for (final row in totals)
+            _CurrencyRow(
+              row: row,
+              today: today
+                  .where((entry) => entry.currency == row.currency)
+                  .firstOrNull,
+              isBase: row.currency == baseCurrency,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CurrencyRow extends StatelessWidget {
+  const _CurrencyRow({required this.row, required this.today, required this.isBase});
+
+  final CurrencyTotals row;
+  final CurrencyToday? today;
+  final bool isBase;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.money;
+    final net = row.netPosition;
+    final tone = net > 0
+        ? palette.receivable
+        : net < 0
+            ? palette.payable
+            : palette.inkMuted;
+    final moved = today?.moved ?? 0;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.md,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 34,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: palette.sunken,
+                  borderRadius: AppRadius.fieldAll,
+                  border: Border.all(color: palette.line),
+                ),
+                child: Text(
+                  row.currency,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.4,
+                    color: palette.inkMuted,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      formatMinor(net.abs(), currency: row.currency),
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      net > 0
+                          ? 'in your favour'
+                          : net < 0
+                              ? 'against you'
+                              : 'settled',
+                      style: TextStyle(fontSize: 12, color: tone),
+                    ),
+                  ],
+                ),
+              ),
+              if (moved > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: palette.sunken,
+                    borderRadius: AppRadius.fieldAll,
+                    border: Border.all(color: palette.line),
+                  ),
+                  child: Text(
+                    'today ${formatMinor(moved, currency: row.currency)}',
+                    style: TextStyle(fontSize: 11.5, color: palette.inkMuted),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Wrap(
+            spacing: AppSpacing.md,
+            runSpacing: AppSpacing.xs,
+            children: [
+              Text(
+                'in ${formatMinor(row.totalReceivable, currency: row.currency)}',
+                style: TextStyle(fontSize: 12, color: palette.receivable),
+              ),
+              Text(
+                'out ${formatMinor(row.totalPayable, currency: row.currency)}',
+                style: TextStyle(fontSize: 12, color: palette.payable),
+              ),
+              Text(
+                'settled ${formatMinor(row.grossSettled, currency: row.currency)}',
+                style: TextStyle(fontSize: 12, color: palette.inkFaint),
+              ),
+              Text(
+                row.peopleWithBalance > 0
+                    ? '${row.peopleWithBalance} of ${row.peopleCount} outstanding'
+                    : '${row.peopleCount} '
+                        '${row.peopleCount == 1 ? 'account' : 'accounts'}, all settled',
+                style: TextStyle(fontSize: 12, color: palette.inkFaint),
+              ),
+              if (isBase)
+                Text(
+                  'your workspace currency',
+                  style: TextStyle(fontSize: 12, color: palette.inkFaint),
+                ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

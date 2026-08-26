@@ -23,7 +23,9 @@ import 'sheet_scaffold.dart';
 ///     one currency.
 ///   * **Opening balance.** So a user with real-world balances can start from
 ///     where they actually are, rather than inventing a transaction dated today
-///     to fake it.
+///     to fake it. Editing offers the same control: the current one is loaded,
+///     and it can be changed or removed. Both paths go through the same
+///     conversion arithmetic and the same RPC.
 ///
 /// The form is also where the Android keyboard problem lived. What fixes it is
 /// structural rather than cosmetic: the actions are pinned outside the scroll
@@ -36,17 +38,23 @@ Future<Person?> showPersonSheet(
   BuildContext context,
   WidgetRef ref, {
   Person? person,
+  int openingMinor = 0,
 }) {
   return showAppSheet<Person>(
     context,
-    (context) => _PersonSheet(person: person),
+    (context) => _PersonSheet(person: person, openingMinor: openingMinor),
   );
 }
 
 class _PersonSheet extends ConsumerStatefulWidget {
-  const _PersonSheet({this.person});
+  const _PersonSheet({this.person, this.openingMinor = 0});
 
   final Person? person;
+
+  /// The person's opening balance as a signed figure in their ledger currency —
+  /// positive when they owe the user. `person_balances.opening_minor`. Only
+  /// meaningful when editing.
+  final int openingMinor;
 
   @override
   ConsumerState<_PersonSheet> createState() => _PersonSheetState();
@@ -72,7 +80,30 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
 
   late PartyType _type = widget.person?.type ?? PartyType.person;
   late String _currency = normaliseCode(widget.person?.currency ?? '');
-  OpeningDirection _direction = OpeningDirection.none;
+  late OpeningDirection _direction = _initialDirection;
+
+  /// What an opening balance is written in. On a create that follows the
+  /// account picker; on an edit it is the frozen ledger currency, because that
+  /// is what the database denominates the opening row in (db/migrations/0013).
+  late String _openingTarget = _currency;
+
+  /// The opening balance as it stood when the sheet opened, so an edit that
+  /// only fixes a phone number does not retract and rewrite a perfectly good
+  /// one — the database replaces rather than edits, and that would show in the
+  /// history.
+  int get _storedOpening => _isEdit ? widget.openingMinor : 0;
+
+  OpeningDirection get _initialDirection => _storedOpening > 0
+      ? OpeningDirection.theyOweMe
+      : _storedOpening < 0
+          ? OpeningDirection.iOweThem
+          : OpeningDirection.none;
+
+  bool get _openingDirty =>
+      _isEdit &&
+      (_direction != _initialDirection ||
+          _openingCurrency != _openingTarget ||
+          (_direction != OpeningDirection.none && _openingMinor != _storedOpening.abs()));
 
   /// Whether the opening balance's converted figure was replaced by what
   /// actually changed hands (upgrade 40).
@@ -98,7 +129,13 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
     // field must show — not an empty dropdown.
     final base = ref.read(currencyProvider);
     if (_currency.isEmpty) _currency = normaliseCode(base);
-    _openingCurrency = _currency;
+    _openingTarget = _isEdit
+        ? normaliseCode(widget.person?.ledgerCurrencyOr(base) ?? base)
+        : _currency;
+    _openingCurrency = _openingTarget;
+    if (_storedOpening != 0) {
+      _opening.text = minorToInput(_storedOpening.abs(), currency: _openingTarget);
+    }
   }
 
   @override
@@ -130,6 +167,44 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
     return parseAmountToMinor(text, currency: _openingCurrency);
   }
 
+  /// Turns the opening-balance half of the form into RPC arguments, fetching a
+  /// rate first when it is stated in a currency other than the one the row will
+  /// be written in. Returns null after putting the reason on the field, which
+  /// is the caller's signal to stop.
+  ///
+  /// Shared by create and edit so "I owe them" cannot come to mean two
+  /// different things depending on which sheet you opened.
+  Future<_OpeningArgs?> _resolveOpening() async {
+    final entered = _direction == OpeningDirection.none ? null : _openingMinor;
+    final foreign = entered != null && _openingCurrency != _openingTarget;
+    final rate = foreign
+        ? await ref.read(ratesRepositoryProvider).rate(_openingCurrency, _openingTarget)
+        : null;
+
+    if (foreign && rate == null) {
+      setState(() {
+        _saving = false;
+        _openingError =
+            'No $_openingCurrency → $_openingTarget rate is available. Enter the opening '
+            'balance in $_openingTarget.';
+      });
+      return null;
+    }
+
+    return _OpeningArgs(
+      direction: _direction,
+      amountMinor: foreign ? null : entered,
+      enteredMinor: foreign ? entered : null,
+      enteredCurrency: foreign ? _openingCurrency : null,
+      rateE9: rate?.rateE9,
+      rateSource: rate?.source,
+      convertedMinor: foreign && _openingManual ? _openingActual : null,
+      conversionMode: foreign
+          ? (_openingManual && _openingActual != null ? 'manual' : 'automatic')
+          : null,
+    );
+  }
+
   Future<void> _save() async {
     // Guard against a second tap while the first is in flight. The button is
     // disabled too; this is the belt to that pair of braces, because a double
@@ -143,7 +218,7 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
       return;
     }
 
-    if (!_isEdit && _direction != OpeningDirection.none) {
+    if (_direction != OpeningDirection.none) {
       if (_openingMinor == null || _openingMinor! <= 0) {
         setState(() => _openingError = 'Enter the amount you are starting from.');
         _openingFocus.requestFocus();
@@ -166,9 +241,15 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
       final Person person;
 
       if (_isEdit) {
-        // No rate is fetched and none is needed: changing the currency moves
-        // what future entries default to and leaves every recorded figure
-        // exactly where it is.
+        // The opening balance is resolved before the write, so a missing rate
+        // is refused with the form intact rather than after the name has
+        // already been saved.
+        final opening = _openingDirty ? await _resolveOpening() : null;
+        if (_openingDirty && opening == null) return;
+
+        // Changing the currency needs no rate at all: it moves what future
+        // entries default to and leaves every recorded figure exactly where it
+        // is.
         person = await repository.updatePerson(
           personId: widget.person!.id,
           name: name,
@@ -180,22 +261,25 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
           currency: _currency,
           currencyChangeConfirmed: _currencyChangeConfirmed,
         );
-      } else {
-        final entered = _direction == OpeningDirection.none ? null : _openingMinor;
-        final foreign = entered != null && _openingCurrency != _currency;
-        final rate = foreign
-            ? await ref.read(ratesRepositoryProvider).rate(_openingCurrency, _currency)
-            : null;
 
-        if (foreign && rate == null) {
-          setState(() {
-            _saving = false;
-            _openingError =
-                'No $_openingCurrency → $_currency rate is available. Enter the opening '
-                'balance in $_currency.';
-          });
-          return;
+        // Then the opening balance, through the same RPC the create path uses.
+        // `none` clears it, which is how removing one works.
+        if (opening != null) {
+          await repository.setOpeningBalance(
+            personId: person.id,
+            direction: opening.direction,
+            amountMinor: opening.amountMinor,
+            enteredAmountMinor: opening.enteredMinor,
+            enteredCurrency: opening.enteredCurrency,
+            exchangeRateE9: opening.rateE9,
+            rateSource: opening.rateSource,
+            convertedAmountMinor: opening.convertedMinor,
+            conversionMode: opening.conversionMode,
+          );
         }
+      } else {
+        final opening = await _resolveOpening();
+        if (opening == null) return;
 
         person = await repository.createPerson(
           name: name,
@@ -205,16 +289,14 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
           address: _clean(_address),
           notes: _clean(_notes),
           currency: _currency,
-          opening: _direction,
-          openingAmountMinor: foreign ? null : entered,
-          openingEnteredMinor: foreign ? entered : null,
-          openingEnteredCurrency: foreign ? _openingCurrency : null,
-          openingRateE9: rate?.rateE9,
-          openingRateSource: rate?.source,
-          openingConvertedMinor:
-              foreign && _openingManual ? _openingActual : null,
-          openingConversionMode:
-              foreign ? (_openingManual && _openingActual != null ? 'manual' : 'automatic') : null,
+          opening: opening.direction,
+          openingAmountMinor: opening.amountMinor,
+          openingEnteredMinor: opening.enteredMinor,
+          openingEnteredCurrency: opening.enteredCurrency,
+          openingRateE9: opening.rateE9,
+          openingRateSource: opening.rateSource,
+          openingConvertedMinor: opening.convertedMinor,
+          openingConversionMode: opening.conversionMode,
         );
       }
 
@@ -337,8 +419,14 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
               value: _currency,
               onChanged: (next) => setState(() {
                 _currency = next;
-                if (_direction == OpeningDirection.none || _opening.text.trim().isEmpty) {
-                  _openingCurrency = next;
+                // On an edit the opening row stays in the frozen ledger
+                // currency whatever new entries now default to, so the target
+                // does not follow this picker.
+                if (!_isEdit) {
+                  _openingTarget = next;
+                  if (_direction == OpeningDirection.none || _opening.text.trim().isEmpty) {
+                    _openingCurrency = next;
+                  }
                 }
               }),
               helper: _currency == base ? 'Same as your workspace' : null,
@@ -356,11 +444,18 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
           ],
         ),
 
-        if (!_isEdit)
-          FormSection(
+        FormSection(
             title: 'Opening balance',
-            description: 'Already have an amount to settle with this person? Start from '
-                'it rather than recording a transaction that never happened.',
+            description: !_isEdit
+                ? 'Already have an amount to settle with this person? Start from '
+                    'it rather than recording a transaction that never happened.'
+                : _storedOpening != 0
+                    ? 'This account opened with '
+                        '${formatMinor(_storedOpening.abs(), currency: _openingTarget)} '
+                        '${_storedOpening > 0 ? 'in your favour' : 'against you'}. Change it, '
+                        'or choose “No opening balance” to remove it.'
+                    : 'This account has no opening balance. Add one if it started from a '
+                        'figure rather than from zero.',
             children: [
               _OpeningBalance(
                 direction: _direction,
@@ -371,7 +466,7 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
                 controller: _opening,
                 focusNode: _openingFocus,
                 error: _openingError,
-                accountCurrency: _currency,
+                accountCurrency: _openingTarget,
                 openingCurrency: _openingCurrency,
                 onOpeningCurrency: (next) => setState(() => _openingCurrency = next),
                 onChanged: (_) => setState(() {}),
@@ -437,6 +532,29 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
       ],
     );
   }
+}
+
+/// One opening balance, resolved into the arguments both RPCs take.
+class _OpeningArgs {
+  const _OpeningArgs({
+    required this.direction,
+    this.amountMinor,
+    this.enteredMinor,
+    this.enteredCurrency,
+    this.rateE9,
+    this.rateSource,
+    this.convertedMinor,
+    this.conversionMode,
+  });
+
+  final OpeningDirection direction;
+  final int? amountMinor;
+  final int? enteredMinor;
+  final String? enteredCurrency;
+  final int? rateE9;
+  final String? rateSource;
+  final int? convertedMinor;
+  final String? conversionMode;
 }
 
 /// The existing-balance section (upgrade §4).

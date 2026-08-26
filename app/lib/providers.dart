@@ -5,6 +5,7 @@ import 'data/auth_repository.dart';
 import 'data/ledger_repository.dart';
 import 'data/models.dart';
 import 'data/rates_repository.dart';
+import 'data/update_repository.dart';
 
 /// Application state wiring (context.md §20).
 ///
@@ -34,6 +35,24 @@ final ratesRepositoryProvider = Provider<RatesRepository>(
 
 /// Auth changes drive routing. Seeded with the current session so the first
 /// frame after a cold start already knows whether we are signed in.
+final updateRepositoryProvider = Provider<UpdateRepository>(
+  (ref) => const UpdateRepository(),
+);
+
+/// The newer release, if there is one (data/update_repository.dart).
+///
+/// Null covers every case that is not an update: already current, ahead of the
+/// newest release, no releases published, no network. None of them is an error
+/// the user has to see, so this provider never carries one — a failed check is
+/// simply "nothing to update to".
+final appUpdateProvider = FutureProvider<AppRelease?>((ref) async {
+  try {
+    return await ref.watch(updateRepositoryProvider).availableUpdate();
+  } catch (_) {
+    return null;
+  }
+});
+
 final authStateProvider = StreamProvider<AuthState?>((ref) {
   return ref.watch(authRepositoryProvider).changes;
 });

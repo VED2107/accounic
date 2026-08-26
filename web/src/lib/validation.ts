@@ -121,6 +121,18 @@ export const personSchema = z.object({
   opening_rate_e9: rateE9,
   opening_converted_amount: z.string().trim().optional(),
   opening_conversion_mode: z.enum(['automatic', 'manual']).optional(),
+  // The currency the opening balance lands in. Equal to `currency` when adding
+  // a person; on an edit it is the account's frozen ledger currency, which is
+  // what the database denominates the opening row in and may differ from what
+  // new entries now default to (db/migrations/0013).
+  opening_account_currency: optionalCurrencyCode,
+  // Present only when the edit form's opening-balance section was actually
+  // touched. Without it an ordinary "save the phone number" edit would retract
+  // and rewrite a perfectly good opening balance on every submit.
+  opening_changed: z
+    .union([z.literal('on'), z.literal('true'), z.literal('')])
+    .transform((v) => v === 'on' || v === 'true')
+    .optional(),
   // Changing the currency of an account that already holds entries changes what
   // future entries default to and leaves every recorded one alone. The user is
   // told that before it happens, and the form sends the acknowledgement back.

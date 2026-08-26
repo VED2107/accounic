@@ -16,6 +16,20 @@ class AppConfig {
   static const String supabaseUrl = String.fromEnvironment('SUPABASE_URL');
   static const String supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 
+  /// Where releases are published. `owner/repo`, read by the update check
+  /// against the public GitHub Releases API — no update server of our own, and
+  /// no version number written down anywhere: what is current is whatever the
+  /// newest release says it is.
+  ///
+  /// Overridable with --dart-define=RELEASE_REPO=owner/repo for a fork.
+  static const String releaseRepo =
+      String.fromEnvironment('RELEASE_REPO', defaultValue: 'VED2107/accounic');
+
+  /// Set --dart-define=UPDATE_CHECK=off to switch the check off entirely, for a
+  /// build shipped through a store that does its own updating.
+  static const bool updateCheckEnabled =
+      String.fromEnvironment('UPDATE_CHECK', defaultValue: 'on') != 'off';
+
   static bool get isConfigured =>
       supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
 

@@ -637,6 +637,75 @@ class TodayTotals {
       );
 }
 
+/// One currency's standing position, in that currency (db/migrations/0015).
+///
+/// Never converted and never summed with another row: [OwnerSummary] is the
+/// base-currency answer, and this is the same money read in the denomination it
+/// was actually entered in.
+class CurrencyTotals {
+  const CurrencyTotals({
+    required this.currency,
+    required this.totalReceivable,
+    required this.totalPayable,
+    required this.netPosition,
+    required this.grossCredit,
+    required this.grossDebit,
+    required this.grossSettled,
+    required this.peopleWithBalance,
+    required this.peopleCount,
+  });
+
+  final String currency;
+  final int totalReceivable;
+  final int totalPayable;
+  final int netPosition;
+  final int grossCredit;
+  final int grossDebit;
+  final int grossSettled;
+  final int peopleWithBalance;
+  final int peopleCount;
+
+  factory CurrencyTotals.fromJson(Map<String, dynamic> json) => CurrencyTotals(
+        currency: (json['currency'] as String?) ?? kFallbackCurrency,
+        totalReceivable: _int(json['total_receivable']),
+        totalPayable: _int(json['total_payable']),
+        netPosition: _int(json['net_position']),
+        grossCredit: _int(json['gross_credit']),
+        grossDebit: _int(json['gross_debit']),
+        grossSettled: _int(json['gross_settled']),
+        peopleWithBalance: _int(json['people_with_balance']),
+        peopleCount: _int(json['people_count']),
+      );
+}
+
+/// Today's movement in one currency (db/migrations/0015).
+class CurrencyToday {
+  const CurrencyToday({
+    required this.currency,
+    required this.credit,
+    required this.debit,
+    required this.settled,
+    required this.count,
+  });
+
+  final String currency;
+  final int credit;
+  final int debit;
+  final int settled;
+  final int count;
+
+  /// Everything that moved today in this currency, whichever way it went.
+  int get moved => credit + debit + settled;
+
+  factory CurrencyToday.fromJson(Map<String, dynamic> json) => CurrencyToday(
+        currency: (json['currency'] as String?) ?? kFallbackCurrency,
+        credit: _int(json['credit']),
+        debit: _int(json['debit']),
+        settled: _int(json['settled']),
+        count: _int(json['count']),
+      );
+}
+
 /// public.dashboard()
 class Dashboard {
   const Dashboard({
@@ -647,10 +716,19 @@ class Dashboard {
     required this.currency,
     required this.name,
     required this.baseCurrency,
+    this.totalsByCurrency = const [],
+    this.todayByCurrency = const [],
   });
 
   final OwnerSummary summary;
   final TodayTotals today;
+
+  /// Only currencies that carry entries. Empty on a workspace with none, and
+  /// empty against a database that has not run 0015 — in which case the client
+  /// renders the base-currency dashboard it always did.
+  final List<CurrencyTotals> totalsByCurrency;
+  final List<CurrencyToday> todayByCurrency;
+
   final List<ActivityItem> recentActivity;
   final List<PersonBalance> peopleWithBalance;
   final String currency;
@@ -677,6 +755,14 @@ class Dashboard {
       peopleWithBalance: [
         for (final entry in (json['people_with_balance'] as List? ?? []))
           PersonBalance.fromJson(entry as Map<String, dynamic>),
+      ],
+      totalsByCurrency: [
+        for (final entry in (json['totals_by_currency'] as List? ?? []))
+          CurrencyTotals.fromJson(entry as Map<String, dynamic>),
+      ],
+      todayByCurrency: [
+        for (final entry in (json['today_by_currency'] as List? ?? []))
+          CurrencyToday.fromJson(entry as Map<String, dynamic>),
       ],
     );
   }

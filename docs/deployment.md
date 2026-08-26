@@ -163,3 +163,26 @@ contents.
 7. `gh release create vX.Y.Z --title … --notes-file … <the three assets>`.
 
 Releases live at https://github.com/VED2107/accounic/releases.
+
+### What a release now does to installed copies
+
+Since v1.3.0 the Flutter client checks GitHub Releases on launch
+(`app/lib/data/update_repository.dart`) and shows a banner when the newest published
+release is a higher semantic version than the running binary. Nothing needs doing per
+release beyond publishing it: the check reads `tag_name` from
+`/repos/{owner}/{repo}/releases/latest`, so any future release is detected on its own.
+
+Three things it depends on, all of them decisions rather than code:
+
+* **The repository must be public**, or the release must be. The API path the client
+  uses is unauthenticated — a private repository answers `404`, which the client
+  correctly reads as "no update" and stays silent. **`VED2107/accounic` is private
+  today, so the check is inert for shipped binaries until that changes.**
+* **Tags must be semantic versions.** `v1.3.0` and `1.3.0` both work; a tag that does
+  not parse compares as `0.0.0` and can never claim to be an upgrade.
+* **Drafts and pre-releases are skipped**, so a draft cannot notify anyone early.
+
+Assets are matched by extension — `.exe`/`.msi`/`.msix` on Windows, `.apk` on Android —
+and the release page is the fallback when none matches, so a release with no assets is
+still openable. Build with `--dart-define=UPDATE_CHECK=off` to disable the check (a
+store build that updates itself), or `--dart-define=RELEASE_REPO=owner/repo` for a fork.

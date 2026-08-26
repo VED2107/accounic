@@ -50,6 +50,7 @@ abstract final class AppIcons {
   static const IconData back = LucideIcons.arrowLeft;
   static const IconData close = LucideIcons.x;
   static const IconData refresh = LucideIcons.refreshCw;
+  static const IconData download = LucideIcons.download;
   static const IconData signOut = LucideIcons.logOut;
   static const IconData expand = LucideIcons.chevronDown;
 
