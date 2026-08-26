@@ -79,6 +79,8 @@ async function moneyArgs(entry: {
  */
 async function openingArgs(person: {
   currency?: string | null;
+  /** Overrides `currency` as what the opening balance converts into. */
+  opening_account_currency?: string | null;
   opening_direction?: 'none' | 'they_owe_me' | 'i_owe_them';
   opening_amount?: string;
   opening_currency?: string | null;
@@ -93,7 +95,12 @@ async function openingArgs(person: {
     return { args: { p_opening_direction: null } };
   }
 
-  const account = normaliseCode(person.currency ?? '') || FALLBACK_CURRENCY;
+  // On an edit this is the account's ledger currency, which is what the
+  // database writes the opening row in; on a create the two are the same thing.
+  const account =
+    normaliseCode(person.opening_account_currency ?? '') ||
+    normaliseCode(person.currency ?? '') ||
+    FALLBACK_CURRENCY;
   const entry = normaliseCode(person.opening_currency ?? '') || account;
 
   const amount = parseAmountField(text, entry);
@@ -275,6 +282,13 @@ export async function updatePerson(
   const parsed = personSchema.safeParse(formObject(formData));
   if (!parsed.success) return { ok: false, ...firstIssue(parsed.error) };
 
+  // Parsed before the write, so a malformed opening amount is refused with the
+  // form intact rather than after the name has already been saved.
+  const opening = parsed.data.opening_changed ? await openingArgs(parsed.data) : null;
+  if (opening && 'error' in opening) {
+    return { ok: false, error: opening.error, field: 'opening_amount' };
+  }
+
   const supabase = await createClient();
   const { data, error } = await supabase.rpc('update_person', {
     p_person_id: personId,
@@ -289,10 +303,50 @@ export async function updatePerson(
   });
   if (error) return fail(error, UNCHANGED.person);
 
+  // Then the opening balance, through the same RPC the create path uses. The
+  // database retracts the old one rather than editing it, so the correction is
+  // visible in the history instead of quietly rewriting what the account opened
+  // with. 'none' clears it, which is how removing one works.
+  if (opening) {
+    const openingError = await writeOpeningBalance(supabase, personId, opening.args);
+    if (openingError) return openingError;
+  }
+
   revalidatePath(`/people/${personId}`);
   revalidatePath('/people');
   revalidatePath('/');
   return ok(data as Person);
+}
+
+/**
+ * The one call to `set_person_opening_balance`, shared by the edit form and the
+ * standalone action so the two can never disagree about how one is written.
+ *
+ * Returns a failed `ActionResult` or null when it went through.
+ */
+async function writeOpeningBalance(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  personId: string,
+  args: Record<string, unknown>,
+): Promise<ActionResult<never> | null> {
+  const { error } = await supabase.rpc('set_person_opening_balance', {
+    p_person_id: personId,
+    p_direction: args.p_opening_direction ?? 'none',
+    p_amount_minor: args.p_opening_amount_minor ?? null,
+    p_entered_amount_minor: args.p_opening_entered_minor ?? null,
+    p_entered_currency: args.p_opening_entered_currency ?? null,
+    p_rate_e9: args.p_opening_rate_e9 ?? null,
+    p_rate_source: args.p_opening_rate_source ?? null,
+    p_converted_amount_minor: args.p_opening_converted_minor ?? null,
+    p_conversion_mode: args.p_opening_conversion_mode ?? null,
+  });
+  if (error) {
+    return fail(
+      error,
+      'That opening balance could not be saved. Your balance has not been changed.',
+    );
+  }
+  return null;
 }
 
 /**
@@ -316,6 +370,7 @@ export async function setOpeningBalance(
       opening_rate_e9: true,
       opening_converted_amount: true,
       opening_conversion_mode: true,
+      opening_account_currency: true,
     })
     .safeParse(formObject(formData));
   if (!parsed.success) return { ok: false, ...firstIssue(parsed.error) };
@@ -324,18 +379,8 @@ export async function setOpeningBalance(
   if ('error' in opening) return { ok: false, error: opening.error, field: 'opening_amount' };
 
   const supabase = await createClient();
-  const { error } = await supabase.rpc('set_person_opening_balance', {
-    p_person_id: personId,
-    p_direction: opening.args.p_opening_direction ?? 'none',
-    p_amount_minor: opening.args.p_opening_amount_minor ?? null,
-    p_entered_amount_minor: opening.args.p_opening_entered_minor ?? null,
-    p_entered_currency: opening.args.p_opening_entered_currency ?? null,
-    p_rate_e9: opening.args.p_opening_rate_e9 ?? null,
-    p_rate_source: opening.args.p_opening_rate_source ?? null,
-    p_converted_amount_minor: opening.args.p_opening_converted_minor ?? null,
-    p_conversion_mode: opening.args.p_opening_conversion_mode ?? null,
-  });
-  if (error) return fail(error, 'That opening balance could not be saved. Your balance has not been changed.');
+  const openingError = await writeOpeningBalance(supabase, personId, opening.args);
+  if (openingError) return openingError;
 
   revalidatePath(`/people/${personId}`);
   revalidatePath('/people');

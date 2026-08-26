@@ -26,7 +26,15 @@ export async function getDashboard(): Promise<Dashboard> {
     p_people_limit: 8,
   });
   if (error) throw error;
-  return data as Dashboard;
+  // The two per-currency keys arrived in migration 0015. Defaulting them here
+  // means a client pointed at a database that has not run it yet renders the
+  // base-currency dashboard it always did, rather than throwing on a map().
+  const dashboard = data as Dashboard;
+  return {
+    ...dashboard,
+    totals_by_currency: dashboard.totals_by_currency ?? [],
+    today_by_currency: dashboard.today_by_currency ?? [],
+  };
 }
 
 export interface PeopleListOptions {

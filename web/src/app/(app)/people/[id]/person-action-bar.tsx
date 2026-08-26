@@ -184,6 +184,7 @@ export function PersonActionBar({
         onClose={() => setEditOpen(false)}
         person={person}
         baseCurrency={baseCurrency}
+        openingMinor={balance.opening_minor}
       />
 
       <ConfirmDialog

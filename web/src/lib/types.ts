@@ -217,12 +217,43 @@ export interface DashboardPeopleRow {
   last_activity_at: string | null;
 }
 
+/**
+ * One currency's standing position, in that currency (0015).
+ *
+ * Never converted and never summed with another row: the base-currency answer
+ * is `OwnerSummary`, and this is the same money read in the denomination it was
+ * actually entered in.
+ */
+export interface CurrencyTotals {
+  currency: string;
+  total_receivable: number;
+  total_payable: number;
+  net_position: number;
+  gross_credit: number;
+  gross_debit: number;
+  gross_settled: number;
+  people_with_balance: number;
+  people_count: number;
+}
+
+/** Today's movement in one currency (0015). */
+export interface CurrencyToday {
+  currency: string;
+  credit: number;
+  debit: number;
+  settled: number;
+  count: number;
+}
+
 /** public.dashboard() */
 export interface Dashboard {
   profile: Pick<Me, 'id' | 'name' | 'email' | 'phone' | 'business_name' | 'avatar_url' | 'currency'>;
   base_currency: string;
   summary: OwnerSummary;
   today: { credit: number; debit: number; settled: number; count: number };
+  /** Only currencies that carry entries. Empty on a workspace with none. */
+  totals_by_currency: CurrencyTotals[];
+  today_by_currency: CurrencyToday[];
   recent_activity: ActivityItem[];
   people_with_balance: DashboardPeopleRow[];
 }

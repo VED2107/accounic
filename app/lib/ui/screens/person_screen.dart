@@ -588,7 +588,12 @@ class PersonMenu extends ConsumerWidget {
 
         switch (value) {
           case 'edit':
-            await showPersonSheet(context, ref, person: person);
+            await showPersonSheet(
+              context,
+              ref,
+              person: person,
+              openingMinor: page.balance.openingMinor,
+            );
 
           case 'archive':
           case 'restore':

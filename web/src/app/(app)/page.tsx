@@ -29,7 +29,12 @@ import {
 import { friendlyDate, greeting } from '@/lib/dates';
 import { balanceTone, formatMinor } from '@/lib/money';
 import { trendsFromBuckets, type Trend } from '@/lib/series';
-import type { Dashboard, DashboardPeopleRow } from '@/lib/types';
+import type {
+  CurrencyToday,
+  CurrencyTotals,
+  Dashboard,
+  DashboardPeopleRow,
+} from '@/lib/types';
 
 export const metadata = { title: 'Dashboard' };
 
@@ -46,7 +51,14 @@ export const metadata = { title: 'Dashboard' };
  */
 export default async function DashboardPage() {
   const [data, buckets] = await Promise.all([getDashboard(), getActivitySummary('day', 30)]);
-  const { summary, profile, today, people_with_balance: people } = data;
+  const {
+    summary,
+    profile,
+    today,
+    people_with_balance: people,
+    totals_by_currency: byCurrency,
+    today_by_currency: todayByCurrency,
+  } = data;
   // The RPC returns a generous slice; six rows is what keeps this column the
   // same height as the one beside it, and "recent" stops meaning much past that.
   const activity = data.recent_activity.slice(0, 6);
@@ -229,6 +241,40 @@ export default async function DashboardPage() {
           />
         </Reveal>
       </section>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Every currency that carries entries, kept apart (0015)              */}
+      {/*                                                                     */}
+      {/* The card above is the whole position in one number, which only      */}
+      {/* exists because the dirhams were converted into rupees first. This   */}
+      {/* is the same money before that step: one row per currency, summed    */}
+      {/* only within itself, and never added across.                         */}
+      {/* ------------------------------------------------------------------ */}
+      {byCurrency.length > 0 ? (
+        <Reveal delay={145} className="mt-4 block">
+          <Card className="overflow-hidden">
+            <CardHeader
+              title="By currency"
+              description={
+                byCurrency.length === 1
+                  ? 'Everything so far is in one currency.'
+                  : `Each currency on its own terms. The ${currency} figures above convert all of these into one total.`
+              }
+            />
+            <ul className="divide-y divide-line">
+              {byCurrency.map((row, index) => (
+                <li key={row.currency} className="reveal-row" style={staggerStyle(index)}>
+                  <CurrencyRow
+                    row={row}
+                    today={todayByCurrency.find((item) => item.currency === row.currency)}
+                    isBase={row.currency === currency}
+                  />
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </Reveal>
+      ) : null}
 
       {/* ------------------------------------------------------------------ */}
       {/* The month in flows (upgrade §8)                                     */}
@@ -558,6 +604,77 @@ function SectionBar({
         {linkLabel}
         <ArrowRightIcon className="size-3.5 transition-transform duration-[var(--dur)] ease-[var(--ease)] group-hover:translate-x-0.5" />
       </Link>
+    </div>
+  );
+}
+
+/**
+ * One currency's standing position (0015).
+ *
+ * Every figure on this row is denominated in `row.currency` and was never put
+ * through a rate. The workspace currency gets the same row as any other — a
+ * single-currency ledger reads identically to a four-currency one, which is
+ * what stops the section from looking like it is only for foreign money.
+ */
+function CurrencyRow({
+  row,
+  today,
+  isBase,
+}: {
+  row: CurrencyTotals;
+  today?: CurrencyToday;
+  isBase: boolean;
+}) {
+  const netTone = balanceTone(row.net_position);
+  const moved = today ? today.credit + today.debit + today.settled : 0;
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3.5 sm:px-5">
+      <span className="flex min-w-0 items-center gap-2">
+        <span className="grid size-9 shrink-0 place-items-center rounded-field border border-line-strong bg-sunken text-[0.6875rem] font-semibold tracking-wide text-ink-muted">
+          {row.currency}
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-[0.875rem] font-medium text-ink">
+            {formatMinor(Math.abs(row.net_position), row.currency)}{' '}
+            <span
+              className={cn(
+                'text-[0.75rem] font-normal',
+                netTone === 'receivable' && 'text-receivable',
+                netTone === 'payable' && 'text-payable',
+                netTone === 'settled' && 'text-ink-faint',
+              )}
+            >
+              {row.net_position > 0
+                ? 'in your favour'
+                : row.net_position < 0
+                  ? 'against you'
+                  : 'settled'}
+            </span>
+          </span>
+          <span className="block truncate text-[0.75rem] text-ink-faint">
+            {row.people_with_balance > 0
+              ? `${row.people_with_balance} of ${row.people_count} ${row.people_count === 1 ? 'account' : 'accounts'} outstanding`
+              : `${row.people_count} ${row.people_count === 1 ? 'account' : 'accounts'}, all settled`}
+            {isBase ? ' · your workspace currency' : ''}
+          </span>
+        </span>
+      </span>
+
+      <span className="ml-auto flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-[0.75rem]">
+        <span className="text-receivable">
+          in {formatMinor(row.total_receivable, row.currency)}
+        </span>
+        <span className="text-payable">out {formatMinor(row.total_payable, row.currency)}</span>
+        <span className="text-ink-faint">
+          settled {formatMinor(row.gross_settled, row.currency)}
+        </span>
+        {moved > 0 ? (
+          <span className="rounded-full border border-line bg-sunken px-2 py-0.5 text-ink-muted">
+            today {formatMinor(moved, row.currency)}
+          </span>
+        ) : null}
+      </span>
     </div>
   );
 }

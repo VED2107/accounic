@@ -11,6 +11,7 @@ import 'screens/search_sheet.dart';
 import 'sheets/transaction_sheet.dart';
 import 'widgets/brand.dart';
 import 'widgets/common.dart';
+import 'widgets/update_banner.dart';
 
 /// Adaptive shell (context.md §29).
 ///
@@ -69,6 +70,15 @@ class AppShell extends ConsumerWidget {
       if (me?.isAdmin ?? false) _adminDestination,
     ];
 
+    // A newer release, when there is one. Above everything, on every screen,
+    // and nothing at all the rest of the time (widgets/update_banner.dart).
+    final body = Column(
+      children: [
+        const UpdateBanner(),
+        Expanded(child: child),
+      ],
+    );
+
     if (wide) {
       return Scaffold(
         body: Row(
@@ -83,14 +93,14 @@ class AppShell extends ConsumerWidget {
               subtitle: me?.businessName ?? me?.email ?? '',
             ),
             VerticalDivider(width: 1, color: context.money.line),
-            Expanded(child: child),
+            Expanded(child: body),
           ],
         ),
       );
     }
 
     return Scaffold(
-      body: child,
+      body: body,
       extendBody: true,
       bottomNavigationBar: _BottomBar(
         index: _indexIn(_destinations),
