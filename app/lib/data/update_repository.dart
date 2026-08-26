@@ -52,6 +52,42 @@ class AppRelease {
   String get openUrl => downloadUrl ?? url;
 }
 
+/// Hosts an update link is allowed to point at.
+///
+/// Every field of [AppRelease] comes from a remote response, `openUrl`
+/// included, and it is handed to `launchUrl`. Nothing may reach that call
+/// unchecked: a `javascript:` or `file:` scheme, or an https link to a host of
+/// someone else's choosing, turns "check for updates" into "open whatever the
+/// response says". TLS makes tampering hard, not impossible — a
+/// mis-issued certificate or a compromised proxy is exactly the scenario where
+/// the update path must still refuse.
+///
+/// GitHub serves release pages from github.com and the asset bytes from
+/// objects.githubusercontent.com, so those two and their subdomains are the
+/// whole legitimate set.
+const _allowedUpdateHosts = {
+  'github.com',
+  'www.github.com',
+  'api.github.com',
+  'objects.githubusercontent.com',
+  'release-assets.githubusercontent.com',
+};
+
+/// True when [raw] is an `https` URL on a host releases actually come from.
+///
+/// Deliberately strict and deliberately dumb: an allow-list, not a blocklist,
+/// and no attempt to be clever about redirects — the browser handles those, and
+/// what this decides is only what Accounic itself is willing to hand over.
+bool isTrustedUpdateUrl(String? raw) {
+  if (raw == null || raw.isEmpty) return false;
+  final uri = Uri.tryParse(raw);
+  if (uri == null || !uri.isAbsolute) return false;
+  if (uri.scheme != 'https') return false;
+  if (uri.userInfo.isNotEmpty) return false;   // https://github.com@evil.example
+  final host = uri.host.toLowerCase();
+  return _allowedUpdateHosts.contains(host) || host.endsWith('.githubusercontent.com');
+}
+
 class UpdateRepository {
   const UpdateRepository({http.Client? client, this.repo = AppConfig.releaseRepo})
       : _client = client;
@@ -95,15 +131,22 @@ class UpdateRepository {
       if (tag == null || tag.isEmpty) return null;
 
       final notes = (json['body'] as String?)?.trim();
+
+      // Both links are checked before they are ever stored, so an untrusted URL
+      // cannot reach launchUrl even if this object is passed around later.
+      final page = (json['html_url'] as String?) ?? '';
+      final asset = _assetFor(json['assets']);
       return AppRelease(
         version: AppVersion.parse(tag).toString(),
         name: (json['name'] as String?)?.trim().isNotEmpty == true
             ? (json['name'] as String).trim()
             : tag,
-        url: (json['html_url'] as String?) ?? 'https://github.com/$repo/releases/latest',
+        url: isTrustedUpdateUrl(page)
+            ? page
+            : 'https://github.com/$repo/releases/latest',
         notes: (notes == null || notes.isEmpty) ? null : notes,
         publishedAt: json['published_at'] as String?,
-        downloadUrl: _assetFor(json['assets']),
+        downloadUrl: isTrustedUpdateUrl(asset) ? asset : null,
       );
     } catch (_) {
       // Network down, DNS gone, rate limited, malformed body — all the same

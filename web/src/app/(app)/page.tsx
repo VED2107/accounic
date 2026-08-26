@@ -628,6 +628,10 @@ function CurrencyRow({
   const netTone = balanceTone(row.net_position);
   const moved = today ? today.credit + today.debit + today.settled : 0;
 
+  // The equivalent is supplementary. It appears under the real figure, never in
+  // place of it, and only when the two say different things.
+  const showBase = !isBase && row.net_base_minor != null;
+
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3.5 sm:px-5">
       <span className="flex min-w-0 items-center gap-2">
@@ -635,8 +639,9 @@ function CurrencyRow({
           {row.currency}
         </span>
         <span className="min-w-0">
+          {/* This currency's own money, in this currency. */}
           <span className="block truncate text-[0.875rem] font-medium text-ink">
-            {formatMinor(Math.abs(row.net_position), row.currency)}{' '}
+            {formatMinor(Math.abs(row.net_position), row.currency, { withCode: true })}{' '}
             <span
               className={cn(
                 'text-[0.75rem] font-normal',
@@ -652,10 +657,14 @@ function CurrencyRow({
                   : 'settled'}
             </span>
           </span>
+          {showBase ? (
+            <span className="tnum block truncate text-[0.75rem] text-ink-faint">
+              ≈ {formatMinor(Math.abs(row.net_base_minor!), row.base_currency, { withCode: true })}
+            </span>
+          ) : null}
           <span className="block truncate text-[0.75rem] text-ink-faint">
-            {row.people_with_balance > 0
-              ? `${row.people_with_balance} of ${row.people_count} ${row.people_count === 1 ? 'account' : 'accounts'} outstanding`
-              : `${row.people_count} ${row.people_count === 1 ? 'account' : 'accounts'}, all settled`}
+            {row.entry_count} {row.entry_count === 1 ? 'entry' : 'entries'} ·{' '}
+            {row.people_count} {row.people_count === 1 ? 'account' : 'accounts'}
             {isBase ? ' · your workspace currency' : ''}
           </span>
         </span>
@@ -663,9 +672,9 @@ function CurrencyRow({
 
       <span className="ml-auto flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-[0.75rem]">
         <span className="text-receivable">
-          in {formatMinor(row.total_receivable, row.currency)}
+          in {formatMinor(row.gross_credit, row.currency)}
         </span>
-        <span className="text-payable">out {formatMinor(row.total_payable, row.currency)}</span>
+        <span className="text-payable">out {formatMinor(row.gross_debit, row.currency)}</span>
         <span className="text-ink-faint">
           settled {formatMinor(row.gross_settled, row.currency)}
         </span>

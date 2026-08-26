@@ -2,8 +2,9 @@
 
 A small, fast, personal accounting system. Three clients, one backend, one database.
 
-Current release: **[v1.1.1](https://github.com/VED2107/accounic/releases/latest)** —
-Windows installer, Windows portable zip, and an Android APK.
+Current release: **[v1.4.0](https://github.com/VED2107/accounic/releases/latest)** —
+Windows installer, Windows portable zip, and an Android APK. The app checks GitHub
+Releases on launch and tells you when a newer one exists.
 
 Answers four questions and little else (`context.md` §35):
 
@@ -55,7 +56,10 @@ and parse input — they never derive a balance.
 | Balance arithmetic | `db/migrations/0003_engine.sql` | `person_balances`, `owner_summary` views |
 | Per-transaction settled/open | `transaction_settlement_status()` | FIFO with targeted-settlement priority |
 | Validated writes | `db/migrations/0004_mutations.sql` | every client writes through these RPCs |
-| Tenant isolation | `db/migrations/0005_rls.sql` | RLS on all four tables, forced |
+| Tenant isolation | `db/migrations/0005_rls.sql` + `0016_revoke_anon.sql` | RLS forced on every table; `anon` holds no EXECUTE in `public` |
+| Currency of record | `db/migrations/0017_entry_currency.sql` | entries keep the currency they were entered in; base is supplementary |
+| Live exchange rates | `web/src/lib/rates.ts`, `app/lib/data/rates_repository.dart` | open.er-api.com, falling back to frankfurter.dev (ECB). Free, keyless, cached per owner |
+| Update check | `app/lib/data/update_repository.dart` | GitHub Releases API + semver; links are host-allow-listed |
 | Admin operations | `db/migrations/0007_admin.sql` + `web/src/lib/admin-actions.ts` | service-role never leaves the server |
 | Money representation | `money.ts` / `money.dart` | integer minor units, mirrored line for line |
 | Currency definitions | `shared/currencies.json` | one source; `db/tools/sync-currencies.mjs` generates the SQL seed, the TS and the Dart |

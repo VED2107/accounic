@@ -45,8 +45,16 @@ Future<void> main() async {
     // holds. Everything it can do is bounded by RLS (context.md §24).
     publishableKey: AppConfig.supabaseAnonKey,
     authOptions: const FlutterAuthClientOptions(
-      // Sessions persist across restarts; on Android this is encrypted storage,
-      // on Windows the app-data directory.
+      // Sessions persist across restarts. Be precise about where:
+      // supabase_flutter stores them in plain SharedPreferences on Android
+      // (its local_storage.dart) and in the app-data directory on Windows —
+      // NOT in encrypted storage, whatever an earlier comment here claimed.
+      //
+      // What keeps the refresh token on the device is therefore the platform
+      // sandbox plus `android:allowBackup="false"` and the extraction rules in
+      // android/app/src/main/res/xml/. Moving to flutter_secure_storage would
+      // add real at-rest protection and is the next step worth taking; see
+      // docs/security.md.
       autoRefreshToken: true,
     ),
   );

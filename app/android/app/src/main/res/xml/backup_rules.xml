@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Belt to the braces of android:allowBackup="false".
+
+  supabase_flutter keeps the session — including the refresh token — in plain
+  SharedPreferences (supabase_flutter/lib/src/local_storage.dart), not in
+  encrypted storage. Anything that can read a backup can therefore resume a
+  signed-in session. Backups are off entirely; these rules make sure that if
+  they are ever turned on, the credential still does not travel.
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="." />
+    <exclude domain="database" path="." />
+</full-backup-content>

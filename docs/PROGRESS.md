@@ -3,8 +3,8 @@
 Status of the Accounic build against `context.md`. This is the file to read first when
 picking the work back up.
 
-**Last updated:** 2026-08-26 (ninth session)
-**Current release:** [v1.3.0](https://github.com/VED2107/accounic/releases/latest)
+**Last updated:** 2026-08-27 (tenth session)
+**Current release:** [v1.4.0](https://github.com/VED2107/accounic/releases/latest)
 **Overall:** Phases 1–4 complete and verified against the live database. Phase 5
 (performance) measured and the client half tuned — see `docs/performance.md`. Phase 6
 (hardening) partly done.
@@ -26,6 +26,7 @@ Everything found since v1.0.0 was found on a **phone**, and none of it was catch
 | 1.0.5–1.0.7 | delete refusing a person whose history was all retracted; Save and Cancel sitting under the keyboard |
 | 1.1.0 | multi-currency, opening balances, and the rest of the keyboard story on the person form |
 | 1.1.1 | currency made genuinely per person: changing it no longer rewrites history |
+| 1.4.0 | entries keep the currency they were entered in; the anonymous execute surface closed; Android backups off |
 | 1.3.0 | opening balance on the edit form; the dashboard shows every currency, not only the base one; the app tells you when a newer release exists |
 
 Each now has a widget test pinning it — see README §4.
@@ -63,6 +64,8 @@ Nine migrations, applied in order to the live Supabase project.
 | `0010_currency.sql` | `currencies` reference table, `people.currency`, conversion provenance on every ledger row, `is_opening`, the per-owner `exchange_rates` cache, `convert_amount_minor()`, and the engine views rebuilt to carry currency |
 | `0011_currency_mutations.sql` | the write path: currency and opening balance on `create_person()`, restatement on `update_person()` (withdrawn in 0013), conversion arguments on every money RPC, `set_person_opening_balance()` |
 | `0012_currency_reads.sql` | `dashboard()`, `person_page()`, `search_all()`, `activity_page()` and `activity_summary()` made currency-aware |
+| `0017_entry_currency.sql` | `activity_entries` view; activity rows carry `entry_amount_minor`/`entry_currency` and `amount_base_minor`; `totals_by_currency` regrouped by ENTRY currency |
+| `0016_revoke_anon.sql` | revokes EXECUTE from `anon` across `public` and resets the default privilege; `assert_own_workspace()` added to the three SECURITY DEFINER helpers that read tenant tables |
 | `0015_dashboard_currencies.sql` | `dashboard()` gains `totals_by_currency` and `today_by_currency` — the same positions kept in their own currencies, never summed across them, only for currencies that carry entries. Additive: `summary` and `today` are byte-identical |
 | `0013_person_currency.sql` | splits `people.currency` (the entry default) from `people.ledger_currency` (the frozen denomination); a currency change no longer rewrites history; `restate_person_currency()` dropped |
 

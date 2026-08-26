@@ -654,10 +654,20 @@ class _CurrencyRow extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // This currency's own money, in this currency.
                     Text(
-                      formatMinor(net.abs(), currency: row.currency),
+                      formatMinor(net.abs(), currency: row.currency, withCode: true),
                       style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                     ),
+                    // The base equivalent is supplementary: under the figure,
+                    // never in place of it.
+                    if (row.showsBaseEquivalent) ...[
+                      const SizedBox(height: 1),
+                      Text(
+                        '≈ ${formatMinor(row.netBaseMinor!.abs(), currency: row.baseCurrency, withCode: true)}',
+                        style: TextStyle(fontSize: 12, color: palette.inkFaint),
+                      ),
+                    ],
                     const SizedBox(height: 1),
                     Text(
                       net > 0
@@ -694,11 +704,11 @@ class _CurrencyRow extends StatelessWidget {
             runSpacing: AppSpacing.xs,
             children: [
               Text(
-                'in ${formatMinor(row.totalReceivable, currency: row.currency)}',
+                'in ${formatMinor(row.grossCredit, currency: row.currency)}',
                 style: TextStyle(fontSize: 12, color: palette.receivable),
               ),
               Text(
-                'out ${formatMinor(row.totalPayable, currency: row.currency)}',
+                'out ${formatMinor(row.grossDebit, currency: row.currency)}',
                 style: TextStyle(fontSize: 12, color: palette.payable),
               ),
               Text(
@@ -706,10 +716,8 @@ class _CurrencyRow extends StatelessWidget {
                 style: TextStyle(fontSize: 12, color: palette.inkFaint),
               ),
               Text(
-                row.peopleWithBalance > 0
-                    ? '${row.peopleWithBalance} of ${row.peopleCount} outstanding'
-                    : '${row.peopleCount} '
-                        '${row.peopleCount == 1 ? 'account' : 'accounts'}, all settled',
+                '${row.entryCount} ${row.entryCount == 1 ? 'entry' : 'entries'} · '
+                '${row.peopleCount} ${row.peopleCount == 1 ? 'account' : 'accounts'}',
                 style: TextStyle(fontSize: 12, color: palette.inkFaint),
               ),
               if (isBase)
@@ -1059,17 +1067,31 @@ class ActivityRow extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: AppSpacing.md),
-                    MoneyText(
-                      item.amountMinor,
-                      // Each entry in its own currency: a workspace-wide feed is
-                      // exactly where two of them sit side by side (upgrade §9).
-                      currency: item.currency,
-                      tone: item.isSettlement
-                          ? MoneyTone.neutral
-                          : item.isReceivable
-                              ? MoneyTone.receivable
-                              : MoneyTone.payable,
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                    // What was ENTERED leads, in the currency it was entered
+                    // in. `amountMinor` is the person's ledger denomination, so
+                    // a USD 40 entry on a rupee account used to read ₹3,817.11
+                    // here — the conversion talking over the fact. The base
+                    // equivalent sits under it as what it is: supplementary.
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        MoneyText(
+                          item.entryAmountMinor,
+                          currency: item.entryCurrency,
+                          tone: item.isSettlement
+                              ? MoneyTone.neutral
+                              : item.isReceivable
+                                  ? MoneyTone.receivable
+                                  : MoneyTone.payable,
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                        ),
+                        if (item.showsBaseEquivalent)
+                          Text(
+                            '≈ ${formatMinor(item.amountBaseMinor!, currency: item.baseCurrency!, withCode: true)}',
+                            style: TextStyle(fontSize: 11.5, color: palette.inkFaint),
+                          ),
+                      ],
                     ),
                   ],
                 ),

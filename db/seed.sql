@@ -3,11 +3,28 @@
 --
 -- Creates two isolated workspaces so tenant isolation is visible immediately:
 --
---   demo@example.com  / Demo@12345   (admin)  — Indian trading business
---   friend@example.com/ Demo@12345            — a second, unrelated workspace
+--   demo@example.com    — Indian trading business
+--   friend@example.com  — a second, unrelated workspace
 --
 -- Run AFTER 0001..0007. Service role / SQL editor only. Idempotent.
 -- Do not run against production.
+--
+-- THE PASSWORD IS NOT IN THIS FILE, and this script refuses to run without one.
+-- It used to be `Demo@12345`, written here and again in db/tools/smoke-api.mjs,
+-- and demo@example.com was granted admin. That was survivable while the
+-- repository was private; in a public one it is a known-password administrator
+-- for whatever project the script is pointed at. Both users were deleted from
+-- the live project on 2026-08-26 (docs/deployment.md §2), and the shape that
+-- made it possible is closed here rather than only cleaned up after the fact.
+--
+-- Supply a password for this session, and opt in to admin separately:
+--
+--   select set_config('accounic.seed_password', '<a long random string>', false);
+--   select set_config('accounic.seed_admin',    'on', false);  -- optional
+--   \i db/seed.sql
+--
+-- Nothing is granted admin unless `accounic.seed_admin` is on. Use
+-- `select public.grant_admin('you@example.com')` for a real administrator.
 -- =============================================================================
 
 set local role postgres;
@@ -16,7 +33,23 @@ do $$
 declare
   v_demo   uuid;
   v_friend uuid;
+  -- No default, deliberately: a seed script that will invent a password is a
+  -- seed script that ships one.
+  v_password text := nullif(btrim(coalesce(current_setting('accounic.seed_password', true), '')), '');
+  v_grant_admin boolean := lower(coalesce(current_setting('accounic.seed_admin', true), '')) in ('on','true','yes','1');
 begin
+  if v_password is null then
+    raise exception using
+      errcode = 'invalid_parameter_value',
+      message = 'No seed password was set.',
+      hint    = 'select set_config(''accounic.seed_password'', ''<a long random string>'', false); then re-run. The password is deliberately not stored in this file.';
+  end if;
+
+  if length(v_password) < 12 then
+    raise exception using
+      errcode = 'invalid_parameter_value',
+      message = 'The seed password is too short (minimum 12 characters).';
+  end if;
   ---------------------------------------------------------------------------
   -- Auth users. Passwords are bcrypt hashed exactly the way GoTrue does it.
   --
@@ -37,7 +70,7 @@ begin
     )
     values (
       '00000000-0000-0000-0000-000000000000', gen_random_uuid(), 'authenticated', 'authenticated',
-      'demo@example.com', crypt('Demo@12345', gen_salt('bf')),
+      'demo@example.com', crypt(v_password, gen_salt('bf')),
       now(), '{"provider":"email","providers":["email"]}'::jsonb,
       '{"name":"Ved","business_name":"Ved Traders","currency":"INR"}'::jsonb,
       now(), now(),
@@ -58,7 +91,7 @@ begin
     )
     values (
       '00000000-0000-0000-0000-000000000000', gen_random_uuid(), 'authenticated', 'authenticated',
-      'friend@example.com', crypt('Demo@12345', gen_salt('bf')),
+      'friend@example.com', crypt(v_password, gen_salt('bf')),
       now(), '{"provider":"email","providers":["email"]}'::jsonb,
       '{"name":"Arjun","business_name":"Arjun Electricals","currency":"INR"}'::jsonb,
       now(), now(),
@@ -79,7 +112,12 @@ begin
     values (v_friend::text, v_friend, jsonb_build_object('sub', v_friend::text, 'email', 'friend@example.com'), 'email', now(), now(), now());
   end if;
 
-  insert into public.app_admins (user_id) values (v_demo) on conflict do nothing;
+  -- Admin is opt-in. A demo account that is an administrator by default is how
+  -- a seed password becomes an administrative credential.
+  if v_grant_admin then
+    insert into public.app_admins (user_id) values (v_demo) on conflict do nothing;
+    raise notice 'demo@example.com was granted admin because accounic.seed_admin is on.';
+  end if;
 
   ---------------------------------------------------------------------------
   -- Workspace A — demo@example.com

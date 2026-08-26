@@ -3,6 +3,7 @@ import { Money } from '@/components/money';
 import { cn } from '@/components/ui/primitives';
 import { ArrowDownIcon, ArrowUpIcon, SettleIcon } from '@/components/icons';
 import { friendlyDate } from '@/lib/dates';
+import { formatMinor } from '@/lib/money';
 import { entryIsReceivable, entryLabel } from '@/lib/direction';
 import { ConvertedFrom } from '@/components/ledger/conversion';
 import type { ActivityItem } from '@/lib/types';
@@ -34,6 +35,20 @@ export function ActivityRow({
   // Each row carries its own currency, because a workspace-wide feed is exactly
   // where two of them sit next to each other (upgrade §9).
   const rowCurrency = item.currency ?? currency;
+
+  // What was actually entered. `entry_*` arrived with migration 0017; falling
+  // back to the ledger figures keeps this row correct against an older
+  // database, where the two were the same thing anyway.
+  const entryMinor = item.entry_amount_minor ?? item.amount_minor;
+  const entryCurrency = item.entry_currency ?? rowCurrency;
+
+  // The equivalent is worth showing only when it says something the primary
+  // figure does not — i.e. when the entry was not already in the workspace
+  // currency, and a rate was actually known.
+  const showBase =
+    item.amount_base_minor != null &&
+    Boolean(item.base_currency) &&
+    item.base_currency !== entryCurrency;
 
   const when = showDate ? friendlyDate(item.entry_date) : null;
 
@@ -104,10 +119,11 @@ export function ActivityRow({
             </>
           ) : null}
         </span>
-        {/* What was actually handed over, when that was not this account's
-            currency — and whether the figure beside it was the rate's or the
-            user's (upgrade §40). */}
-        {item.entered_currency ? (
+        {/* Provenance, only where it adds something. The entered figure is now
+            the headline and the base equivalent sits under it, so repeating the
+            original here would print the same number twice. What is still worth
+            saying is that a human overrode the rate (upgrade §40). */}
+        {item.entered_currency && item.conversion_mode === 'manual' ? (
           <ConvertedFrom
             className="block truncate"
             enteredMinor={item.entered_amount_minor}
@@ -120,12 +136,24 @@ export function ActivityRow({
         ) : null}
       </span>
 
-      <Money
-        minor={item.amount_minor}
-        currency={rowCurrency}
-        tone={isSettlement ? 'neutral' : receivable ? 'receivable' : 'payable'}
-        className="money shrink-0"
-      />
+      {/* The amount that was ENTERED leads, in the currency it was entered in.
+          A USD 40 entry on a rupee account used to show ₹3,817.11 here with the
+          dollars as a footnote, which is the conversion talking over the fact.
+          The base-currency equivalent sits underneath as what it is:
+          supplementary. */}
+      <span className="flex shrink-0 flex-col items-end">
+        <Money
+          minor={entryMinor}
+          currency={entryCurrency}
+          tone={isSettlement ? 'neutral' : receivable ? 'receivable' : 'payable'}
+          className="money"
+        />
+        {showBase ? (
+          <span className="tnum text-[0.75rem] text-ink-faint">
+            ≈ {formatMinor(item.amount_base_minor!, item.base_currency!, { withCode: true })}
+          </span>
+        ) : null}
+      </span>
     </Link>
   );
 }

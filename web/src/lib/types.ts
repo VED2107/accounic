@@ -195,6 +195,22 @@ export interface ActivityItem {
   created_at: string;
   /** The currency this row is denominated in — the person's, not the owner's. */
   currency: string;
+  /**
+   * What was actually entered, and in what (0017). This is the amount the user
+   * typed and recognises, so it is the one to show: on a rupee account a USD 40
+   * entry has `entry_amount_minor` 4000 / `entry_currency` USD, while
+   * `amount_minor` holds the ₹ figure it was converted into. Equal to
+   * amount_minor/currency whenever the entry needed no conversion.
+   */
+  entry_amount_minor?: number;
+  entry_currency?: string;
+  /**
+   * The row's value in the workspace currency, converted by the engine.
+   * Supplementary information shown beside the original — never in place of it.
+   * Null when no rate is cached.
+   */
+  amount_base_minor?: number | null;
+  base_currency?: string;
   is_opening?: boolean;
   entered_amount_minor?: number | null;
   entered_currency?: string | null;
@@ -225,24 +241,35 @@ export interface DashboardPeopleRow {
  * actually entered in.
  */
 export interface CurrencyTotals {
+  /** The currency entries were actually made in — not the account's. */
   currency: string;
-  total_receivable: number;
-  total_payable: number;
-  net_position: number;
+  /** The workspace currency the equivalent below is stated in. */
+  base_currency: string;
   gross_credit: number;
   gross_debit: number;
   gross_settled: number;
-  people_with_balance: number;
+  /** credit - debit, in `currency`. Never mixed with another currency. */
+  net_position: number;
+  /**
+   * `net_position` converted to `base_currency` by the engine's own converter.
+   * Supplementary — the figure above is the real one. Null when no rate is
+   * cached, which means "not known", never zero.
+   */
+  net_base_minor: number | null;
+  entry_count: number;
   people_count: number;
 }
 
 /** Today's movement in one currency (0015). */
 export interface CurrencyToday {
   currency: string;
+  base_currency: string;
   credit: number;
   debit: number;
   settled: number;
   count: number;
+  /** Everything that moved today in this currency, converted to base. */
+  moved_base_minor: number | null;
 }
 
 /** public.dashboard() */

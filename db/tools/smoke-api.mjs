@@ -9,11 +9,16 @@
  *   node db/tools/smoke-api.mjs
  */
 
-// NOTE: the demo users this script signs in as were DELETED from the live project on
-// 2026-08-26, before this repository was made public — their password was written here in
-// plain text, and demo@example.com was an admin (docs/deployment.md §2). The seed password
-// below is the one db/seed.sql writes, kept so this script still works against a freshly
-// seeded THROWAWAY project; override it with DEMO_PASSWORD. Do not re-seed a live project.
+// This script signs in as the seed users, so it needs the password THAT seed run was
+// given. There is no default and there must not be one: the previous default —
+// `Demo@12345`, also written into db/seed.sql, on an account that was granted admin —
+// was a working administrative credential for the live project, and this repository is
+// public. Those users were deleted on 2026-08-26 and db/seed.sql now refuses to run
+// without a password of your choosing (docs/deployment.md §2).
+//
+//   DEMO_PASSWORD='<whatever you seeded with>' node db/tools/smoke-api.mjs
+//
+// Point it at a throwaway project. It writes.
 
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -35,6 +40,20 @@ const env = Object.fromEntries(
 
 const URL = env.NEXT_PUBLIC_SUPABASE_URL;
 const ANON = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+const DEMO_PASSWORD = process.env.DEMO_PASSWORD;
+if (!DEMO_PASSWORD) {
+  console.error(
+    [
+      'DEMO_PASSWORD is not set. This script signs in as the seed users, and the',
+      'password is whatever you passed to db/seed.sql — it is deliberately not',
+      'stored in this repository.',
+      '',
+      "  DEMO_PASSWORD='…' node db/tools/smoke-api.mjs",
+    ].join(String.fromCharCode(10)),
+  );
+  process.exit(2);
+}
 
 let failures = 0;
 function check(label, condition, detail = '') {
@@ -63,7 +82,7 @@ const anon = createClient(URL, ANON, { auth: { persistSession: false } });
 const demo = createClient(URL, ANON, { auth: { persistSession: false } });
 const signIn = await demo.auth.signInWithPassword({
   email: 'demo@example.com',
-  password: process.env.DEMO_PASSWORD ?? 'Demo@12345',
+  password: DEMO_PASSWORD,
 });
 check('demo signs in with email + password', !signIn.error, signIn.error?.message ?? '');
 if (signIn.error) process.exit(1);
@@ -169,7 +188,7 @@ check('negative amounts are refused', badAmount.error !== null, badAmount.error?
 const friend = createClient(URL, ANON, { auth: { persistSession: false } });
 await friend.auth.signInWithPassword({
   email: 'friend@example.com',
-  password: process.env.DEMO_PASSWORD ?? 'Demo@12345',
+  password: DEMO_PASSWORD,
 });
 
 const friendPeople = await friend.from('person_balances').select('*');

@@ -548,19 +548,45 @@ class ActivityItem {
     this.note,
     this.settlementIncoming = false,
     this.currency = kFallbackCurrency,
+    int? entryAmountMinor,
+    String? entryCurrency,
+    this.amountBaseMinor,
+    this.baseCurrency,
     this.isOpening = false,
     this.enteredAmountMinor,
     this.enteredCurrency,
     this.exchangeRateE9,
     this.conversionMode,
     this.autoConvertedAmountMinor,
-  });
+  })  : _entryAmountMinor = entryAmountMinor,
+        _entryCurrency = entryCurrency;
 
   final String id;
   final String personId;
   final String personName;
   final bool settlementIncoming;
   final bool isSettlement;
+
+  /// What the user actually entered, and in what (db/migrations/0017).
+  ///
+  /// [amountMinor] is denominated in the PERSON's ledger currency, so a USD 40
+  /// entry against a rupee account is stored as rupees. These two hold the
+  /// dollars — the figure the user typed and recognises, and therefore the one
+  /// to show. They fall back to the ledger pair when no conversion happened.
+  final int? _entryAmountMinor;
+  final String? _entryCurrency;
+
+  /// The row's value in the workspace currency. Supplementary: it goes BESIDE
+  /// the entered amount, never instead of it. Null when no rate is cached.
+  final int? amountBaseMinor;
+  final String? baseCurrency;
+
+  int get entryAmountMinor => _entryAmountMinor ?? amountMinor;
+  String get entryCurrency => _entryCurrency ?? currency;
+
+  /// Whether the base equivalent says anything the primary figure does not.
+  bool get showsBaseEquivalent =>
+      amountBaseMinor != null && baseCurrency != null && baseCurrency != entryCurrency;
 
   /// True when this entry belongs to the receivable side — money the owner is
   /// owed, or a settlement that retired some of it.
@@ -596,6 +622,15 @@ class ActivityItem {
       note: _str(json['note']),
       settlementIncoming: type == 'in',
       currency: (json['currency'] as String?) ?? kFallbackCurrency,
+      // What was actually entered, and its base-currency equivalent (0017).
+      // Absent against an older database, where the ledger pair was the whole
+      // truth anyway — the getters fall back to it.
+      entryAmountMinor:
+          json['entry_amount_minor'] == null ? null : _int(json['entry_amount_minor']),
+      entryCurrency: _str(json['entry_currency']),
+      amountBaseMinor:
+          json['amount_base_minor'] == null ? null : _int(json['amount_base_minor']),
+      baseCurrency: _str(json['base_currency']),
       isOpening: json['is_opening'] as bool? ?? false,
       enteredAmountMinor:
           json['entered_amount_minor'] == null ? null : _int(json['entered_amount_minor']),
@@ -645,64 +680,88 @@ class TodayTotals {
 class CurrencyTotals {
   const CurrencyTotals({
     required this.currency,
-    required this.totalReceivable,
-    required this.totalPayable,
-    required this.netPosition,
+    required this.baseCurrency,
     required this.grossCredit,
     required this.grossDebit,
     required this.grossSettled,
-    required this.peopleWithBalance,
+    required this.netPosition,
+    required this.entryCount,
     required this.peopleCount,
+    this.netBaseMinor,
   });
 
+  /// The currency the entries were actually made in — not the denomination of
+  /// the accounts they landed in (db/migrations/0017).
   final String currency;
-  final int totalReceivable;
-  final int totalPayable;
-  final int netPosition;
+
+  /// The workspace currency the equivalent below is stated in.
+  final String baseCurrency;
+
   final int grossCredit;
   final int grossDebit;
   final int grossSettled;
-  final int peopleWithBalance;
+
+  /// credit - debit, in [currency]. Never mixed with another currency.
+  final int netPosition;
+
+  /// [netPosition] converted to [baseCurrency] by the engine's own converter.
+  /// Supplementary — the figure above is the real one. Null means no rate is
+  /// cached, which is "not known", never zero.
+  final int? netBaseMinor;
+
+  final int entryCount;
   final int peopleCount;
+
+  /// Whether the equivalent says anything the primary figure does not.
+  bool get showsBaseEquivalent => netBaseMinor != null && baseCurrency != currency;
 
   factory CurrencyTotals.fromJson(Map<String, dynamic> json) => CurrencyTotals(
         currency: (json['currency'] as String?) ?? kFallbackCurrency,
-        totalReceivable: _int(json['total_receivable']),
-        totalPayable: _int(json['total_payable']),
-        netPosition: _int(json['net_position']),
+        baseCurrency: (json['base_currency'] as String?) ?? kFallbackCurrency,
         grossCredit: _int(json['gross_credit']),
         grossDebit: _int(json['gross_debit']),
         grossSettled: _int(json['gross_settled']),
-        peopleWithBalance: _int(json['people_with_balance']),
+        netPosition: _int(json['net_position']),
+        netBaseMinor: json['net_base_minor'] == null ? null : _int(json['net_base_minor']),
+        entryCount: _int(json['entry_count']),
         peopleCount: _int(json['people_count']),
       );
 }
 
-/// Today's movement in one currency (db/migrations/0015).
+/// Today's movement in one entry currency (db/migrations/0017).
 class CurrencyToday {
   const CurrencyToday({
     required this.currency,
+    required this.baseCurrency,
     required this.credit,
     required this.debit,
     required this.settled,
     required this.count,
+    this.movedBaseMinor,
   });
 
   final String currency;
+  final String baseCurrency;
   final int credit;
   final int debit;
   final int settled;
   final int count;
+
+  /// Everything that moved today in this currency, converted to base.
+  final int? movedBaseMinor;
 
   /// Everything that moved today in this currency, whichever way it went.
   int get moved => credit + debit + settled;
 
   factory CurrencyToday.fromJson(Map<String, dynamic> json) => CurrencyToday(
         currency: (json['currency'] as String?) ?? kFallbackCurrency,
+        baseCurrency: (json['base_currency'] as String?) ?? kFallbackCurrency,
         credit: _int(json['credit']),
         debit: _int(json['debit']),
         settled: _int(json['settled']),
         count: _int(json['count']),
+        movedBaseMinor:
+            json['moved_base_minor'] == null ? null : _int(json['moved_base_minor']),
       );
 }
 

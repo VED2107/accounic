@@ -34,6 +34,12 @@ class _UpdateBannerState extends ConsumerState<UpdateBanner> {
   bool _dismissed = false;
 
   Future<void> _open(AppRelease release) async {
+    // Checked again at the point of use, not only where the release was parsed.
+    // This is the call that hands a URL to the operating system, so this is
+    // where being wrong costs something — and a second cheap check means a
+    // future code path that builds an AppRelease some other way cannot quietly
+    // skip the first one.
+    if (!isTrustedUpdateUrl(release.openUrl)) return;
     final uri = Uri.tryParse(release.openUrl);
     if (uri == null) return;
     // Failing to launch a browser is not worth an error dialog in a ledger:

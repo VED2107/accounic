@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Accounic speaks to Supabase over HTTPS and to nothing else. Modern Android
+  already defaults cleartext off, but the default moves with targetSdk and this
+  does not: a plaintext request cannot leave this app on any API level, whatever
+  a future SDK bump decides.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <!-- System CAs only. User-installed CAs are deliberately NOT
+                 trusted: that is the interception path on a compromised or
+                 attacker-configured device, and this app carries a ledger. -->
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
