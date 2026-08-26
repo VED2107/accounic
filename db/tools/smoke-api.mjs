@@ -9,6 +9,12 @@
  *   node db/tools/smoke-api.mjs
  */
 
+// NOTE: the demo users this script signs in as were DELETED from the live project on
+// 2026-08-26, before this repository was made public — their password was written here in
+// plain text, and demo@example.com was an admin (docs/deployment.md §2). The seed password
+// below is the one db/seed.sql writes, kept so this script still works against a freshly
+// seeded THROWAWAY project; override it with DEMO_PASSWORD. Do not re-seed a live project.
+
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -57,7 +63,7 @@ const anon = createClient(URL, ANON, { auth: { persistSession: false } });
 const demo = createClient(URL, ANON, { auth: { persistSession: false } });
 const signIn = await demo.auth.signInWithPassword({
   email: 'demo@example.com',
-  password: 'Demo@12345',
+  password: process.env.DEMO_PASSWORD ?? 'Demo@12345',
 });
 check('demo signs in with email + password', !signIn.error, signIn.error?.message ?? '');
 if (signIn.error) process.exit(1);
@@ -161,7 +167,10 @@ check('negative amounts are refused', badAmount.error !== null, badAmount.error?
 // --- cross-tenant isolation over the real API -------------------------------
 
 const friend = createClient(URL, ANON, { auth: { persistSession: false } });
-await friend.auth.signInWithPassword({ email: 'friend@example.com', password: 'Demo@12345' });
+await friend.auth.signInWithPassword({
+  email: 'friend@example.com',
+  password: process.env.DEMO_PASSWORD ?? 'Demo@12345',
+});
 
 const friendPeople = await friend.from('person_balances').select('*');
 check('the second workspace sees only its own people', (friendPeople.data ?? []).length === 2,

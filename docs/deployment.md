@@ -47,8 +47,16 @@ Then promote the first administrator, from the SQL editor or with the service ro
 select public.grant_admin('you@example.com');
 ```
 
-**Before real use:** `db/seed.sql` creates two demo workspaces
-(`demo@example.com`, `friend@example.com`). Delete those users if you seeded them.
+**The demo users are gone.** `db/seed.sql` creates two demo workspaces
+(`demo@example.com`, `friend@example.com`) whose password — `Demo@12345` — is written
+into `db/tools/smoke-api.mjs`. That was survivable while the repository was private and
+became a live credential in a public repository the moment it was not, so both users were
+deleted from the live project on 2026-08-26, before visibility changed. `demo@example.com`
+also held a row in `public.app_admins`, so the published password would have opened the
+admin surface.
+
+Re-seeding is fine on a throwaway project. **Do not re-seed the live one**, and if you
+ever do, delete the users again before publishing anything.
 
 ---
 
@@ -176,8 +184,9 @@ Three things it depends on, all of them decisions rather than code:
 
 * **The repository must be public**, or the release must be. The API path the client
   uses is unauthenticated — a private repository answers `404`, which the client
-  correctly reads as "no update" and stays silent. **`VED2107/accounic` is private
-  today, so the check is inert for shipped binaries until that changes.**
+  correctly reads as "no update" and stays silent. `VED2107/accounic` was made public
+  on 2026-08-26 for exactly this reason, and the anonymous endpoint was checked
+  afterwards: it returns `v1.3.0` and all three assets.
 * **Tags must be semantic versions.** `v1.3.0` and `1.3.0` both work; a tag that does
   not parse compares as `0.0.0` and can never claim to be an upgrade.
 * **Drafts and pre-releases are skipped**, so a draft cannot notify anyone early.

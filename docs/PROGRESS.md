@@ -181,7 +181,10 @@ at realistic scale (10k+ transactions), where the `person_balances` lateral join
 ### 7.3 Production readiness
 
 - [x] `cd web && npm run build` — clean; 103 kB shared first-load JS, largest route 190 kB
-- [ ] Delete the demo seed users (`demo@example.com`, `friend@example.com`) before real use
+- [x] Delete the demo seed users (`demo@example.com`, `friend@example.com`) — done
+      2026-08-26, before the repository was made public: `db/tools/smoke-api.mjs` carries
+      their password in plain text, and `demo@example.com` was an admin. Both logins were
+      re-checked afterwards and are refused. See `docs/deployment.md` §2
 - [ ] Decide on rate limiting (currently none at the application layer)
 - [ ] Release APK is **debug-signed**, not unsigned — `android/app/build.gradle.kts` points
       its release build at `signingConfigs.getByName("debug")`. Fine for sideloading, wrong
@@ -190,7 +193,8 @@ at realistic scale (10k+ transactions), where the `person_balances` lateral join
 
 ### 7.4 Repository
 
-- [x] Pushed to **https://github.com/VED2107/accounic** (private). `main` is current.
+- [x] Pushed to **https://github.com/VED2107/accounic** — **public** since 2026-08-26, so
+      the in-app update check can read the Releases API without a token. `main` is current.
       `web/.env.local` is gitignored and was verified absent from the tree before the
       first push.
 
