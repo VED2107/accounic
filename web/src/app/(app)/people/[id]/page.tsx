@@ -11,7 +11,7 @@ import { Reveal } from '@/components/motion/reveal';
 import { initials } from '@/lib/names';
 import { PersonActionBar } from './person-action-bar';
 import { Timeline } from './timeline';
-import { balanceTone, formatMinor } from '@/lib/money';
+import { balanceTone, formatApprox, formatMoney } from '@/lib/money';
 import { currencyLabel } from '@/lib/currencies';
 import { personBalanceSeries } from '@/lib/series';
 import { fullDate } from '@/lib/dates';
@@ -165,14 +165,14 @@ export default async function PersonPage({
                 <p className="mt-1.5 text-[0.8125rem] text-ink-faint">
                   {balance.net_balance_base === null
                     ? `No ${currency} → ${baseCurrency} rate yet`
-                    : `≈ ${formatMinor(Math.abs(balance.net_balance_base), baseCurrency)} at today’s rate`}
+                    : `${formatApprox(Math.abs(balance.net_balance_base), baseCurrency)} at today’s rate`}
                 </p>
               ) : null}
 
               {balance.opening_minor !== 0 ? (
                 <p className="mt-1 text-[0.75rem] text-ink-faint">
                   Includes an opening balance of{' '}
-                  {formatMinor(Math.abs(balance.opening_minor), currency)}{' '}
+                  {formatMoney(Math.abs(balance.opening_minor), currency)}{' '}
                   {balance.opening_minor > 0 ? 'in your favour' : 'against you'}
                 </p>
               ) : null}
@@ -299,7 +299,7 @@ export default async function PersonPage({
             />
             <Detail
               label="Lifetime volume"
-              value={formatMinor(balance.total_credit + balance.total_debit, currency)}
+              value={formatMoney(balance.total_credit + balance.total_debit, currency)}
             />
             <Detail label="Status" value={person.is_archived ? 'Archived' : 'Active'} />
           </Card>

@@ -97,10 +97,11 @@ void main() {
         tester.pumpWidget(MaterialApp(
           theme: AppTheme.dark(),
           home: Scaffold(
-            body: ConvertedFrom(
+            body: RateNote(
               enteredMinor: entry.enteredAmountMinor,
               enteredCurrency: entry.enteredCurrency,
               rateE9: entry.exchangeRateE9,
+              rateSource: entry.exchangeRateSource,
               accountCurrency: 'AED',
               conversionMode: entry.conversionMode,
               autoConvertedMinor: entry.autoConvertedAmountMinor,
@@ -113,8 +114,8 @@ void main() {
       await pump(tester, TimelineEntry.fromJson(row(mode: 'automatic')));
 
       final text = tester.widget<Text>(find.byType(Text)).data!;
-      expect(text, contains('INR'));
-      expect(text, isNot(contains('Manually entered')));
+      expect(text, contains('1 INR = '));
+      expect(text, isNot(contains('Amount entered by hand')));
     });
 
     testWidgets('a manual row says so, and says what the rate said',
@@ -125,10 +126,10 @@ void main() {
       );
 
       final text = tester.widget<Text>(find.byType(Text)).data!;
-      // Never hidden: the entered figure, the rate, and the fact that somebody
-      // overrode it on purpose.
-      expect(text, contains('INR'));
-      expect(text, contains('Manually entered'));
+      // Never hidden: the rate, the fact that somebody overrode the conversion
+      // on purpose, and what the rate had said.
+      expect(text, contains('1 INR = '));
+      expect(text, contains('Amount entered by hand'));
       expect(text, contains('44.20'));
     });
   });

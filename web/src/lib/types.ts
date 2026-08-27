@@ -152,6 +152,22 @@ export interface TimelineEntry {
   exchange_rate_source: string | null;
   conversion_mode: ConversionMode | null;
   auto_converted_amount_minor: number | null;
+  /**
+   * What was actually entered, and what the ledger figure is worth in the
+   * workspace currency (db/migrations/0018).
+   *
+   * `amount_minor` above stays the ledger figure — the one every balance is
+   * summed from. These three exist so the row can show the original amount as
+   * the headline and its base-currency equivalent underneath without any client
+   * converting anything itself. Optional: a client running against a database
+   * older than 0018 sees them absent and falls back to the ledger figure, which
+   * is what it showed before.
+   */
+  entry_amount_minor?: number | null;
+  entry_currency?: string | null;
+  ledger_currency?: string | null;
+  amount_base_minor?: number | null;
+  base_currency?: string | null;
   /** Present only on transaction entries. */
   settled_minor: number | null;
   remaining_minor: number | null;
@@ -215,6 +231,8 @@ export interface ActivityItem {
   entered_amount_minor?: number | null;
   entered_currency?: string | null;
   exchange_rate_e9?: number | null;
+  /** 'live', a cache label, or the marker a hand-typed rate is stored under. */
+  exchange_rate_source?: string | null;
   conversion_mode?: ConversionMode | null;
   auto_converted_amount_minor?: number | null;
 }

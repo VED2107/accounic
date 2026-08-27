@@ -119,6 +119,9 @@ export const personSchema = z.object({
   opening_amount: z.string().trim().optional(),
   opening_currency: optionalCurrencyCode,
   opening_rate_e9: rateE9,
+  // The same manual-rate pair for the opening balance.
+  opening_rate_mode: z.enum(['automatic', 'manual']).optional(),
+  opening_manual_rate: z.string().trim().optional(),
   opening_converted_amount: z.string().trim().optional(),
   opening_conversion_mode: z.enum(['automatic', 'manual']).optional(),
   // The currency the opening balance lands in. Equal to `currency` when adding
@@ -161,6 +164,16 @@ export const transactionSchema = z.object({
   account_currency: optionalCurrencyCode,
   rate_e9: rateE9,
   rate_source: trimmedOptional(60),
+  /**
+   * A rate the user typed instead of the fetched one (upgrade §45).
+   *
+   * `rate_mode` states the choice rather than leaving it to be inferred from
+   * whether the box has text in it, so switching back to the automatic rate is
+   * something the form can say. `manual_rate` is raw text, parsed by the action
+   * against the same nine-decimal scale the column stores.
+   */
+  rate_mode: z.enum(['automatic', 'manual']).optional(),
+  manual_rate: z.string().trim().optional(),
   /** The actual converted amount, when the user overrode the rate (upgrade §40). */
   converted_amount: z.string().trim().optional(),
   conversion_mode: z.enum(['automatic', 'manual']).optional(),
@@ -179,6 +192,16 @@ export const settlementSchema = z.object({
   account_currency: optionalCurrencyCode,
   rate_e9: rateE9,
   rate_source: trimmedOptional(60),
+  /**
+   * A rate the user typed instead of the fetched one (upgrade §45).
+   *
+   * `rate_mode` states the choice rather than leaving it to be inferred from
+   * whether the box has text in it, so switching back to the automatic rate is
+   * something the form can say. `manual_rate` is raw text, parsed by the action
+   * against the same nine-decimal scale the column stores.
+   */
+  rate_mode: z.enum(['automatic', 'manual']).optional(),
+  manual_rate: z.string().trim().optional(),
   /** The actual converted amount, when the user overrode the rate (upgrade §40). */
   converted_amount: z.string().trim().optional(),
   conversion_mode: z.enum(['automatic', 'manual']).optional(),

@@ -1,4 +1,4 @@
-import { balanceTone, formatMinor } from '@/lib/money';
+import { balanceTone, formatApprox, formatMoney } from '@/lib/money';
 import { cn } from '@/components/ui/primitives';
 
 /**
@@ -30,6 +30,7 @@ export function Money({
   className,
   signed = false,
   compact = true,
+  withCode = true,
 }: {
   minor: number;
   currency?: string;
@@ -37,11 +38,21 @@ export function Money({
   className?: string;
   signed?: boolean;
   compact?: boolean;
+  /**
+   * The ISO code after the figure — `$40 USD`, not `$40` (upgrade §44).
+   *
+   * On by default, and off only where the code is already stated beside the
+   * figure. A symbol alone is ambiguous: `$` is eight of the currencies in this
+   * list and `₹` is two, and a ledger that mixes currencies is exactly where
+   * that ambiguity costs someone money.
+   */
+  withCode?: boolean;
 }) {
   const resolved = resolveTone(tone, minor);
-  const text = formatMinor(tone === 'auto' ? Math.abs(minor) : minor, currency, {
+  const text = formatMoney(tone === 'auto' ? Math.abs(minor) : minor, currency, {
     signed,
     compactDecimals: compact,
+    withCode,
   });
 
   return <span className={cn('tnum', TONE_CLASS[resolved], className)}>{text}</span>;
@@ -119,12 +130,12 @@ export function NetBadge({
           tone === 'settled' && 'text-ink-muted',
         )}
       >
-        {tone === 'settled' ? 'Settled' : formatMinor(Math.abs(netMinor), currency)}
+        {tone === 'settled' ? 'Settled' : formatMoney(Math.abs(netMinor), currency)}
       </span>
 
       {showApprox ? (
         <span className="tnum text-[0.75rem] text-ink-faint">
-          ≈ {formatMinor(Math.abs(approxMinor), approxCurrency)}
+          {formatApprox(Math.abs(approxMinor), approxCurrency)}
         </span>
       ) : null}
 

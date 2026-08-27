@@ -332,7 +332,7 @@ class _PositionCard extends StatelessWidget {
                   Text(
                     balance.netBalanceBase == null
                         ? 'No ${page.currency} → ${page.baseCurrency} rate yet'
-                        : '≈ ${formatMinor(balance.netBalanceBase!.abs(), currency: page.baseCurrency)} at today’s rate',
+                        : '${formatApprox(balance.netBalanceBase!.abs(), currency: page.baseCurrency)} at today’s rate',
                     style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
                   ),
                 ],
@@ -340,7 +340,7 @@ class _PositionCard extends StatelessWidget {
                   const SizedBox(height: AppSpacing.xs),
                   Text(
                     'Includes an opening balance of '
-                    '${formatMinor(balance.openingMinor.abs(), currency: currency)} '
+                    '${formatMoney(balance.openingMinor.abs(), currency: currency)} '
                     '${balance.openingMinor > 0 ? 'in your favour' : 'against you'}',
                     style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
                   ),
@@ -751,7 +751,7 @@ class _TimelineTileState extends ConsumerState<TimelineTile> {
           ? 'The transaction stays in the timeline as history but stops counting '
               'towards any balance. If it has already been settled, void those '
               'settlements first.'
-          : '${formatMinor(entry.amountMinor, currency: widget.currency)} goes back to '
+          : '${formatMoney(entry.amountMinor, currency: widget.currency)} goes back to '
               'outstanding. The record stays in the timeline marked as reversed.',
     );
     if (!ok) return;
@@ -847,7 +847,7 @@ class _TimelineTileState extends ConsumerState<TimelineTile> {
                                   const StatusChip('Settled', tone: StatusTone.done)
                                 else if (entry.status == SettlementStatus.partial)
                                   StatusChip(
-                                    '${formatMinor(entry.remainingMinor ?? 0, currency: widget.currency)} left',
+                                    '${formatMoney(entry.remainingMinor ?? 0, currency: widget.currency)} left',
                                     tone: StatusTone.partial,
                                   ),
                               ],
@@ -861,16 +861,17 @@ class _TimelineTileState extends ConsumerState<TimelineTile> {
                                 style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
                               ),
                             ],
-                            // What was actually handed over, when that was not
-                            // this account's currency. The converted figure is
-                            // on the right; this is the half that must never be
-                            // hidden (upgrade §11).
+                            // The rate that links the two figures on the right,
+                            // and whether a human chose either of them. Third
+                            // and quietest: it must not compete with the amount
+                            // (upgrade §11, §44, §45).
                             if (entry.enteredCurrency != null) ...[
                               const SizedBox(height: 2),
-                              ConvertedFrom(
+                              RateNote(
                                 enteredMinor: entry.enteredAmountMinor,
                                 enteredCurrency: entry.enteredCurrency,
                                 rateE9: entry.exchangeRateE9,
+                                rateSource: entry.exchangeRateSource,
                                 accountCurrency: widget.currency,
                                 conversionMode: entry.conversionMode,
                                 autoConvertedMinor: entry.autoConvertedAmountMinor,
@@ -880,16 +881,34 @@ class _TimelineTileState extends ConsumerState<TimelineTile> {
                         ),
                       ),
                       const SizedBox(width: AppSpacing.md),
-                      MoneyText(
-                        entry.amountMinor,
-                        currency: widget.currency,
-                        strikethrough: entry.isVoid,
-                        tone: entry.isSettlement
-                            ? MoneyTone.neutral
-                            : entry.isReceivable
-                                ? MoneyTone.receivable
-                                : MoneyTone.payable,
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                      // The amount that was ENTERED leads, in the currency it
+                      // was entered in — a dirham entry is 400 AED and says so.
+                      // Under it, the one equivalent that adds something: the
+                      // ledger figure when the entry was converted into this
+                      // account, otherwise the workspace-currency figure for an
+                      // account kept in a foreign currency. Never both, and
+                      // never the equivalent alone (upgrade §44).
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          MoneyText(
+                            entry.entryAmountMinorOr(widget.currency),
+                            currency: entry.entryCurrencyOr(widget.currency),
+                            strikethrough: entry.isVoid,
+                            tone: entry.isSettlement
+                                ? MoneyTone.neutral
+                                : entry.isReceivable
+                                    ? MoneyTone.receivable
+                                    : MoneyTone.payable,
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                          ),
+                          if (_equivalentOf(entry, widget.currency) case final it?)
+                            Text(
+                              formatApprox(it.minor, currency: it.currency),
+                              style: TextStyle(fontSize: 12, color: palette.inkFaint),
+                            ),
+                        ],
                       ),
                       const SizedBox(width: AppSpacing.sm),
                       AnimatedRotation(
@@ -968,7 +987,7 @@ class _RowActions extends ConsumerWidget {
             [
               fullDate(entry.entryDate),
               if (!entry.isSettlement && (entry.remainingMinor ?? 0) > 0)
-                '${formatMinor(entry.remainingMinor!, currency: currency)} still outstanding',
+                '${formatMoney(entry.remainingMinor!, currency: currency)} still outstanding',
             ].join('  ·  '),
             style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
           ),
@@ -1033,6 +1052,8 @@ class _RowActions extends ConsumerWidget {
                                 enteredCurrency: entry.enteredCurrency,
                                 conversionMode: entry.conversionMode,
                                 autoConvertedAmountMinor: entry.autoConvertedAmountMinor,
+                                exchangeRateE9: entry.exchangeRateE9,
+                                exchangeRateSource: entry.exchangeRateSource,
                               ),
                             );
                             if (saved && context.mounted) {
@@ -1266,4 +1287,23 @@ class _PersonSkeleton extends StatelessWidget {
       ],
     );
   }
+}
+
+/// The one equivalent a timeline row shows under its headline figure.
+///
+/// The ledger figure when the entry was converted into this account — that is
+/// what the balance is summed from — otherwise the workspace-currency figure,
+/// for an account kept in a currency that is not the workspace's. Never both:
+/// two approximations under one amount is not more honest, only noisier.
+({int minor, String currency})? _equivalentOf(TimelineEntry entry, String ledgerCurrency) {
+  final entryCurrency = entry.entryCurrencyOr(ledgerCurrency);
+  if (entryCurrency != ledgerCurrency) {
+    return (minor: entry.amountMinor, currency: ledgerCurrency);
+  }
+  final base = entry.baseCurrency;
+  final baseMinor = entry.amountBaseMinor;
+  if (base != null && base != ledgerCurrency && baseMinor != null) {
+    return (minor: baseMinor, currency: base);
+  }
+  return null;
 }

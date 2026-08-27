@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 import { Modal } from '@/components/ui/modal';
 import { Avatar, Skeleton, cn } from '@/components/ui/primitives';
 import { NetBadge } from '@/components/money';
-import { formatMinor } from '@/lib/money';
+import { formatMoney } from '@/lib/money';
 import { friendlyDate } from '@/lib/dates';
 import { SearchIcon } from '@/components/icons';
 import { initials } from '@/lib/names';
@@ -207,7 +207,7 @@ export function QuickSearch({
                                 isReceivable(txn.type) ? 'text-receivable' : 'text-payable'
                               }`}
                             >
-                              {formatMinor(txn.amount_minor, currency)}
+                              {formatMoney(txn.amount_minor, currency)}
                             </span>
                           </button>
                         </li>

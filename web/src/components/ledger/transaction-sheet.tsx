@@ -20,6 +20,7 @@ import { ArrowDownIcon, ArrowUpIcon } from '@/components/icons';
 import { useToast } from '@/components/ui/toast';
 import { CurrencySelect } from '@/components/ledger/currency-select';
 import { ConversionFields, ConversionPanel, useRate } from '@/components/ledger/conversion';
+import { rateIsManual } from '@/lib/conversion';
 import { createTransaction, updateTransaction } from '@/lib/actions';
 import { minorToInput } from '@/lib/money';
 import { FALLBACK_CURRENCY, normaliseCode } from '@/lib/currencies';
@@ -39,6 +40,15 @@ interface EditableTransaction {
   /** Present when the converted figure was overridden by hand (upgrade §40). */
   conversion_mode?: ConversionMode | null;
   auto_converted_amount_minor?: number | null;
+  /**
+   * The rate this entry was written at, and where it came from (upgrade §45).
+   *
+   * An edit reopens on the stored rate rather than on today's, so re-saving a
+   * row that a user rated by hand cannot silently restate it at the current
+   * market rate.
+   */
+  exchange_rate_e9?: number | null;
+  exchange_rate_source?: string | null;
 }
 
 /**
@@ -215,6 +225,8 @@ export function TransactionSheet({
               defaultConvertedMinor={
                 transaction?.conversion_mode === 'manual' ? transaction.amount_minor : null
               }
+              defaultRateE9={transaction?.exchange_rate_e9 ?? null}
+              defaultRateIsManual={rateIsManual(transaction?.exchange_rate_source)}
             />
             <ConversionFields
               entryCurrency={entryCurrency}

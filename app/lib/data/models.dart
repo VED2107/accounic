@@ -372,9 +372,15 @@ class TimelineEntry {
     this.enteredAmountMinor,
     this.enteredCurrency,
     this.exchangeRateE9,
+    this.exchangeRateSource,
     this.conversionMode,
     this.autoConvertedAmountMinor,
-  });
+    int? entryAmountMinor,
+    String? entryCurrency,
+    this.amountBaseMinor,
+    this.baseCurrency,
+  })  : _entryAmountMinor = entryAmountMinor,
+        _entryCurrency = entryCurrency;
 
   final String id;
   final bool isSettlement;
@@ -396,6 +402,25 @@ class TimelineEntry {
   final int? enteredAmountMinor;
   final String? enteredCurrency;
   final int? exchangeRateE9;
+
+  /// Where that rate came from: 'live', a cache label, or the marker a
+  /// hand-typed rate is stored under (db/migrations/0018).
+  final String? exchangeRateSource;
+
+  /// What was actually entered, and what this row is worth in the workspace
+  /// currency (db/migrations/0018). [amountMinor] stays the LEDGER figure — the
+  /// one every balance is summed from — so these exist to let a row show the
+  /// original amount as its headline without any client converting anything.
+  final int? _entryAmountMinor;
+  final String? _entryCurrency;
+  final int? amountBaseMinor;
+  final String? baseCurrency;
+
+  int entryAmountMinorOr(String ledgerCurrency) => _entryAmountMinor ?? amountMinor;
+  String entryCurrencyOr(String ledgerCurrency) => _entryCurrency ?? ledgerCurrency;
+
+  /// True when a human typed the rate this row was written at (upgrade 45).
+  bool get isManualRate => rateIsManual(exchangeRateSource);
 
   /// 'automatic' | 'manual' | null. Null means the row was never converted;
   /// a pre-v1.1.2 converted row reads as 'automatic', because the feed resolves
@@ -430,10 +455,20 @@ class TimelineEntry {
       enteredCurrency: _str(json['entered_currency']),
       exchangeRateE9:
           json['exchange_rate_e9'] == null ? null : _int(json['exchange_rate_e9']),
+      exchangeRateSource: _str(json['exchange_rate_source']),
       conversionMode: _str(json['conversion_mode']),
       autoConvertedAmountMinor: json['auto_converted_amount_minor'] == null
           ? null
           : _int(json['auto_converted_amount_minor']),
+      // Present from 0018 on; absent against an older database, where the
+      // getters fall back to the ledger figure exactly as this screen did
+      // before.
+      entryAmountMinor:
+          json['entry_amount_minor'] == null ? null : _int(json['entry_amount_minor']),
+      entryCurrency: _str(json['entry_currency']),
+      amountBaseMinor:
+          json['amount_base_minor'] == null ? null : _int(json['amount_base_minor']),
+      baseCurrency: _str(json['base_currency']),
     );
   }
 
@@ -556,6 +591,7 @@ class ActivityItem {
     this.enteredAmountMinor,
     this.enteredCurrency,
     this.exchangeRateE9,
+    this.exchangeRateSource,
     this.conversionMode,
     this.autoConvertedAmountMinor,
   })  : _entryAmountMinor = entryAmountMinor,
@@ -603,11 +639,15 @@ class ActivityItem {
   final String? enteredCurrency;
   final int? exchangeRateE9;
 
+  /// See [TimelineEntry.exchangeRateSource].
+  final String? exchangeRateSource;
+
   /// See [TimelineEntry.conversionMode].
   final String? conversionMode;
   final int? autoConvertedAmountMinor;
 
   bool get isManualConversion => conversionMode == 'manual';
+  bool get isManualRate => rateIsManual(exchangeRateSource);
 
   factory ActivityItem.fromJson(Map<String, dynamic> json) {
     final type = json['entry_type'] as String?;
@@ -637,6 +677,7 @@ class ActivityItem {
       enteredCurrency: _str(json['entered_currency']),
       exchangeRateE9:
           json['exchange_rate_e9'] == null ? null : _int(json['exchange_rate_e9']),
+      exchangeRateSource: _str(json['exchange_rate_source']),
       conversionMode: _str(json['conversion_mode']),
       autoConvertedAmountMinor: json['auto_converted_amount_minor'] == null
           ? null

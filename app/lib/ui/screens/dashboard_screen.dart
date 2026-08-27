@@ -15,6 +15,7 @@ import '../widgets/brand.dart';
 import '../sheets/transaction_sheet.dart';
 import '../widgets/activity_chart.dart';
 import '../widgets/common.dart';
+import '../widgets/currency_field.dart';
 import '../widgets/sparkline.dart';
 import 'search_sheet.dart';
 
@@ -656,7 +657,7 @@ class _CurrencyRow extends StatelessWidget {
                   children: [
                     // This currency's own money, in this currency.
                     Text(
-                      formatMinor(net.abs(), currency: row.currency, withCode: true),
+                      formatMoney(net.abs(), currency: row.currency),
                       style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                     ),
                     // The base equivalent is supplementary: under the figure,
@@ -664,7 +665,7 @@ class _CurrencyRow extends StatelessWidget {
                     if (row.showsBaseEquivalent) ...[
                       const SizedBox(height: 1),
                       Text(
-                        '≈ ${formatMinor(row.netBaseMinor!.abs(), currency: row.baseCurrency, withCode: true)}',
+                        formatApprox(row.netBaseMinor!.abs(), currency: row.baseCurrency),
                         style: TextStyle(fontSize: 12, color: palette.inkFaint),
                       ),
                     ],
@@ -692,7 +693,7 @@ class _CurrencyRow extends StatelessWidget {
                     border: Border.all(color: palette.line),
                   ),
                   child: Text(
-                    'today ${formatMinor(moved, currency: row.currency)}',
+                    'Today ${formatMoney(moved, currency: row.currency)}',
                     style: TextStyle(fontSize: 11.5, color: palette.inkMuted),
                   ),
                 ),
@@ -704,15 +705,15 @@ class _CurrencyRow extends StatelessWidget {
             runSpacing: AppSpacing.xs,
             children: [
               Text(
-                'in ${formatMinor(row.grossCredit, currency: row.currency)}',
+                'Receivable ${formatMoney(row.grossCredit, currency: row.currency)}',
                 style: TextStyle(fontSize: 12, color: palette.receivable),
               ),
               Text(
-                'out ${formatMinor(row.grossDebit, currency: row.currency)}',
+                'Payable ${formatMoney(row.grossDebit, currency: row.currency)}',
                 style: TextStyle(fontSize: 12, color: palette.payable),
               ),
               Text(
-                'settled ${formatMinor(row.grossSettled, currency: row.currency)}',
+                'Settled ${formatMoney(row.grossSettled, currency: row.currency)}',
                 style: TextStyle(fontSize: 12, color: palette.inkFaint),
               ),
               Text(
@@ -831,7 +832,7 @@ class _TodayFigure extends StatelessWidget {
         Icon(icon, size: AppIconSize.xs, color: color),
         const SizedBox(width: AppSpacing.xs + 2),
         Text(
-          formatMinor(minor, currency: currency),
+          formatMoney(minor, currency: currency),
           style: TextStyle(
             fontSize: 12.5,
             fontWeight: FontWeight.w600,
@@ -1063,6 +1064,21 @@ class ActivityRow extends StatelessWidget {
                               style: TextStyle(fontSize: 12, color: palette.inkMuted),
                             ),
                           ],
+                          // The rate, third and quietest. It repeats neither
+                          // figure on the right: it says what links them, and
+                          // whether a human chose either of them (upgrade §45).
+                          if (item.enteredCurrency != null) ...[
+                            const SizedBox(height: 1),
+                            RateNote(
+                              enteredMinor: item.enteredAmountMinor,
+                              enteredCurrency: item.enteredCurrency,
+                              rateE9: item.exchangeRateE9,
+                              rateSource: item.exchangeRateSource,
+                              accountCurrency: item.currency,
+                              conversionMode: item.conversionMode,
+                              autoConvertedMinor: item.autoConvertedAmountMinor,
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -1088,7 +1104,7 @@ class ActivityRow extends StatelessWidget {
                         ),
                         if (item.showsBaseEquivalent)
                           Text(
-                            '≈ ${formatMinor(item.amountBaseMinor!, currency: item.baseCurrency!, withCode: true)}',
+                            formatApprox(item.amountBaseMinor!, currency: item.baseCurrency!),
                             style: TextStyle(fontSize: 11.5, color: palette.inkFaint),
                           ),
                       ],

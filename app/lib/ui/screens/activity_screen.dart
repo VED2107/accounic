@@ -333,7 +333,7 @@ class _Totals extends ConsumerWidget {
                   fit: BoxFit.scaleDown,
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    formatMinor(minor, currency: currency),
+                    formatMoney(minor, currency: currency),
                     style: context.moneyStyle(MoneySize.large).copyWith(
                           fontSize: context.isCompact ? 19 : 22,
                         ),

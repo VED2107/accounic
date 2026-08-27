@@ -99,6 +99,41 @@ export function currencyName(code: string | null | undefined): string {
   return currencyOf(code)?.name ?? normaliseCode(code);
 }
 
+/**
+ * The symbol, but only when printing it in front of a figure helps.
+ *
+ * `₹1,000`, `$40`, `฿50` and `zł50` read as money at a glance. `د.إ400` does
+ * not: the mark is right-to-left, so it fights the digits beside it, and the
+ * same is true of every non-Latin script in this list. Those currencies are
+ * written `400 AED` — the ISO code alone, which every reader of a ledger knows.
+ *
+ * The test is a rune range rather than a script property so that the Dart
+ * mirror in app/lib/core/currencies.dart can be character-for-character the
+ * same rule. Latin and the Currency Symbols block lead a figure; everything
+ * else falls back to the code.
+ *
+ * Returns '' when there is no usable symbol. One rule, in one place, so no
+ * screen invents its own.
+ */
+export function symbolLeadsFigure(symbol: string): boolean {
+  if (symbol === '' || symbol.length > 4) return false;
+  for (const rune of symbol) {
+    const code = rune.codePointAt(0)!;
+    const usable =
+      (code >= 0x20 && code <= 0x7e) || // ASCII: $, Rs, kr, A$
+      (code >= 0x80 && code <= 0x24f) || // Latin-1 and Latin Extended: zł, Kč
+      (code >= 0x20a0 && code <= 0x20bf) || // Currency Symbols: ₹ € ₩ ₺ ₫ ₪ ₨
+      code === 0x0e3f; // ฿, the one baht sign outside that block
+    if (!usable) return false;
+  }
+  return true;
+}
+
+export function displaySymbol(code: string | null | undefined): string {
+  const symbol = currencyOf(code)?.symbol ?? '';
+  return symbolLeadsFigure(symbol) ? symbol : '';
+}
+
 /** "INR — Indian Rupee (₹)", the label used in every currency picker. */
 export function currencyLabel(code: string | null | undefined): string {
   const currency = currencyOf(code);
@@ -125,6 +160,39 @@ export function rateFromE9(rateE9: number): number {
 }
 
 /**
+ * Parse a rate a user typed — "95.4276", " 1,234.5 " — into `rate_e9`.
+ *
+ * Read the same way the rate sentence states it: one unit of the original
+ * currency costs this many of the base one. Up to nine decimals, which is
+ * exactly what the column stores; a tenth would be silently discarded, so it is
+ * refused instead. Zero, negative and unparseable input return null.
+ *
+ * A rate typed here is stored on the entry like any other rate, and the
+ * database derives the converted amount from it. The client never sends a
+ * converted figure it worked out from a rate itself (context.md §7).
+ */
+export function parseRateToE9(input: string): number | null {
+  const cleaned = (input ?? '').replace(/[\s  ,]/g, '');
+  if (cleaned === '') return null;
+  if (!/^\d*(\.\d*)?$/.test(cleaned)) return null;
+
+  const [whole = '', fraction = ''] = cleaned.split('.');
+  if (whole === '' && fraction === '') return null;
+  if (fraction.length > 9) return null;
+
+  const e9 = Number(whole || '0') * RATE_SCALE + Number((fraction || '').padEnd(9, '0') || '0');
+  if (!Number.isSafeInteger(e9) || e9 <= 0) return null;
+  return e9;
+}
+
+/** `rate_e9` → a plain editable string, e.g. 95427612000 → "95.427612". */
+export function rateToInput(rateE9: number): string {
+  const whole = Math.trunc(rateE9 / RATE_SCALE);
+  const fraction = String(rateE9 % RATE_SCALE).padStart(9, '0').replace(/0+$/, '');
+  return fraction === '' ? String(whole) : `${whole}.${fraction}`;
+}
+
+/**
  * Convert an integer minor amount between currencies.
  *
  * Mirrors public.convert_amount_minor() exactly — including the decimal-exponent
@@ -148,16 +216,96 @@ export function convertMinor(
   return Math.round((amountMinor * scale * rateE9) / RATE_SCALE);
 }
 
-/** "1 AED = ₹24.01" — the line that stops a conversion being a mystery. */
-export function rateSentence(from: string, to: string, rateE9: number): string {
+/**
+ * How many decimals to print a rate at.
+ *
+ * The rate is the one number on screen that is NEVER used to compute anything:
+ * every conversion in this product runs on the full 1e9-scaled integer. A
+ * shortened rate is therefore only a readability choice — but a shortened rate
+ * that cannot reproduce the converted amount printed beside it is a readability
+ * choice that makes the screen look wrong.
+ *
+ *     400 AED at 1 AED = ₹25.984225 INR is ₹10,393.69
+ *     but 400 × 25.9842 (4 dp) is ₹10,393.68
+ *
+ * So when the amount being converted is known, the precision grows — from the
+ * readable default up to the nine digits the rate is actually stored at — until
+ * re-converting at the printed rate lands on the printed amount. Nothing about
+ * the calculation changes; only how much of the rate is shown.
+ */
+export function rateDecimals(
+  from: string,
+  to: string,
+  rateE9: number,
+  amountMinor?: number | null,
+): number {
   const rate = rateFromE9(rateE9);
-  const toCurrency = currencyOf(to);
-  const decimals = rate >= 100 ? 2 : rate >= 1 ? 4 : 6;
-  const value = rate.toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: decimals,
-  });
-  return `1 ${normaliseCode(from)} = ${toCurrency?.symbol ?? ''}${value} ${normaliseCode(to)}`;
+  const base = rate >= 100 ? 2 : rate >= 1 ? 4 : 6;
+
+  if (amountMinor == null || !Number.isFinite(amountMinor) || amountMinor === 0) return base;
+
+  const exact = convertMinor(amountMinor, from, to, rateE9);
+  if (exact === null) return base;
+
+  for (let decimals = base; decimals <= RATE_DECIMALS; decimals += 1) {
+    if (convertMinor(amountMinor, from, to, roundRateE9(rateE9, decimals)) === exact) {
+      return decimals;
+    }
+  }
+  return RATE_DECIMALS;
+}
+
+/** The decimal places `rate_e9` is stored at. */
+const RATE_DECIMALS = 9;
+
+/**
+ * The rate as it would be if it really had only `decimals` digits.
+ *
+ * Integer arithmetic on the scaled rate, never a float round-trip: this value
+ * has to be *exactly* the one rateText() prints, or the precision search
+ * validates one number and the screen shows another that is one ulp away and
+ * does not reconcile. That is how `1 AED = ₹25.98421` came to sit under
+ * `₹10,393.69` when 400 × 25.98421 is ₹10,393.68.
+ */
+function roundRateE9(rateE9: number, decimals: number): number {
+  const divisor = 10 ** (RATE_DECIMALS - decimals);
+  return Math.round(rateE9 / divisor) * divisor;
+}
+
+/**
+ * `rate_e9` written out at exactly this many decimals — from the integer, so
+ * what is printed is the same number the search above tested.
+ *
+ * Trailing zeros go, down to a floor of two: `24.0100` is noise, and `26` reads
+ * as a guess where `26.00` reads as a rate.
+ */
+export function rateText(rateE9: number, decimals: number): string {
+  const shown = Math.min(Math.max(decimals, 2), RATE_DECIMALS);
+  const scaled = Math.round(rateE9 / 10 ** (RATE_DECIMALS - shown));
+  const unit = 10 ** shown;
+  const whole = Math.floor(scaled / unit);
+  let fraction = String(scaled - whole * unit).padStart(shown, '0');
+  while (fraction.length > 2 && fraction.endsWith('0')) fraction = fraction.slice(0, -1);
+  return `${whole.toLocaleString('en-US')}.${fraction}`;
+}
+
+/**
+ * "1 AED = ₹25.98422 INR" — the line that stops a conversion being a mystery.
+ *
+ * Tertiary information by construction: one unit of the original currency, the
+ * base-currency symbol and figure, and the code. Pass the amount being
+ * converted and the precision is chosen so the sentence agrees with the
+ * converted amount shown above it (see rateDecimals).
+ */
+export function rateSentence(
+  from: string,
+  to: string,
+  rateE9: number,
+  amountMinor?: number | null,
+): string {
+  const decimals = rateDecimals(from, to, rateE9, amountMinor);
+  const value = rateText(rateE9, decimals);
+  return `1 ${normaliseCode(from)} = ${displaySymbol(to)}${value} ${normaliseCode(to)}`;
 }
 
 /**

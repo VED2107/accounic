@@ -28,6 +28,7 @@ class MoneyText extends StatelessWidget {
     this.style,
     this.compact = true,
     this.strikethrough = false,
+    this.withCode = true,
   });
 
   final int minor;
@@ -37,13 +38,22 @@ class MoneyText extends StatelessWidget {
   final bool compact;
   final bool strikethrough;
 
+  /// The ISO code after the figure — `$40 USD`, not `$40` (upgrade §44).
+  ///
+  /// On by default, and off only where the code is already stated beside the
+  /// figure. A symbol alone is ambiguous: `$` is eight of the currencies in
+  /// this list and `₹` is two, and a ledger that mixes currencies is exactly
+  /// where that ambiguity costs someone money.
+  final bool withCode;
+
   @override
   Widget build(BuildContext context) {
     return Text(
-      formatMinor(
+      formatMoney(
         tone == MoneyTone.auto ? minor.abs() : minor,
         currency: currency,
         compactDecimals: compact,
+        withCode: withCode,
       ),
       style: (style ?? const TextStyle()).copyWith(
         color: tone.color(context, minor),

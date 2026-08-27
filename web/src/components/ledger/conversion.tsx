@@ -1,8 +1,15 @@
 'use client';
 
 import { useEffect, useId, useState, type ReactNode } from 'react';
-import { convertMinor, normaliseCode, rateSentence } from '@/lib/currencies';
-import { formatMinor, minorToInput, parseAmountToMinor } from '@/lib/money';
+import {
+  convertMinor,
+  normaliseCode,
+  parseRateToE9,
+  rateSentence,
+  rateToInput,
+} from '@/lib/currencies';
+import { formatApprox, formatMoney, minorToInput, parseAmountToMinor } from '@/lib/money';
+import { rateIsManual } from '@/lib/conversion';
 import { lookupRate, type RateQuote } from '@/lib/actions';
 import { cn } from '@/components/ui/primitives';
 
@@ -73,6 +80,8 @@ interface FieldNames {
   accountCurrency: string;
   rateE9: string;
   rateSource: string;
+  rateMode: string;
+  manualRate: string;
   convertedAmount: string;
   conversionMode: string;
 }
@@ -86,6 +95,8 @@ function fieldNames(prefix: string): FieldNames {
         accountCurrency: '',
         rateE9: 'opening_rate_e9',
         rateSource: 'opening_rate_source',
+        rateMode: 'opening_rate_mode',
+        manualRate: 'opening_manual_rate',
         convertedAmount: 'opening_converted_amount',
         conversionMode: 'opening_conversion_mode',
       }
@@ -94,6 +105,8 @@ function fieldNames(prefix: string): FieldNames {
         accountCurrency: 'account_currency',
         rateE9: 'rate_e9',
         rateSource: 'rate_source',
+        rateMode: 'rate_mode',
+        manualRate: 'manual_rate',
         convertedAmount: 'converted_amount',
         conversionMode: 'conversion_mode',
       };
@@ -118,6 +131,8 @@ export function ConversionPanel({
   prefix = '',
   defaultMode = 'automatic',
   defaultConvertedMinor = null,
+  defaultRateE9 = null,
+  defaultRateIsManual = false,
   className,
 }: {
   amountMinor: number | null;
@@ -129,6 +144,10 @@ export function ConversionPanel({
   /** Reopening an entry that was already overridden starts on its own figure. */
   defaultMode?: 'automatic' | 'manual';
   defaultConvertedMinor?: number | null;
+  /** The rate the entry was stored at, when one is being edited. */
+  defaultRateE9?: number | null;
+  /** Whether that stored rate was typed by a human (upgrade §45). */
+  defaultRateIsManual?: boolean;
   className?: string;
 }) {
   const source = normaliseCode(from);
@@ -141,13 +160,22 @@ export function ConversionPanel({
     defaultConvertedMinor === null ? '' : minorToInput(defaultConvertedMinor, target),
   );
 
-  // Changing the pair, or reopening the sheet on a different entry, resets the
-  // override: an actual amount belongs to one exchange and means nothing on the
-  // next one.
+  // The rate override is a separate decision from the amount override, and the
+  // two compose: "at 96.50 — and what actually changed hands was 3,850".
+  const [rateManual, setRateManual] = useState(defaultRateIsManual);
+  const [rateText, setRateText] = useState(
+    defaultRateIsManual && defaultRateE9 ? rateToInput(defaultRateE9) : '',
+  );
+
+  // Changing the pair, or reopening the sheet on a different entry, resets both
+  // overrides: an actual amount and a negotiated rate belong to one exchange
+  // and mean nothing on the next one.
   useEffect(() => {
     setManual(defaultMode === 'manual');
     setText(defaultConvertedMinor === null ? '' : minorToInput(defaultConvertedMinor, target));
-  }, [defaultMode, defaultConvertedMinor, target, source]);
+    setRateManual(defaultRateIsManual);
+    setRateText(defaultRateIsManual && defaultRateE9 ? rateToInput(defaultRateE9) : '');
+  }, [defaultMode, defaultConvertedMinor, defaultRateE9, defaultRateIsManual, target, source]);
 
   if (!source || !target || source === target) return null;
 
@@ -190,8 +218,16 @@ export function ConversionPanel({
     );
   }
 
-  const automatic =
-    amountMinor === null ? null : convertMinor(amountMinor, source, target, state.rate.rate_e9);
+  // The rate this entry will actually be written at. A rate the user typed is
+  // used at its full stored precision, exactly as the database will use it.
+  // Nothing here ever converts at the shortened rate the sentence prints.
+  const fetchedRateE9 = state.rate.rate_e9;
+  const typedRate = rateText.trim();
+  const typedRateE9 = rateManual && typedRate !== '' ? parseRateToE9(typedRate) : null;
+  const rateInvalid = rateManual && typedRate !== '' && typedRateE9 === null;
+  const rateE9 = typedRateE9 ?? fetchedRateE9;
+
+  const automatic = amountMinor === null ? null : convertMinor(amountMinor, source, target, rateE9);
 
   const typed = text.trim();
   const manualMinor = typed === '' ? null : parseAmountToMinor(typed, target);
@@ -202,34 +238,91 @@ export function ConversionPanel({
       {/* What was entered. Never hidden, never restated as the converted figure:
           it is the only number the user actually typed (upgrade §2). */}
       <ConversionRow
-        label="Amount"
-        value={amountMinor === null ? '—' : formatMinor(amountMinor, source)}
+        label="Original amount"
+        value={amountMinor === null ? '—' : formatMoney(amountMinor, source, { withCode: false })}
         unit={source}
         muted
       />
 
       <ConversionRow
         label="Converted amount"
-        value={
-          automatic === null ? '—' : `≈ ${formatMinor(automatic, target, { withCode: false })}`
-        }
+        value={automatic === null ? '—' : `≈ ${formatMoney(automatic, target, { withCode: false, compactDecimals: false })}`}
         unit={target}
         // The provenance sits with the figure it qualifies rather than at the
         // foot of the panel, so "where did this number come from" is answered
-        // on the same line the number is read.
+        // on the same line the number is read. The rate is printed at whatever
+        // precision reproduces the figure above it (lib/currencies.ts).
         meta={
           <>
-            <span className="font-medium text-ink-muted">Automatic</span>
-            <span aria-hidden className="text-ink-subtle"> · </span>
-            {rateSentence(source, target, state.rate.rate_e9)}
-            <span aria-hidden className="text-ink-subtle"> · </span>
-            <span className={state.rate.stale ? 'font-medium text-payable' : undefined}>
-              {state.rate.provenance}
+            <span className={cn('font-medium', rateManual ? 'text-accent' : 'text-ink-muted')}>
+              {rateManual ? 'Custom rate' : 'Automatic'}
             </span>
+            <span aria-hidden className="text-ink-subtle"> · </span>
+            {rateSentence(source, target, rateE9, amountMinor)}
+            {rateManual ? null : (
+              <>
+                <span aria-hidden className="text-ink-subtle"> · </span>
+                <span className={state.rate.stale ? 'font-medium text-payable' : undefined}>
+                  {state.rate.provenance}
+                </span>
+              </>
+            )}
           </>
         }
         dimmed={manual}
       />
+
+      {rateManual ? (
+        <div className="border-t border-line px-4 py-3.5">
+          <div className="flex items-baseline justify-between gap-3">
+            <label htmlFor={`${id}-rate`} className="text-[0.8125rem] font-medium text-ink">
+              Exchange rate
+            </label>
+            <span className="text-[0.6875rem] font-medium uppercase tracking-[0.07em] text-accent">
+              Manual
+            </span>
+          </div>
+
+          <div
+            className={cn(
+              'mt-2 flex items-center gap-2 rounded-field border bg-surface px-3',
+              'transition-[border-color,box-shadow] duration-[var(--dur)] ease-[var(--ease)]',
+              rateInvalid
+                ? 'border-payable ring-2 ring-payable/20'
+                : 'border-line-strong focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/25',
+            )}
+          >
+            <span className="shrink-0 text-[0.8125rem] font-medium text-ink-faint">
+              1 {source} =
+            </span>
+            <input
+              id={`${id}-rate`}
+              value={rateText}
+              onChange={(event) => setRateText(event.target.value)}
+              inputMode="decimal"
+              autoComplete="off"
+              placeholder={rateToInput(fetchedRateE9)}
+              aria-label={`Rate: one ${source} in ${target}`}
+              aria-invalid={rateInvalid}
+              aria-describedby={`${id}-rate-note`}
+              className="money tnum h-11 w-full bg-transparent text-[1.0625rem] text-ink outline-none placeholder:text-ink-subtle"
+            />
+            <span className="shrink-0 text-[0.8125rem] font-medium text-ink-faint">{target}</span>
+          </div>
+
+          <p id={`${id}-rate-note`} className="mt-2 text-[0.8125rem] leading-relaxed">
+            {rateInvalid ? (
+              <span className="text-payable" role="alert">
+                Enter how many {target} one {source} is worth, to at most nine decimals.
+              </span>
+            ) : (
+              <span className="text-ink-muted">
+                Frozen on this entry. Later rate changes will not touch it.
+              </span>
+            )}
+          </p>
+        </div>
+      ) : null}
 
       {manual ? (
         <div className="border-t border-line px-4 py-3.5">
@@ -281,33 +374,72 @@ export function ConversionPanel({
         </div>
       ) : null}
 
-      <div className="border-t border-line px-4 py-2.5">
-        <button
-          type="button"
+      <div className="flex flex-wrap gap-2 border-t border-line px-4 py-2.5">
+        <PanelToggle
+          active={rateManual}
           onClick={() => {
-            // Turning the override on pre-fills the automatic figure, so the user
-            // edits a number rather than facing an empty box — the common case is
-            // "nearly that, but 43".
+            // Turning the override on pre-fills the fetched rate, so the user
+            // corrects a number rather than facing an empty box.
+            if (!rateManual && typedRate === '') setRateText(rateToInput(fetchedRateE9));
+            setRateManual(!rateManual);
+          }}
+        >
+          {rateManual ? 'Use today’s rate' : 'Enter a different rate'}
+        </PanelToggle>
+
+        <PanelToggle
+          active={manual}
+          onClick={() => {
+            // The common case is "nearly that, but 43", so the box opens on the
+            // automatic figure rather than empty.
             if (!manual && typed === '' && automatic !== null) {
               setText(minorToInput(automatic, target));
             }
             setManual(!manual);
           }}
-          className={cn(
-            'tap rounded-full border px-3 py-1.5 text-[0.75rem] font-medium',
-            'transition-[background-color,border-color,color] duration-[var(--dur)] ease-[var(--ease)]',
-            manual
-              ? 'border-accent-line bg-accent-soft text-accent'
-              : 'border-line-strong bg-surface text-ink-muted hover:border-accent-line hover:text-accent',
-          )}
         >
           {manual ? 'Use the automatic conversion' : 'Enter what actually changed hands'}
-        </button>
+        </PanelToggle>
       </div>
 
       <input type="hidden" name={names.conversionMode} value={manual ? 'manual' : 'automatic'} />
       <input type="hidden" name={names.convertedAmount} value={manual ? typed : ''} />
+      {/* The rate travels as text and is parsed on the server against the same
+          nine-decimal scale the column stores — the client never sends a
+          converted figure it worked out from it. The mode is stated rather than
+          inferred, so switching back to today's rate is something the form can
+          say rather than merely something it forgot to send. */}
+      <input type="hidden" name={names.rateMode} value={rateManual ? 'manual' : 'automatic'} />
+      <input type="hidden" name={names.manualRate} value={rateManual ? typedRate : ''} />
     </div>
+  );
+}
+
+/** One of the two override toggles at the foot of the panel. */
+function PanelToggle({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        'tap rounded-full border px-3 py-1.5 text-[0.75rem] font-medium',
+        'transition-[background-color,border-color,color] duration-[var(--dur)] ease-[var(--ease)]',
+        active
+          ? 'border-accent-line bg-accent-soft text-accent'
+          : 'border-line-strong bg-surface text-ink-muted hover:border-accent-line hover:text-accent',
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -397,16 +529,24 @@ export function ConversionFields({
 }
 
 /**
- * How a stored entry is shown afterwards: what was handed over, what it was
- * worth in the account's currency, and — when the two disagree with the rate —
- * that somebody said so on purpose.
+ * The rate a stored entry was written at — the tertiary line of the hierarchy.
  *
- * Used by the timeline and the activity feed.
+ *     400 AED                    the original amount, printed by the row
+ *     ≈ ₹10,393.69 INR           its base equivalent, printed by the row
+ *     1 AED = ₹25.984225 INR     this
+ *
+ * It never repeats either figure. It says what links them, at whatever
+ * precision reproduces the converted amount beside it, and then says the two
+ * things a reader cannot infer from the numbers: that a human typed the rate,
+ * and that a human replaced the converted amount.
+ *
+ * Used by the person timeline and the activity feed.
  */
-export function ConvertedFrom({
+export function RateNote({
   enteredMinor,
   enteredCurrency,
   rateE9,
+  rateSource,
   accountCurrency,
   conversionMode,
   autoConvertedMinor,
@@ -415,24 +555,32 @@ export function ConvertedFrom({
   enteredMinor: number | null | undefined;
   enteredCurrency: string | null | undefined;
   rateE9: number | null | undefined;
+  rateSource?: string | null;
   accountCurrency: string;
   conversionMode?: string | null;
   autoConvertedMinor?: number | null;
   className?: string;
 }) {
-  if (!enteredMinor || !enteredCurrency) return null;
-  const manual = conversionMode === 'manual';
+  if (!enteredCurrency || !rateE9) return null;
+
+  const manualAmount = conversionMode === 'manual';
+  const manualRate = rateIsManual(rateSource);
 
   return (
     <span className={cn('text-[0.75rem] text-ink-faint', className)}>
-      {formatMinor(enteredMinor, enteredCurrency, { withCode: true })}
-      {rateE9 ? ` · ${rateSentence(enteredCurrency, accountCurrency, rateE9)}` : ''}
-      {manual ? (
+      {rateSentence(enteredCurrency, accountCurrency, rateE9, enteredMinor)}
+      {manualRate ? (
         <>
-          {' · '}
-          <span className="font-medium text-accent">Manually entered</span>
+          <span aria-hidden className="text-ink-subtle"> · </span>
+          <span className="font-medium text-accent">Custom rate</span>
+        </>
+      ) : null}
+      {manualAmount ? (
+        <>
+          <span aria-hidden className="text-ink-subtle"> · </span>
+          <span className="font-medium text-accent">Amount entered by hand</span>
           {autoConvertedMinor
-            ? ` (rate said ${formatMinor(autoConvertedMinor, accountCurrency, { withCode: true })})`
+            ? ` (the rate said ${formatMoney(autoConvertedMinor, accountCurrency)})`
             : ''}
         </>
       ) : null}

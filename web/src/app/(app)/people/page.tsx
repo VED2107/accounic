@@ -7,7 +7,7 @@ import { initials } from '@/lib/names';
 import { ArrowRightIcon, PeopleIcon } from '@/components/icons';
 import { PeopleToolbar } from './people-toolbar';
 import { AddPersonButton } from './add-person-button';
-import { balanceTone, formatMinor } from '@/lib/money';
+import { balanceTone, formatMoney } from '@/lib/money';
 import { friendlyDate } from '@/lib/dates';
 import type { PersonBalance } from '@/lib/types';
 
@@ -144,7 +144,7 @@ function Total({
           tone === 'receivable' ? 'text-receivable' : 'text-payable',
         )}
       >
-        {formatMinor(amount, currency)}
+        {formatMoney(amount, currency)}
       </p>
     </div>
   );

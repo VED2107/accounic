@@ -19,6 +19,26 @@ import type { ConversionMode } from '@/lib/types';
  * This module is deliberately free of server-only imports so the rule can be
  * tested directly rather than through a server action.
  */
+/**
+ * The provenance a hand-typed rate is stored under (upgrade §45).
+ *
+ * One string, defined once, matching `public.rate_is_manual()` in
+ * db/migrations/0018. A row carrying it is a row where a human decided the
+ * rate: it is stored in `exchange_rate_e9` like any other rate, frozen on the
+ * row like any other, and every later automatic rate leaves it alone — no read
+ * path re-derives a stored amount from a current rate.
+ *
+ * Deliberately not the word 'manual': 0011's write RPCs already default a
+ * missing source to that, so rows written by a client that sent none carry it
+ * without anybody having typed a rate.
+ */
+export const MANUAL_RATE_SOURCE = 'manual-rate';
+
+/** True when a stored row's rate was typed by a human rather than fetched. */
+export function rateIsManual(source: string | null | undefined): boolean {
+  return (source ?? '').trim().toLowerCase() === MANUAL_RATE_SOURCE;
+}
+
 export interface ConversionArgs {
   p_amount_minor: number | null;
   p_entered_amount_minor: number | null;

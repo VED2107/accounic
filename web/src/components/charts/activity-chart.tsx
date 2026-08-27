@@ -2,7 +2,7 @@
 
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import type { ActivityBucket } from '@/lib/queries';
-import { formatMinor } from '@/lib/money';
+import { formatMoney } from '@/lib/money';
 import { cn } from '@/components/ui/primitives';
 
 /**
@@ -94,9 +94,9 @@ export function ActivityChart({
           touched, which is the test of whether the tooltip is a convenience or
           a load-bearing part of the design. */}
       <div className="mb-4 flex flex-wrap items-baseline gap-x-5 gap-y-1.5">
-        <LegendItem tone="receivable" label="You received" value={formatMinor(totals.credit, currency)} />
-        <LegendItem tone="payable" label="You gave" value={formatMinor(totals.debit, currency)} />
-        <LegendItem tone="neutral" label="Settled" value={formatMinor(totals.settled, currency)} />
+        <LegendItem tone="receivable" label="You received" value={formatMoney(totals.credit, currency)} />
+        <LegendItem tone="payable" label="You gave" value={formatMoney(totals.debit, currency)} />
+        <LegendItem tone="neutral" label="Settled" value={formatMoney(totals.settled, currency)} />
       </div>
 
       <div className="relative">
@@ -113,9 +113,9 @@ export function ActivityChart({
           >
             <p className="text-[0.75rem] font-semibold text-ink">{dayLabel(shown.bucket)}</p>
             <dl className="mt-1.5 space-y-1">
-              <TipRow tone="receivable" label="You received" value={formatMinor(shown.credit, currency)} />
-              <TipRow tone="payable" label="You gave" value={formatMinor(shown.debit, currency)} />
-              <TipRow tone="neutral" label="Settled" value={formatMinor(shown.settled, currency)} />
+              <TipRow tone="receivable" label="You received" value={formatMoney(shown.credit, currency)} />
+              <TipRow tone="payable" label="You gave" value={formatMoney(shown.debit, currency)} />
+              <TipRow tone="neutral" label="Settled" value={formatMoney(shown.settled, currency)} />
             </dl>
           </div>
         ) : null}

@@ -16,7 +16,7 @@
  * here takes the currency for that reason (upgrade §19).
  */
 
-import { decimalsFor, minorPerMajor } from '@/lib/currencies';
+import { decimalsFor, displaySymbol, minorPerMajor, normaliseCode } from '@/lib/currencies';
 
 /**
  * Minor units per major unit for a two-decimal currency.
@@ -27,28 +27,40 @@ import { decimalsFor, minorPerMajor } from '@/lib/currencies';
  */
 export const MINOR_PER_MAJOR = 100;
 
+/**
+ * The locale each currency's figures are GROUPED by — never the locale its
+ * digits are drawn in.
+ *
+ * Grouping is a property of the money: ₹1,00,000 groups the Indian way and
+ * $100,000 the Western one, and a ledger that got that wrong would read as a
+ * different amount. Digits are not: `١٬٢٣٤` is the correct Arabic rendering of
+ * 1,234 and completely unreadable in a column beside `1,234`. So every locale
+ * here is one that draws Latin digits, chosen to match the grouping its
+ * currency actually uses — the Gulf currencies group in threes, the South Asian
+ * ones in the Indian pattern. The Dart mirror uses the same table.
+ */
 const CURRENCY_LOCALE: Record<string, string> = {
   INR: 'en-IN',
   USD: 'en-US',
   EUR: 'de-DE',
   GBP: 'en-GB',
-  AED: 'en-AE',
+  AED: 'en-US',
   AUD: 'en-AU',
   CAD: 'en-CA',
   SGD: 'en-SG',
   JPY: 'ja-JP',
   CNY: 'zh-CN',
   CHF: 'de-CH',
-  SAR: 'ar-SA',
-  QAR: 'ar-QA',
-  KWD: 'ar-KW',
-  BHD: 'ar-BH',
-  OMR: 'ar-OM',
-  JOD: 'ar-JO',
+  SAR: 'en-US',
+  QAR: 'en-US',
+  KWD: 'en-US',
+  BHD: 'en-US',
+  OMR: 'en-US',
+  JOD: 'en-US',
   PKR: 'en-PK',
-  BDT: 'bn-BD',
-  LKR: 'si-LK',
-  NPR: 'ne-NP',
+  BDT: 'en-IN',
+  LKR: 'en-IN',
+  NPR: 'en-IN',
   MYR: 'ms-MY',
   THB: 'th-TH',
   IDR: 'id-ID',
@@ -58,7 +70,7 @@ const CURRENCY_LOCALE: Record<string, string> = {
   ZAR: 'en-ZA',
   NGN: 'en-NG',
   KES: 'en-KE',
-  EGP: 'ar-EG',
+  EGP: 'en-US',
   TRY: 'tr-TR',
   RUB: 'ru-RU',
   BRL: 'pt-BR',
@@ -170,27 +182,71 @@ export function formatMinor(
   const hasFraction = abs % units !== 0;
   const digits = compactDecimals && !hasFraction ? 0 : maxDecimals;
 
+  // Decimal formatting plus our own symbol, never Intl's currency style. Intl
+  // renders the same currency differently in different locales — and for the
+  // right-to-left marks it renders something that cannot sit in a column of
+  // figures at all. Grouping still comes from the currency's locale, which is
+  // what makes ₹1,00,000 group the Indian way.
   const formatted = new Intl.NumberFormat(localeFor(code), {
-    style: withSymbol ? 'currency' : 'decimal',
-    currency: code,
+    style: 'decimal',
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   }).format(abs / units);
 
-  const body = withCode ? `${formatted} ${code}` : formatted;
+  const symbol = withSymbol ? displaySymbol(code) : '';
+  const amount = `${symbol}${formatted}`;
+  const body = withCode ? `${amount} ${code}` : amount;
 
   if (signed && minor !== 0) return `${minor > 0 ? '+' : '−'}${body}`;
   if (minor < 0) return `−${body}`;
   return body;
 }
 
-/** The bare symbol for a currency, for use in input prefixes. */
+/**
+ * THE way an amount is written in this product (upgrade §44).
+ *
+ * One shared presenter, used by every screen on both clients, so that a figure
+ * cannot be typed one way on the dashboard and another on a person page:
+ *
+ *     original amount     $40 USD          strongest
+ *     converted amount    ≈ ₹3,817.11 INR  secondary
+ *     rate                1 USD = ₹95.4276 INR   tertiary  (rateSentence)
+ *
+ * The ISO code is always present, because a symbol on its own is ambiguous —
+ * `$` is eight currencies and `₹` is two — and because the whole point of the
+ * hierarchy is that the reader can tell at a glance which of the two figures
+ * they are looking at. `approx` prepends the `≈` that marks a converted figure
+ * as a conversion rather than as something that was counted.
+ *
+ * Unknown, empty and unsupported codes fall through to two decimals and the
+ * code as typed, rather than throwing: a ledger that will not render is worse
+ * than one that renders a currency it has never heard of.
+ */
+export function formatMoney(
+  minor: number,
+  currency: string | null | undefined,
+  options: FormatOptions & { approx?: boolean } = {},
+): string {
+  const { approx = false, ...rest } = options;
+  const code = normaliseCode(currency) || 'INR';
+  const body = formatMinor(minor, code, { withCode: true, ...rest });
+  return approx ? `≈ ${body}` : body;
+}
+
+/** `≈ ₹3,817.11 INR` — the base-currency equivalent of an original amount. */
+export function formatApprox(minor: number, currency: string | null | undefined): string {
+  return formatMoney(minor, currency, { approx: true, compactDecimals: false });
+}
+
+/**
+ * The bare symbol for a currency, for use in input prefixes.
+ *
+ * Falls back to the ISO code for every currency whose mark cannot lead a
+ * figure — the same rule the formatter uses, so the prefix inside an amount
+ * field and the figure it produces agree.
+ */
 export function currencySymbol(currency = 'INR'): string {
-  const parts = new Intl.NumberFormat(localeFor(currency), {
-    style: 'currency',
-    currency,
-  }).formatToParts(0);
-  return parts.find((p) => p.type === 'currency')?.value ?? currency;
+  return displaySymbol(currency) || normaliseCode(currency);
 }
 
 /**

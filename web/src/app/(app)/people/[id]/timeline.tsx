@@ -7,13 +7,14 @@ import { staggerStyle } from '@/components/motion/reveal';
 import { ConfirmDialog } from '@/components/ui/modal';
 import { Money } from '@/components/money';
 import { TransactionSheet } from '@/components/ledger/transaction-sheet';
-import { ConvertedFrom } from '@/components/ledger/conversion';
+import { RateNote } from '@/components/ledger/conversion';
 import { SettleSheet } from '@/components/ledger/settle-sheet';
 import { ArrowDownIcon, ArrowUpIcon, SettleIcon, WalletIcon } from '@/components/icons';
 import { voidSettlement, voidTransaction } from '@/lib/actions';
 import { groupByDate } from '@/lib/dates';
-import { formatMinor } from '@/lib/money';
+import { formatApprox, formatMoney } from '@/lib/money';
 import { entryIsReceivable, entryLabel } from '@/lib/direction';
+import { normaliseCode } from '@/lib/currencies';
 import type { OpenTransaction, Person, PersonBalance, TimelineEntry } from '@/lib/types';
 
 /**
@@ -98,6 +99,23 @@ export function Timeline({
                 const receivable = entryIsReceivable(entry.entry_type);
                 const open = expanded === entry.id;
 
+                // What was entered, falling back to the ledger figure against a
+                // database older than 0018 — where, for a same-currency entry,
+                // they are the same number anyway.
+                const entryMinor = entry.entry_amount_minor ?? entry.amount_minor;
+                const entryCurrency = normaliseCode(entry.entry_currency) || currency;
+                const baseCurrency = normaliseCode(entry.base_currency);
+
+                // One equivalent, chosen so it always says something the
+                // headline does not: the ledger figure when this entry was
+                // converted into the account, otherwise the workspace figure.
+                const equivalent =
+                  entryCurrency !== currency
+                    ? { minor: entry.amount_minor, currency }
+                    : baseCurrency && baseCurrency !== currency && entry.amount_base_minor != null
+                      ? { minor: entry.amount_base_minor, currency: baseCurrency }
+                      : null;
+
                 return (
                   <li
                     key={`${entry.entry_kind}-${entry.id}`}
@@ -147,7 +165,7 @@ export function Timeline({
                             <StatusChip tone="done">Settled</StatusChip>
                           ) : entry.status === 'partial' ? (
                             <StatusChip tone="partial">
-                              {formatMinor(entry.remaining_minor ?? 0, currency)} left
+                              {formatMoney(entry.remaining_minor ?? 0, currency)} left
                             </StatusChip>
                           ) : null}
                         </span>
@@ -156,31 +174,49 @@ export function Timeline({
                             {entry.note}
                           </span>
                         ) : null}
-                        {/* What was actually handed over, when that was not this
-                            account's currency. The converted figure is on the
-                            right; this is the half that must never be hidden. */}
-                        {entry.entered_currency ? (
-                          <ConvertedFrom
-                            className="mt-0.5 block truncate"
-                            enteredMinor={entry.entered_amount_minor}
-                            enteredCurrency={entry.entered_currency}
-                            rateE9={entry.exchange_rate_e9}
-                            accountCurrency={currency}
-                            conversionMode={entry.conversion_mode}
-                            autoConvertedMinor={entry.auto_converted_amount_minor}
-                          />
-                        ) : null}
+                        {/* The rate that links the two figures on the right, and
+                            whether a human chose either of them. Third and
+                            quietest: it must not compete with the amount. */}
+                        <RateNote
+                          className="mt-0.5 block truncate"
+                          enteredMinor={entry.entered_amount_minor}
+                          enteredCurrency={entry.entered_currency}
+                          rateE9={entry.exchange_rate_e9}
+                          rateSource={entry.exchange_rate_source}
+                          accountCurrency={currency}
+                          conversionMode={entry.conversion_mode}
+                          autoConvertedMinor={entry.auto_converted_amount_minor}
+                        />
                       </span>
 
-                      <Money
-                        minor={entry.amount_minor}
-                        currency={currency}
-                        tone={isSettlement ? 'neutral' : receivable ? 'receivable' : 'payable'}
-                        className={cn(
-                          'shrink-0 text-[0.875rem] font-semibold',
-                          entry.is_void && 'line-through',
-                        )}
-                      />
+                      {/* The amount that was ENTERED leads, in the currency it
+                          was entered in — a dirham entry is 400 AED and says so.
+                          Under it, the one equivalent that adds something: the
+                          ledger figure when the entry was converted into this
+                          account, otherwise the workspace-currency figure for an
+                          account kept in a foreign currency. Never both, and
+                          never the equivalent alone (upgrade §44). */}
+                      <span className="flex shrink-0 flex-col items-end">
+                        <Money
+                          minor={entryMinor}
+                          currency={entryCurrency}
+                          tone={isSettlement ? 'neutral' : receivable ? 'receivable' : 'payable'}
+                          className={cn(
+                            'text-[0.875rem] font-semibold',
+                            entry.is_void && 'line-through',
+                          )}
+                        />
+                        {equivalent ? (
+                          <span
+                            className={cn(
+                              'tnum text-[0.75rem] text-ink-faint',
+                              entry.is_void && 'line-through',
+                            )}
+                          >
+                            {formatApprox(equivalent.minor, equivalent.currency)}
+                          </span>
+                        ) : null}
+                      </span>
                     </button>
 
                     {open && !entry.is_void ? (
@@ -238,6 +274,10 @@ export function Timeline({
             entered_currency: editing.entered_currency,
             conversion_mode: editing.conversion_mode,
             auto_converted_amount_minor: editing.auto_converted_amount_minor,
+            // And on the rate it was written at, so a row rated by hand is not
+            // quietly restated at today's rate by an unrelated edit.
+            exchange_rate_e9: editing.exchange_rate_e9,
+            exchange_rate_source: editing.exchange_rate_source,
           }}
         />
       ) : null}
@@ -265,7 +305,7 @@ export function Timeline({
         body={
           confirmVoid?.entry_kind === 'settlement' ? (
             <>
-              The {formatMinor(confirmVoid.amount_minor, currency)} goes back to outstanding. The
+              The {formatMoney(confirmVoid.amount_minor, currency)} goes back to outstanding. The
               record stays in the timeline marked as reversed.
             </>
           ) : (

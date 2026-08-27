@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { fail, ok, UNCHANGED } from '@/lib/errors';
 import { getRate, rateProvenance, type Rate } from '@/lib/rates';
-import { FALLBACK_CURRENCY, normaliseCode } from '@/lib/currencies';
+import { FALLBACK_CURRENCY, normaliseCode, parseRateToE9 } from '@/lib/currencies';
 import {
   firstIssue,
   formObject,
@@ -17,8 +17,46 @@ import {
   transactionEditSchema,
   transactionSchema,
 } from '@/lib/validation';
-import { conversionArgs, manualMinor, type ConversionArgs } from '@/lib/conversion';
+import {
+  conversionArgs,
+  manualMinor,
+  MANUAL_RATE_SOURCE,
+  type ConversionArgs,
+} from '@/lib/conversion';
 import type { ActionResult, ConversionMode, PersonBalance, Person } from '@/lib/types';
+
+/**
+ * The rate an entry is written at: the one the user typed, or the fetched one.
+ *
+ * A manual rate is an ordinary rate — stored in `exchange_rate_e9`, frozen on
+ * the row, and used by the database to derive the converted amount. Only its
+ * source differs, and that is the whole of what makes it visible afterwards.
+ */
+function resolveRate(
+  rateMode: ConversionMode | null | undefined,
+  typedRate: string | null | undefined,
+  fetchedE9: number | null,
+  fetchedSource: string | null,
+  from: string,
+  to: string,
+): { rateE9: number; source: string } | { error: string } | null {
+  if (rateMode !== 'manual') {
+    return fetchedE9 ? { rateE9: fetchedE9, source: fetchedSource ?? 'unrecorded' } : null;
+  }
+
+  const typed = (typedRate ?? '').trim();
+  if (typed === '') {
+    return { error: `Enter the rate to use for ${from} to ${to}, or switch back to the automatic rate.` };
+  }
+
+  const rateE9 = parseRateToE9(typed);
+  if (rateE9 === null) {
+    return {
+      error: `Enter a valid rate — how many ${to} one ${from} is worth, to at most nine decimals.`,
+    };
+  }
+  return { rateE9, source: MANUAL_RATE_SOURCE };
+}
 
 /**
  * Turn an amount field and its currency into RPC arguments.
@@ -35,6 +73,8 @@ async function moneyArgs(entry: {
   account_currency?: string | null;
   rate_e9?: number | null;
   rate_source?: string | null;
+  rate_mode?: ConversionMode | null;
+  manual_rate?: string | null;
   converted_amount?: string | null;
   conversion_mode?: ConversionMode | null;
 }): Promise<{ args: ConversionArgs } | { error: string }> {
@@ -50,6 +90,16 @@ async function moneyArgs(entry: {
 
   let rateE9 = entry.rate_e9 ?? null;
   let source = entry.rate_source ?? null;
+
+  // A hand-typed rate needs no lookup at all, and must not be quietly replaced
+  // by one: it is the rate for this entry.
+  const chosen = resolveRate(entry.rate_mode, entry.manual_rate, rateE9, source, typed, account);
+  if (chosen && 'error' in chosen) return chosen;
+  if (chosen) {
+    rateE9 = chosen.rateE9;
+    source = chosen.source;
+  }
+
   if (!rateE9) {
     const rate = await getRate(typed, account);
     if (!rate) {
@@ -85,6 +135,8 @@ async function openingArgs(person: {
   opening_amount?: string;
   opening_currency?: string | null;
   opening_rate_e9?: number | null;
+  opening_rate_mode?: ConversionMode | null;
+  opening_manual_rate?: string | null;
   opening_converted_amount?: string | null;
   opening_conversion_mode?: ConversionMode | null;
 }): Promise<{ args: Record<string, unknown> } | { error: string }> {
@@ -107,6 +159,19 @@ async function openingArgs(person: {
   if (!amount.ok) return { error: amount.error };
 
   let rateE9 = person.opening_rate_e9 ?? null;
+  let rateSource: string = 'form';
+
+  if (entry !== account) {
+    const chosen = resolveRate(
+      person.opening_rate_mode, person.opening_manual_rate, rateE9, rateSource, entry, account,
+    );
+    if (chosen && 'error' in chosen) return chosen;
+    if (chosen) {
+      rateE9 = chosen.rateE9;
+      rateSource = chosen.source;
+    }
+  }
+
   if (entry !== account && !rateE9) {
     // The form could not reach a rate — it may have been offline when the
     // currency was chosen. Try once more here before refusing, because the
@@ -132,7 +197,7 @@ async function openingArgs(person: {
     entry,
     account,
     rateE9,
-    'form',
+    rateSource,
     override.minor,
   );
 

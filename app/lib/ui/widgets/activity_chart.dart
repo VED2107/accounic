@@ -89,17 +89,17 @@ class _ActivityChartState extends State<ActivityChart> {
             _Legend(
               color: palette.receivable,
               label: 'You received',
-              value: formatMinor(credit, currency: widget.currency),
+              value: formatMoney(credit, currency: widget.currency),
             ),
             _Legend(
               color: palette.payable,
               label: 'You gave',
-              value: formatMinor(debit, currency: widget.currency),
+              value: formatMoney(debit, currency: widget.currency),
             ),
             _Legend(
               color: palette.inkFaint,
               label: 'Settled',
-              value: formatMinor(settled, currency: widget.currency),
+              value: formatMoney(settled, currency: widget.currency),
             ),
           ],
         ),
@@ -138,15 +138,15 @@ class _ActivityChartState extends State<ActivityChart> {
                           children: [
                             _Readout(
                               color: palette.receivable,
-                              value: formatMinor(shown.credit, currency: widget.currency),
+                              value: formatMoney(shown.credit, currency: widget.currency),
                             ),
                             _Readout(
                               color: palette.payable,
-                              value: formatMinor(shown.debit, currency: widget.currency),
+                              value: formatMoney(shown.debit, currency: widget.currency),
                             ),
                             _Readout(
                               color: palette.inkFaint,
-                              value: formatMinor(shown.settled, currency: widget.currency),
+                              value: formatMoney(shown.settled, currency: widget.currency),
                             ),
                           ],
                         ),

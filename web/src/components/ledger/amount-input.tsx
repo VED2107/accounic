@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useId, useState } from 'react';
-import { currencySymbol, parseAmountToMinor, formatMinor, minorToInput } from '@/lib/money';
+import { currencySymbol, parseAmountToMinor, formatMoney, minorToInput } from '@/lib/money';
 import { cn } from '@/components/ui/primitives';
 
 const QUICK_SHARES = [0.25, 0.5, 0.75, 1] as const;
@@ -62,7 +62,7 @@ export function AmountInput({
     value.trim() !== '' && minor === null
       ? 'Enter a valid amount'
       : overMax
-        ? `That is more than the ${formatMinor(max!, currency)} outstanding`
+        ? `That is more than the ${formatMoney(max!, currency)} outstanding`
         : undefined;
   const invalid = Boolean(localError || error);
 
@@ -126,7 +126,7 @@ export function AmountInput({
             );
           })}
           <span className="tnum ml-auto self-center text-[0.75rem] text-ink-faint">
-            {formatMinor(max, currency)} outstanding
+            {formatMoney(max, currency)} outstanding
           </span>
         </div>
       ) : null}

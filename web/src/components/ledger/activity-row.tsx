@@ -3,9 +3,9 @@ import { Money } from '@/components/money';
 import { cn } from '@/components/ui/primitives';
 import { ArrowDownIcon, ArrowUpIcon, SettleIcon } from '@/components/icons';
 import { friendlyDate } from '@/lib/dates';
-import { formatMinor } from '@/lib/money';
+import { formatApprox } from '@/lib/money';
 import { entryIsReceivable, entryLabel } from '@/lib/direction';
-import { ConvertedFrom } from '@/components/ledger/conversion';
+import { RateNote } from '@/components/ledger/conversion';
 import type { ActivityItem } from '@/lib/types';
 
 /**
@@ -119,21 +119,20 @@ export function ActivityRow({
             </>
           ) : null}
         </span>
-        {/* Provenance, only where it adds something. The entered figure is now
-            the headline and the base equivalent sits under it, so repeating the
-            original here would print the same number twice. What is still worth
-            saying is that a human overrode the rate (upgrade §40). */}
-        {item.entered_currency && item.conversion_mode === 'manual' ? (
-          <ConvertedFrom
-            className="block truncate"
-            enteredMinor={item.entered_amount_minor}
-            enteredCurrency={item.entered_currency}
-            rateE9={item.exchange_rate_e9}
-            accountCurrency={rowCurrency}
-            conversionMode={item.conversion_mode}
-            autoConvertedMinor={item.auto_converted_amount_minor}
-          />
-        ) : null}
+        {/* The rate, third and quietest. The entered figure is the headline and
+            the base equivalent sits under it, so this repeats neither: it says
+            what links them, and whether a human chose either of them
+            (upgrade §40, §45). */}
+        <RateNote
+          className="block truncate"
+          enteredMinor={item.entered_amount_minor}
+          enteredCurrency={item.entered_currency}
+          rateE9={item.exchange_rate_e9}
+          rateSource={item.exchange_rate_source}
+          accountCurrency={rowCurrency}
+          conversionMode={item.conversion_mode}
+          autoConvertedMinor={item.auto_converted_amount_minor}
+        />
       </span>
 
       {/* The amount that was ENTERED leads, in the currency it was entered in.
@@ -147,10 +146,11 @@ export function ActivityRow({
           currency={entryCurrency}
           tone={isSettlement ? 'neutral' : receivable ? 'receivable' : 'payable'}
           className="money"
+          withCode
         />
         {showBase ? (
           <span className="tnum text-[0.75rem] text-ink-faint">
-            ≈ {formatMinor(item.amount_base_minor!, item.base_currency!, { withCode: true })}
+            {formatApprox(item.amount_base_minor!, item.base_currency!)}
           </span>
         ) : null}
       </span>

@@ -203,7 +203,7 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
                     child: _SideOption(
                       selected: incoming,
                       title: 'I received',
-                      amount: formatMinor(widget.balance.outstandingReceivable,
+                      amount: formatMoney(widget.balance.outstandingReceivable,
                           currency: currency),
                       color: context.money.receivable,
                       background: context.money.receivableSoft,
@@ -219,7 +219,7 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
                       selected: !incoming,
                       title: 'I paid',
                       amount:
-                          formatMinor(widget.balance.outstandingPayable, currency: currency),
+                          formatMoney(widget.balance.outstandingPayable, currency: currency),
                       color: context.money.payable,
                       background: context.money.payableSoft,
                       onTap: () => setState(() {
@@ -251,7 +251,7 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      formatMinor(_max, currency: currency),
+                      formatMoney(_max, currency: currency),
                       style: context.moneyStyle(MoneySize.large, color: accent),
                     ),
                   ],
@@ -286,7 +286,7 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
                           value: txn.id,
                           child: Text(
                             '${friendlyDate(txn.transactionDate)} · '
-                            '${formatMinor(txn.remainingMinor, currency: currency)} left'
+                            '${formatMoney(txn.remainingMinor, currency: currency)} left'
                             '${txn.description == null ? '' : ' · ${txn.description}'}',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -510,7 +510,7 @@ class _SettlementSuccess extends StatelessWidget {
               const SizedBox(height: 6),
               Text(
                 '${incoming ? 'Received' : 'Paid'} '
-                '${formatMinor(amount, currency: currency)} '
+                '${formatMoney(amount, currency: currency)} '
                 '${incoming ? 'from' : 'to'} $name',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 13, color: palette.inkMuted),
@@ -534,7 +534,7 @@ class _SettlementSuccess extends StatelessWidget {
                     const SizedBox(height: 3),
                     Text(
                       remaining > 0
-                          ? formatMinor(remaining, currency: currency)
+                          ? formatMoney(remaining, currency: currency)
                           : 'Fully settled',
                       style: context.display(22).copyWith(
                             color: remaining > 0

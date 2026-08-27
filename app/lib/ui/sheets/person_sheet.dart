@@ -109,6 +109,12 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
   /// actually changed hands (upgrade 40).
   bool _openingManual = false;
   int? _openingActual;
+
+  /// The same pair for the RATE: whether the user typed one, and which
+  /// (upgrade 45). An opening balance is as likely as any entry to have been
+  /// exchanged at a rate nobody publishes.
+  bool _openingRateManual = false;
+  int? _openingManualRateE9;
   late String _openingCurrency = _currency;
 
   bool _saving = false;
@@ -177,11 +183,16 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
   Future<_OpeningArgs?> _resolveOpening() async {
     final entered = _direction == OpeningDirection.none ? null : _openingMinor;
     final foreign = entered != null && _openingCurrency != _openingTarget;
-    final rate = foreign
+
+    // A hand-typed rate needs no lookup, and must not be replaced by one.
+    final manualRate = foreign && _openingRateManual ? _openingManualRateE9 : null;
+    final rate = foreign && manualRate == null
         ? await ref.read(ratesRepositoryProvider).rate(_openingCurrency, _openingTarget)
         : null;
+    final rateE9 = manualRate ?? rate?.rateE9;
+    final rateSource = manualRate != null ? kManualRateSource : rate?.source;
 
-    if (foreign && rate == null) {
+    if (foreign && rateE9 == null) {
       setState(() {
         _saving = false;
         _openingError =
@@ -196,8 +207,8 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
       amountMinor: foreign ? null : entered,
       enteredMinor: foreign ? entered : null,
       enteredCurrency: foreign ? _openingCurrency : null,
-      rateE9: rate?.rateE9,
-      rateSource: rate?.source,
+      rateE9: rateE9,
+      rateSource: rateSource,
       convertedMinor: foreign && _openingManual ? _openingActual : null,
       conversionMode: foreign
           ? (_openingManual && _openingActual != null ? 'manual' : 'automatic')
@@ -451,7 +462,7 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
                     'it rather than recording a transaction that never happened.'
                 : _storedOpening != 0
                     ? 'This account opened with '
-                        '${formatMinor(_storedOpening.abs(), currency: _openingTarget)} '
+                        '${formatMoney(_storedOpening.abs(), currency: _openingTarget)} '
                         '${_storedOpening > 0 ? 'in your favour' : 'against you'}. Change it, '
                         'or choose “No opening balance” to remove it.'
                     : 'This account has no opening balance. Add one if it started from a '
@@ -473,6 +484,11 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
                 manual: _openingManual,
                 onManualChanged: (manual) => setState(() => _openingManual = manual),
                 onActualChanged: (minor) => setState(() => _openingActual = minor),
+                rateManual: _openingRateManual,
+                onRateManualChanged: (manual) =>
+                    setState(() => _openingRateManual = manual),
+                onManualRateChanged: (rateE9) =>
+                    setState(() => _openingManualRateE9 = rateE9),
               ),
             ],
           ),
@@ -576,6 +592,9 @@ class _OpeningBalance extends StatelessWidget {
     required this.manual,
     required this.onManualChanged,
     required this.onActualChanged,
+    required this.rateManual,
+    required this.onRateManualChanged,
+    required this.onManualRateChanged,
   });
 
   final OpeningDirection direction;
@@ -590,6 +609,11 @@ class _OpeningBalance extends StatelessWidget {
   final bool manual;
   final ValueChanged<bool> onManualChanged;
   final ValueChanged<int?> onActualChanged;
+
+  /// Whether the RATE is the one the user typed, and what it is (upgrade 45).
+  final bool rateManual;
+  final ValueChanged<bool> onRateManualChanged;
+  final ValueChanged<int?> onManualRateChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -646,6 +670,9 @@ class _OpeningBalance extends StatelessWidget {
                 manual: manual,
                 onManualChanged: onManualChanged,
                 onActualChanged: onActualChanged,
+                rateManual: rateManual,
+                onRateManualChanged: onRateManualChanged,
+                onManualRateChanged: onManualRateChanged,
               ),
             ],
             const SizedBox(height: AppSpacing.sm),

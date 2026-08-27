@@ -23,28 +23,37 @@ import 'currencies.dart';
 /// and the Gulf dinars have three.
 const int minorPerMajor = 100;
 
+/// The locale each currency's figures are GROUPED by — never the locale its
+/// digits are drawn in.
+///
+/// Grouping is a property of the money: ₹1,00,000 groups the Indian way and
+/// $100,000 the Western one, and a ledger that got that wrong would read as a
+/// different amount. Digits are not: `١٬٢٣٤` is the correct Arabic rendering of
+/// 1,234 and completely unreadable in a column beside `1,234`. So every locale
+/// here draws Latin digits, chosen to match the grouping its currency actually
+/// uses. The same table as CURRENCY_LOCALE in web/src/lib/money.ts.
 const Map<String, String> _currencyLocale = {
   'INR': 'en_IN',
   'USD': 'en_US',
   'EUR': 'de_DE',
   'GBP': 'en_GB',
-  'AED': 'en_AE',
+  'AED': 'en_US',
   'AUD': 'en_AU',
   'CAD': 'en_CA',
   'SGD': 'en_SG',
   'JPY': 'ja_JP',
   'CNY': 'zh_CN',
   'CHF': 'de_CH',
-  'SAR': 'ar_SA',
-  'QAR': 'ar_QA',
-  'KWD': 'ar_KW',
-  'BHD': 'ar_BH',
-  'OMR': 'ar_OM',
-  'JOD': 'ar_JO',
+  'SAR': 'en_US',
+  'QAR': 'en_US',
+  'KWD': 'en_US',
+  'BHD': 'en_US',
+  'OMR': 'en_US',
+  'JOD': 'en_US',
   'PKR': 'en_PK',
-  'BDT': 'bn_BD',
-  'LKR': 'si_LK',
-  'NPR': 'ne_NP',
+  'BDT': 'en_IN',
+  'LKR': 'en_IN',
+  'NPR': 'en_IN',
   'MYR': 'ms_MY',
   'THB': 'th_TH',
   'IDR': 'id_ID',
@@ -54,7 +63,7 @@ const Map<String, String> _currencyLocale = {
   'ZAR': 'en_ZA',
   'NGN': 'en_NG',
   'KES': 'en_KE',
-  'EGP': 'ar_EG',
+  'EGP': 'en_US',
   'TRY': 'tr_TR',
   'RUB': 'ru_RU',
   'BRL': 'pt_BR',
@@ -138,31 +147,68 @@ String formatMinor(
   final hasFraction = abs % units != 0;
   final digits = compactDecimals && !hasFraction ? 0 : decimalsFor(code);
 
-  final format = withSymbol
-      ? NumberFormat.currency(
-          locale: localeFor(code),
-          name: code,
-          symbol: currencySymbol(code),
-          decimalDigits: digits,
-        )
-      : NumberFormat.decimalPatternDigits(
-          locale: localeFor(code),
-          decimalDigits: digits,
-        );
+  // Decimal formatting plus our own symbol, never a locale's currency pattern:
+  // a locale renders the same currency differently, and for the right-to-left
+  // marks it renders something that cannot sit in a column of figures at all.
+  // Grouping still comes from the currency's locale, which is what makes
+  // ₹1,00,000 group the Indian way.
+  final formatted = NumberFormat.decimalPatternDigits(
+    locale: localeFor(code),
+    decimalDigits: digits,
+  ).format(abs / units);
 
-  final formatted = format.format(abs / units);
-  // The ISO code, for the places where the symbol alone is ambiguous — and $ is
-  // four different currencies in this list alone (upgrade §11).
-  final text = withCode ? '$formatted $code' : formatted;
+  final symbol = withSymbol ? displaySymbol(code) : '';
+  final amount = '$symbol$formatted';
+  final text = withCode ? '$amount $code' : amount;
 
   if (signed && minor != 0) return '${minor > 0 ? '+' : '−'}$text';
   if (minor < 0) return '−$text';
   return text;
 }
 
-/// The symbol for a currency, from the one list every client shares.
-String currencySymbol(String currency) =>
-    currencyOf(currency)?.symbol ?? '${normaliseCode(currency)} ';
+/// THE way an amount is written in this product (upgrade §44).
+///
+/// One shared presenter, mirroring formatMoney() in web/src/lib/money.ts, so
+/// that a figure cannot be typed one way on the web and another in the app:
+///
+///     original amount     $40 USD                 strongest
+///     converted amount    ≈ ₹3,817.11 INR         secondary
+///     rate                1 USD = ₹95.4276 INR    tertiary (rateSentence)
+///
+/// The ISO code is always present, because a symbol on its own is ambiguous —
+/// `$` is eight currencies in this list and `₹` is two — and because the point
+/// of the hierarchy is that the reader can tell at a glance which of the two
+/// figures they are looking at.
+String formatMoney(
+  int minor, {
+  String? currency,
+  bool compactDecimals = true,
+  bool signed = false,
+  bool withCode = true,
+  bool approx = false,
+}) {
+  final code = normaliseCode(currency ?? kFallbackCurrency);
+  final body = formatMinor(
+    minor,
+    currency: code.isEmpty ? kFallbackCurrency : code,
+    compactDecimals: compactDecimals,
+    signed: signed,
+    withCode: withCode,
+  );
+  return approx ? '≈ $body' : body;
+}
+
+/// `≈ ₹3,817.11 INR` — the base-currency equivalent of an original amount.
+String formatApprox(int minor, {String? currency}) =>
+    formatMoney(minor, currency: currency, approx: true, compactDecimals: false);
+
+/// The symbol to lead a figure with, falling back to the ISO code for every
+/// currency whose mark cannot — the same rule the formatter uses, so an amount
+/// field's prefix and the figure it produces agree.
+String currencySymbol(String currency) {
+  final symbol = displaySymbol(currency);
+  return symbol.isEmpty ? '${normaliseCode(currency)} ' : symbol;
+}
 
 /// What a net balance *means* (context.md §8). Positive: they owe the user.
 enum BalanceTone { receivable, payable, settled }

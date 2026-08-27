@@ -147,6 +147,10 @@ class ConversionPanel extends ConsumerStatefulWidget {
     required this.onManualChanged,
     required this.onActualChanged,
     this.initialActualMinor,
+    this.rateManual = false,
+    this.onRateManualChanged,
+    this.onManualRateChanged,
+    this.initialRateE9,
   });
 
   final int? amountMinor;
@@ -164,6 +168,18 @@ class ConversionPanel extends ConsumerStatefulWidget {
   /// Reopening an entry that was already overridden starts on its own figure.
   final int? initialActualMinor;
 
+  /// Whether the RATE is the one the user typed rather than the fetched one
+  /// (upgrade 45). A separate decision from the amount override, and the two
+  /// compose: "at 96.50 — and what actually changed hands was 3,850".
+  final bool rateManual;
+  final ValueChanged<bool>? onRateManualChanged;
+
+  /// The typed rate as `rateE9`, or null while it is empty or unparseable.
+  final ValueChanged<int?>? onManualRateChanged;
+
+  /// The rate a stored entry was written at, when one is being edited.
+  final int? initialRateE9;
+
   @override
   ConsumerState<ConversionPanel> createState() => _ConversionPanelState();
 }
@@ -174,7 +190,18 @@ class _ConversionPanelState extends ConsumerState<ConversionPanel> {
         ? ''
         : minorToInput(widget.initialActualMinor!, currency: normaliseCode(widget.to)),
   );
+  late final TextEditingController _rate = TextEditingController(
+    text: widget.rateManual && widget.initialRateE9 != null
+        ? rateToInput(widget.initialRateE9!)
+        : '',
+  );
   String? _error;
+  String? _rateError;
+
+  /// The typed rate, once it parses. The panel previews at this and the
+  /// database writes at it; the shortened rate the sentence prints is never
+  /// used to compute anything.
+  int? _manualRateE9;
 
   @override
   void initState() {
@@ -182,12 +209,43 @@ class _ConversionPanelState extends ConsumerState<ConversionPanel> {
     if (widget.initialActualMinor != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _handle(_actual.text));
     }
+    if (widget.rateManual && widget.initialRateE9 != null) {
+      _manualRateE9 = widget.initialRateE9;
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => widget.onManualRateChanged?.call(_manualRateE9));
+    }
   }
 
   @override
   void dispose() {
     _actual.dispose();
+    _rate.dispose();
     super.dispose();
+  }
+
+  void _handleRate(String raw) {
+    if (raw.trim().isEmpty) {
+      setState(() {
+        _rateError = null;
+        _manualRateE9 = null;
+      });
+      widget.onManualRateChanged?.call(null);
+      return;
+    }
+    final rateE9 = parseRateToE9(raw);
+    if (rateE9 == null) {
+      setState(() {
+        _rateError = 'Enter a valid rate, to at most nine decimals';
+        _manualRateE9 = null;
+      });
+      widget.onManualRateChanged?.call(null);
+      return;
+    }
+    setState(() {
+      _rateError = null;
+      _manualRateE9 = rateE9;
+    });
+    widget.onManualRateChanged?.call(rateE9);
   }
 
   void _handle(String raw) {
@@ -252,9 +310,16 @@ class _ConversionPanelState extends ConsumerState<ConversionPanel> {
       data: (quote) {
         if (quote == null) return _Unavailable(from: source, to: target);
 
+        // The rate this entry will actually be written at: the typed one when
+        // there is a valid one, otherwise the fetched one. Used at full stored
+        // precision, exactly as the database will use it.
+        final rateE9 = widget.rateManual && _manualRateE9 != null
+            ? _manualRateE9!
+            : quote.rateE9;
+
         final automatic = widget.amountMinor == null
             ? null
-            : convertMinor(widget.amountMinor!, source, target, quote.rateE9);
+            : convertMinor(widget.amountMinor!, source, target, rateE9);
 
         return Container(
           width: double.infinity,
@@ -271,10 +336,10 @@ class _ConversionPanelState extends ConsumerState<ConversionPanel> {
               // What was entered. Never hidden and never restated as the
               // converted figure: it is the only number the user typed.
               _ConversionRow(
-                label: 'Amount',
+                label: 'Original amount',
                 value: widget.amountMinor == null
                     ? '—'
-                    : formatMinor(widget.amountMinor!, currency: source),
+                    : formatMoney(widget.amountMinor!, currency: source, withCode: false),
                 unit: source,
                 muted: true,
                 first: true,
@@ -284,16 +349,85 @@ class _ConversionPanelState extends ConsumerState<ConversionPanel> {
                 label: 'Converted amount',
                 value: automatic == null
                     ? '—'
-                    : '≈ ${formatMinor(automatic, currency: target)}',
+                    : '≈ ${formatMoney(automatic, currency: target, withCode: false, compactDecimals: false)}',
                 unit: target,
                 dimmed: widget.manual,
                 // Provenance sits with the figure it qualifies rather than at
                 // the foot of the panel, so "where did this come from" is
-                // answered on the line the number is read.
-                meta: 'Automatic · ${rateSentence(source, target, quote.rateE9)}',
-                metaTrailing: quote.provenance,
+                // answered on the line the number is read. The rate is printed
+                // at whatever precision reproduces the figure above it.
+                meta: '${widget.rateManual ? 'Custom rate' : 'Automatic'} · '
+                    '${rateSentence(source, target, rateE9, amountMinor: widget.amountMinor)}',
+                metaTrailing: widget.rateManual ? null : quote.provenance,
                 metaTrailingAlert: quote.stale,
               ),
+
+              if (widget.rateManual)
+                Container(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.md,
+                    AppSpacing.lg,
+                    AppSpacing.md,
+                  ),
+                  decoration: BoxDecoration(
+                    border: Border(top: BorderSide(color: palette.line)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Exchange rate',
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                                color: context.colors.onSurface,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            'MANUAL',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.7,
+                              color: context.colors.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      TextField(
+                        controller: _rate,
+                        onChanged: _handleRate,
+                        keyboardType:
+                            const TextInputType.numberWithOptions(decimal: true),
+                        style: context.moneyStyle(MoneySize.row).copyWith(fontSize: 17),
+                        decoration: InputDecoration(
+                          prefixText: '1 $source = ',
+                          suffixText: target,
+                          hintText: rateToInput(quote.rateE9),
+                          errorText: _rateError,
+                        ),
+                      ),
+                      if (_rateError == null) ...[
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(
+                          'Frozen on this entry. Later rate changes will not touch it.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            height: 1.45,
+                            color: palette.inkMuted,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
 
               if (widget.manual)
                 Container(
@@ -371,31 +505,57 @@ class _ConversionPanelState extends ConsumerState<ConversionPanel> {
                   horizontal: AppSpacing.md,
                   vertical: AppSpacing.xs,
                 ),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton(
-                    onPressed: () {
-                      // Turning the override on pre-fills the automatic figure,
-                      // so the user edits a number rather than facing an empty
-                      // box — the common case is "nearly that, but 43".
-                      if (!widget.manual && _actual.text.trim().isEmpty && automatic != null) {
-                        _actual.text = minorToInput(automatic, currency: target);
-                        _handle(_actual.text);
-                      }
-                      widget.onManualChanged(!widget.manual);
-                    },
-                    style: TextButton.styleFrom(
-                      // 44dp: this sits inside a form on a phone.
-                      minimumSize: const Size(0, 44),
-                      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+                child: Wrap(
+                  spacing: AppSpacing.xs,
+                  children: [
+                    if (widget.onRateManualChanged != null)
+                      TextButton(
+                        onPressed: () {
+                          // Turning the override on pre-fills the fetched rate,
+                          // so the user corrects a number rather than facing an
+                          // empty box.
+                          if (!widget.rateManual && _rate.text.trim().isEmpty) {
+                            _rate.text = rateToInput(quote.rateE9);
+                            _handleRate(_rate.text);
+                          }
+                          widget.onRateManualChanged!(!widget.rateManual);
+                        },
+                        style: TextButton.styleFrom(
+                          minimumSize: const Size(0, 44),
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+                        ),
+                        child: Text(
+                          widget.rateManual
+                              ? 'Use today’s rate'
+                              : 'Enter a different rate',
+                          style: const TextStyle(
+                              fontSize: 12.5, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    TextButton(
+                      onPressed: () {
+                        // The common case is "nearly that, but 43", so the box
+                        // opens on the automatic figure rather than empty.
+                        if (!widget.manual && _actual.text.trim().isEmpty && automatic != null) {
+                          _actual.text = minorToInput(automatic, currency: target);
+                          _handle(_actual.text);
+                        }
+                        widget.onManualChanged(!widget.manual);
+                      },
+                      style: TextButton.styleFrom(
+                        // 44dp: this sits inside a form on a phone.
+                        minimumSize: const Size(0, 44),
+                        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+                      ),
+                      child: Text(
+                        widget.manual
+                            ? 'Use the automatic conversion'
+                            : 'Enter what actually changed hands',
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                      ),
                     ),
-                    child: Text(
-                      widget.manual
-                          ? 'Use the automatic conversion'
-                          : 'Enter what actually changed hands',
-                      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                    ),
-                  ),
+                  ],
                 ),
               ),
             ],
@@ -584,18 +744,26 @@ class _Unavailable extends StatelessWidget {
   }
 }
 
-/// What was actually handed over, shown under a stored entry.
+/// The rate a stored entry was written at — the tertiary line of the hierarchy.
 ///
-/// When the converted figure was overridden by hand, that is said here too —
-/// otherwise the timeline shows a number that the stated rate does not explain,
-/// which reads as an arithmetic error rather than as a decision.
-class ConvertedFrom extends StatelessWidget {
-  const ConvertedFrom({
+///     400 AED                    the original amount, printed by the row
+///     ≈ ₹10,393.69 INR           its base equivalent, printed by the row
+///     1 AED = ₹25.984225 INR     this
+///
+/// It never repeats either figure. It says what links them, at whatever
+/// precision reproduces the converted amount beside it, and then the two things
+/// a reader cannot infer from the numbers: that a human typed the rate, and
+/// that a human replaced the converted amount.
+///
+/// The web client's `RateNote` is the same component.
+class RateNote extends StatelessWidget {
+  const RateNote({
     super.key,
     required this.enteredMinor,
     required this.enteredCurrency,
     required this.rateE9,
     required this.accountCurrency,
+    this.rateSource,
     this.conversionMode,
     this.autoConvertedMinor,
   });
@@ -604,27 +772,28 @@ class ConvertedFrom extends StatelessWidget {
   final String? enteredCurrency;
   final int? rateE9;
   final String accountCurrency;
+  final String? rateSource;
   final String? conversionMode;
   final int? autoConvertedMinor;
 
   @override
   Widget build(BuildContext context) {
-    final entered = enteredMinor;
     final currency = enteredCurrency;
-    if (entered == null || currency == null) return const SizedBox.shrink();
-
     final rate = rateE9;
-    final buffer = StringBuffer(formatMinor(entered, currency: currency, withCode: true));
-    if (rate != null) {
-      buffer.write(' · ${rateSentence(currency, accountCurrency, rate)}');
-    }
-    if (conversionMode == 'manual') {
-      buffer.write(' · Manually entered');
+    if (currency == null || rate == null) return const SizedBox.shrink();
+
+    final manualAmount = conversionMode == 'manual';
+    final manualRate = rateIsManual(rateSource);
+
+    final buffer = StringBuffer(
+      rateSentence(currency, accountCurrency, rate, amountMinor: enteredMinor),
+    );
+    if (manualRate) buffer.write(' · Custom rate');
+    if (manualAmount) {
+      buffer.write(' · Amount entered by hand');
       final auto = autoConvertedMinor;
       if (auto != null) {
-        buffer.write(
-          ' (rate said ${formatMinor(auto, currency: accountCurrency, withCode: true)})',
-        );
+        buffer.write(' (the rate said ${formatMoney(auto, currency: accountCurrency)})');
       }
     }
 
@@ -634,7 +803,7 @@ class ConvertedFrom extends StatelessWidget {
       overflow: TextOverflow.ellipsis,
       style: TextStyle(
         fontSize: 12,
-        color: conversionMode == 'manual'
+        color: manualAmount || manualRate
             ? context.colors.primary
             : context.money.inkFaint,
       ),

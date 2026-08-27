@@ -158,7 +158,7 @@ class _SearchSheetState extends ConsumerState<_SearchSheet> {
                                     style: const TextStyle(fontSize: 12),
                                   ),
                                   trailing: Text(
-                                    formatMinor(txn.amountMinor, currency: txn.currency),
+                                    formatMoney(txn.amountMinor, currency: txn.currency),
                                     style: TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w600,

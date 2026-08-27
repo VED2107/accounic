@@ -17,7 +17,7 @@ import { SettledMark } from '@/components/ui/toast';
 import { AmountInput } from '@/components/ledger/amount-input';
 import { SubmitRow } from '@/components/ledger/transaction-sheet';
 import { createSettlement } from '@/lib/actions';
-import { formatMinor } from '@/lib/money';
+import { formatMoney } from '@/lib/money';
 import { friendlyDate, todayIso } from '@/lib/dates';
 import type { ActionResult, OpenTransaction, PersonBalance, SettlementDirection } from '@/lib/types';
 
@@ -187,7 +187,7 @@ export function SettleSheet({
                         active={direction === 'in'}
                         tone="receivable"
                         title="I received"
-                        amount={formatMinor(balance.outstanding_receivable, currency)}
+                        amount={formatMoney(balance.outstanding_receivable, currency)}
                         onClick={() => {
                           setDirection('in');
                           setTransactionId('');
@@ -198,7 +198,7 @@ export function SettleSheet({
                         active={direction === 'out'}
                         tone="payable"
                         title="I paid"
-                        amount={formatMinor(balance.outstanding_payable, currency)}
+                        amount={formatMoney(balance.outstanding_payable, currency)}
                         onClick={() => {
                           setDirection('out');
                           setTransactionId('');
@@ -227,7 +227,7 @@ export function SettleSheet({
                       {matching.map((txn) => (
                         <option key={txn.id} value={txn.id}>
                           {friendlyDate(txn.transaction_date)} ·{' '}
-                          {formatMinor(txn.remaining_minor, currency)} left
+                          {formatMoney(txn.remaining_minor, currency)} left
                           {txn.description ? ` · ${txn.description}` : ''}
                         </option>
                       ))}
@@ -240,15 +240,15 @@ export function SettleSheet({
             <FormSection title="Amount" aside={currency}>
               {/* The arithmetic, done for the reader (context.md §9). */}
               <div className="grid grid-cols-3 divide-x divide-line rounded-card border border-line bg-sunken">
-                <Cell label="Outstanding" value={formatMinor(max, currency)} />
+                <Cell label="Outstanding" value={formatMoney(max, currency)} />
                 <Cell
                   label="Settling"
-                  value={formatMinor(settling, currency)}
+                  value={formatMoney(settling, currency)}
                   tone={direction === 'in' ? 'receivable' : 'payable'}
                 />
                 <Cell
                   label="Remaining"
-                  value={formatMinor(remaining, currency)}
+                  value={formatMoney(remaining, currency)}
                   tone={remaining === 0 ? 'settled' : undefined}
                 />
               </div>
@@ -322,7 +322,7 @@ function SettlementSuccess({
         Settlement recorded
       </p>
       <p className="mt-1 text-[0.8125rem] text-ink-muted">
-        {direction === 'in' ? 'Received' : 'Paid'} {formatMinor(amount, currency)}{' '}
+        {direction === 'in' ? 'Received' : 'Paid'} {formatMoney(amount, currency)}{' '}
         {direction === 'in' ? 'from' : 'to'} {name}
       </p>
 
@@ -340,7 +340,7 @@ function SettlementSuccess({
               : 'text-ink',
           )}
         >
-          {remaining > 0 ? formatMinor(remaining, currency) : 'Fully settled'}
+          {remaining > 0 ? formatMoney(remaining, currency) : 'Fully settled'}
         </p>
       </div>
 

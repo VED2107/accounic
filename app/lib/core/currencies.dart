@@ -135,17 +135,171 @@ int? convertMinor(int amountMinor, String from, String to, int? rateE9) {
   return scaled.round();
 }
 
-/// "1 AED = ₹24.01" — the line that stops a conversion being a mystery.
-String rateSentence(String from, String to, int rateE9) {
+/// The symbol, but only when printing it in front of a figure helps.
+///
+/// `₹1,000`, `$40`, `฿50` and `zł50` read as money at a glance. `د.إ400` does
+/// not: the mark is right-to-left, so it fights the digits beside it, and the
+/// same is true of every non-Latin script in this list. Those currencies are
+/// written `400 AED` — the ISO code alone, which every reader of a ledger knows.
+///
+/// Character-for-character the same rule as symbolLeadsFigure() in
+/// web/src/lib/currencies.ts, so the two clients cannot render the same
+/// currency differently.
+bool symbolLeadsFigure(String symbol) {
+  if (symbol.isEmpty || symbol.length > 4) return false;
+  for (final rune in symbol.runes) {
+    final usable = (rune >= 0x20 && rune <= 0x7e) ||
+        (rune >= 0x80 && rune <= 0x24f) ||
+        (rune >= 0x20a0 && rune <= 0x20bf) ||
+        rune == 0x0e3f;
+    if (!usable) return false;
+  }
+  return true;
+}
+
+/// The symbol to print in front of a figure, or '' to fall back to the code.
+String displaySymbol(String? code) {
+  final symbol = currencyOf(code)?.symbol ?? '';
+  return symbolLeadsFigure(symbol) ? symbol : '';
+}
+
+/// How many decimals to print a rate at.
+///
+/// The rate is the one number on screen that is NEVER used to compute anything:
+/// every conversion in this product runs on the full 1e9-scaled integer. A
+/// shortened rate is therefore only a readability choice — but a shortened rate
+/// that cannot reproduce the converted amount printed beside it is a
+/// readability choice that makes the screen look wrong.
+///
+///     400 AED at 1 AED = ₹25.984225 INR is ₹10,393.69
+///     but 400 × 25.9842 (4 dp) is ₹10,393.68
+///
+/// So when the amount being converted is known, the precision grows — from the
+/// readable default up to the nine digits the rate is actually stored at —
+/// until re-converting at the printed rate lands on the printed amount.
+int rateDecimals(String from, String to, int rateE9, {int? amountMinor}) {
   final rate = rateFromE9(rateE9);
-  final decimals = rate >= 100
+  final base = rate >= 100
       ? 2
       : rate >= 1
           ? 4
           : 6;
-  final value = rate.toStringAsFixed(decimals);
-  final trimmed = value.contains('.')
-      ? value.replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '')
-      : value;
-  return '1 ${normaliseCode(from)} = ${currencyOf(to)?.symbol ?? ''}$trimmed ${normaliseCode(to)}';
+
+  if (amountMinor == null || amountMinor == 0) return base;
+
+  final exact = convertMinor(amountMinor, from, to, rateE9);
+  if (exact == null) return base;
+
+  for (var decimals = base; decimals <= kRateDecimals; decimals++) {
+    if (convertMinor(amountMinor, from, to, _roundRateE9(rateE9, decimals)) == exact) {
+      return decimals;
+    }
+  }
+  return kRateDecimals;
+}
+
+/// The decimal places `rateE9` is stored at.
+const int kRateDecimals = 9;
+
+/// The rate as it would be if it really had only [decimals] digits.
+///
+/// Integer arithmetic on the scaled rate, never a float round-trip: this value
+/// has to be *exactly* the one [rateText] prints, or the precision search
+/// validates one number and the screen shows another that is one ulp away and
+/// does not reconcile. That is how `1 AED = ₹25.98421` came to sit under
+/// `₹10,393.69` when 400 × 25.98421 is ₹10,393.68.
+int _roundRateE9(int rateE9, int decimals) {
+  final divisor = _pow10(kRateDecimals - decimals);
+  return (rateE9 / divisor).round() * divisor;
+}
+
+int _pow10(int exponent) {
+  var value = 1;
+  for (var i = 0; i < exponent; i++) {
+    value *= 10;
+  }
+  return value;
+}
+
+/// `rateE9` written out at exactly this many decimals — from the integer, so
+/// what is printed is the same number the search above tested.
+///
+/// Trailing zeros go, down to a floor of two: `24.0100` is noise, and `26`
+/// reads as a guess where `26.00` reads as a rate.
+String rateText(int rateE9, int decimals) {
+  final shown = decimals.clamp(2, kRateDecimals);
+  final scaled = (rateE9 / _pow10(kRateDecimals - shown)).round();
+  final unit = _pow10(shown);
+  final whole = scaled ~/ unit;
+  var fraction = (scaled - whole * unit).toString().padLeft(shown, '0');
+  while (fraction.length > 2 && fraction.endsWith('0')) {
+    fraction = fraction.substring(0, fraction.length - 1);
+  }
+
+  // Grouped the Western way, like the web client: a rate is not an amount and
+  // never follows the currency's own grouping.
+  final digits = whole.toString();
+  final buffer = StringBuffer();
+  for (var i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 == 0) buffer.write(',');
+    buffer.write(digits[i]);
+  }
+
+  return '$buffer.$fraction';
+}
+
+/// "1 AED = ₹25.98422 INR" — the line that stops a conversion being a mystery.
+///
+/// Tertiary information by construction. Pass the amount being converted and
+/// the precision is chosen so the sentence agrees with the converted amount
+/// shown above it (see [rateDecimals]).
+String rateSentence(String from, String to, int rateE9, {int? amountMinor}) {
+  final decimals = rateDecimals(from, to, rateE9, amountMinor: amountMinor);
+  final value = rateText(rateE9, decimals);
+  return '1 ${normaliseCode(from)} = ${displaySymbol(to)}$value ${normaliseCode(to)}';
+}
+
+/// The provenance a hand-typed rate is stored under (upgrade §45).
+///
+/// One string, matching public.rate_is_manual() in db/migrations/0018 and
+/// MANUAL_RATE_SOURCE in the web client. A row carrying it is a row where a
+/// human decided the rate: it is stored in exchange_rate_e9 like any other
+/// rate, frozen on the row like any other, and later automatic rates never
+/// touch it.
+const String kManualRateSource = 'manual-rate';
+
+bool rateIsManual(String? source) =>
+    (source ?? '').trim().toLowerCase() == kManualRateSource;
+
+/// Parse a rate a user typed — "95.4276" — into `rateE9`.
+///
+/// Read the same way the rate sentence states it: one unit of the original
+/// currency costs this many of the base one. Up to nine decimals, which is
+/// exactly what the column stores; a tenth would be silently discarded, so it
+/// is refused instead. Zero, negative and unparseable input return null.
+int? parseRateToE9(String input) {
+  final cleaned = input.replaceAll(RegExp(r'[\s  ,]'), '');
+  if (cleaned.isEmpty) return null;
+  if (!RegExp(r'^\d*(\.\d*)?$').hasMatch(cleaned)) return null;
+
+  final parts = cleaned.split('.');
+  final whole = parts[0];
+  final fraction = parts.length > 1 ? parts[1] : '';
+  if (whole.isEmpty && fraction.isEmpty) return null;
+  if (fraction.length > 9) return null;
+
+  final padded = fraction.padRight(9, '0');
+  final e9 = (int.tryParse(whole.isEmpty ? '0' : whole) ?? 0) * kRateScale +
+      (int.tryParse(padded.isEmpty ? '0' : padded) ?? 0);
+  return e9 <= 0 ? null : e9;
+}
+
+/// `rateE9` to a plain editable string, e.g. 95427612000 -> "95.427612".
+String rateToInput(int rateE9) {
+  final whole = rateE9 ~/ kRateScale;
+  final fraction = (rateE9 % kRateScale)
+      .toString()
+      .padLeft(9, '0')
+      .replaceFirst(RegExp(r'0+$'), '');
+  return fraction.isEmpty ? '$whole' : '$whole.$fraction';
 }

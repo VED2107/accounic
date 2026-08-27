@@ -27,7 +27,7 @@ import {
   TrendUpIcon,
 } from '@/components/icons';
 import { friendlyDate, greeting } from '@/lib/dates';
-import { balanceTone, formatMinor } from '@/lib/money';
+import { balanceTone, formatApprox, formatMoney } from '@/lib/money';
 import { trendsFromBuckets, type Trend } from '@/lib/series';
 import type {
   CurrencyToday,
@@ -90,18 +90,18 @@ export default async function DashboardPage() {
           <div className="flex flex-wrap items-center gap-2 text-[0.75rem]">
             <span className="text-ink-faint">Today</span>
             {today.credit > 0 ? (
-              <TodayChip tone="receivable" label="in">
-                {formatMinor(today.credit, currency)}
+              <TodayChip tone="receivable" label="receivable">
+                {formatMoney(today.credit, currency)}
               </TodayChip>
             ) : null}
             {today.debit > 0 ? (
-              <TodayChip tone="payable" label="out">
-                {formatMinor(today.debit, currency)}
+              <TodayChip tone="payable" label="payable">
+                {formatMoney(today.debit, currency)}
               </TodayChip>
             ) : null}
             {today.settled > 0 ? (
               <TodayChip tone="neutral" label="settled">
-                {formatMinor(today.settled, currency)}
+                {formatMoney(today.settled, currency)}
               </TodayChip>
             ) : null}
           </div>
@@ -184,10 +184,10 @@ export default async function DashboardPage() {
               <SplitBar receivable={summary.total_receivable} payable={summary.total_payable} />
               <p className="mt-2 flex items-center justify-between text-[0.75rem]">
                 <span className="text-receivable">
-                  in {formatMinor(summary.total_receivable, currency)}
+                  Receivable {formatMoney(summary.total_receivable, currency)}
                 </span>
                 <span className="text-payable">
-                  out {formatMinor(summary.total_payable, currency)}
+                  Payable {formatMoney(summary.total_payable, currency)}
                 </span>
               </p>
             </div>
@@ -443,7 +443,7 @@ function buildInsights(
       insights.push({
         tone: 'receivable',
         title: `${top.name} holds ${share}% of your receivable`,
-        body: `${formatMinor(top.net_balance, currency)} of the ${formatMinor(summary.total_receivable, currency)} owed to you sits with one account. Worth chasing first.`,
+        body: `${formatMoney(top.net_balance, currency)} of the ${formatMoney(summary.total_receivable, currency)} owed to you sits with one account. Worth chasing first.`,
       });
     }
   }
@@ -456,7 +456,7 @@ function buildInsights(
     insights.push({
       tone: up ? 'receivable' : 'neutral',
       title: `Money you lent out is ${up ? 'up' : 'down'} ${Math.abs(Math.round(trends.credit.changePercent))}%`,
-      body: `${formatMinor(trends.credit.total, currency)} of debits in the last 30 days, ${up ? 'more' : 'less'} in the recent half of that window than the earlier half.`,
+      body: `${formatMoney(trends.credit.total, currency)} of debits in the last 30 days, ${up ? 'more' : 'less'} in the recent half of that window than the earlier half.`,
     });
   }
 
@@ -472,7 +472,7 @@ function buildInsights(
       insights.push({
         tone: 'payable',
         title: `Nothing from ${stale.name} in ${days} days`,
-        body: `${formatMinor(stale.net_balance, currency)} has been outstanding since ${friendlyDate(stale.last_activity_at!)}.`,
+        body: `${formatMoney(stale.net_balance, currency)} has been outstanding since ${friendlyDate(stale.last_activity_at!)}.`,
       });
     }
   }
@@ -482,7 +482,7 @@ function buildInsights(
     insights.push({
       tone: 'neutral',
       title: 'Every account is settled',
-      body: `All ${summary.people_count} accounts are square. ${formatMinor(summary.gross_settled, currency)} has been settled in total.`,
+      body: `All ${summary.people_count} accounts are square. ${formatMoney(summary.gross_settled, currency)} has been settled in total.`,
     });
   }
 
@@ -641,7 +641,7 @@ function CurrencyRow({
         <span className="min-w-0">
           {/* This currency's own money, in this currency. */}
           <span className="block truncate text-[0.875rem] font-medium text-ink">
-            {formatMinor(Math.abs(row.net_position), row.currency, { withCode: true })}{' '}
+            {formatMoney(Math.abs(row.net_position), row.currency)}{' '}
             <span
               className={cn(
                 'text-[0.75rem] font-normal',
@@ -659,7 +659,7 @@ function CurrencyRow({
           </span>
           {showBase ? (
             <span className="tnum block truncate text-[0.75rem] text-ink-faint">
-              ≈ {formatMinor(Math.abs(row.net_base_minor!), row.base_currency, { withCode: true })}
+              {formatApprox(Math.abs(row.net_base_minor!), row.base_currency)}
             </span>
           ) : null}
           <span className="block truncate text-[0.75rem] text-ink-faint">
@@ -672,15 +672,17 @@ function CurrencyRow({
 
       <span className="ml-auto flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-[0.75rem]">
         <span className="text-receivable">
-          in {formatMinor(row.gross_credit, row.currency)}
+          Receivable {formatMoney(row.gross_credit, row.currency)}
         </span>
-        <span className="text-payable">out {formatMinor(row.gross_debit, row.currency)}</span>
+        <span className="text-payable">
+          Payable {formatMoney(row.gross_debit, row.currency)}
+        </span>
         <span className="text-ink-faint">
-          settled {formatMinor(row.gross_settled, row.currency)}
+          Settled {formatMoney(row.gross_settled, row.currency)}
         </span>
         {moved > 0 ? (
           <span className="rounded-full border border-line bg-sunken px-2 py-0.5 text-ink-muted">
-            today {formatMinor(moved, row.currency)}
+            Today {formatMoney(moved, row.currency)}
           </span>
         ) : null}
       </span>

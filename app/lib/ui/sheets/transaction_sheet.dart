@@ -72,6 +72,8 @@ class EditableTransaction {
     this.enteredCurrency,
     this.conversionMode,
     this.autoConvertedAmountMinor,
+    this.exchangeRateE9,
+    this.exchangeRateSource,
   });
 
   final String id;
@@ -91,7 +93,14 @@ class EditableTransaction {
   final String? conversionMode;
   final int? autoConvertedAmountMinor;
 
+  /// The rate this entry was written at, and where it came from (upgrade 45).
+  /// An edit reopens on the stored rate rather than on today's, so re-saving a
+  /// row a user rated by hand cannot silently restate it at the market rate.
+  final int? exchangeRateE9;
+  final String? exchangeRateSource;
+
   bool get isManualConversion => conversionMode == 'manual';
+  bool get isManualRate => rateIsManual(exchangeRateSource);
 }
 
 class _TransactionSheet extends ConsumerStatefulWidget {
@@ -129,6 +138,13 @@ class _TransactionSheetState extends ConsumerState<_TransactionSheet> {
   late int? _actual =
       widget.transaction?.isManualConversion ?? false ? widget.transaction?.amountMinor : null;
 
+  /// Whether the RATE is the one the user typed rather than the fetched one
+  /// (upgrade 45), and that rate. Separate from the amount override above: one
+  /// says what a unit is worth, the other says what actually changed hands.
+  late bool _rateManual = widget.transaction?.isManualRate ?? false;
+  late int? _manualRateE9 =
+      widget.transaction?.isManualRate ?? false ? widget.transaction?.exchangeRateE9 : null;
+
   bool get _isEdit => widget.transaction != null;
   bool get _canSave =>
       _amount != null &&
@@ -137,7 +153,13 @@ class _TransactionSheetState extends ConsumerState<_TransactionSheet> {
       // A manual override with nothing valid typed in it is not savable: the
       // ledger figure would be missing, and falling back to the automatic one
       // silently would be the opposite of what the user asked for.
-      !(_manual && _entryCurrency != null && _entryCurrency != _accountCurrency && _actual == null);
+      !(_manual && _entryCurrency != null && _entryCurrency != _accountCurrency && _actual == null) &&
+      // Nor is a rate override with nothing valid in it: the entry would be
+      // written at a rate the user has just said is the wrong one.
+      !(_rateManual &&
+          _entryCurrency != null &&
+          _entryCurrency != _accountCurrency &&
+          _manualRateE9 == null);
 
   @override
   void dispose() {
@@ -167,8 +189,16 @@ class _TransactionSheetState extends ConsumerState<_TransactionSheet> {
       // derives the account amount from them. The client never sends a
       // converted number it worked out itself (upgrade 2, 5).
       final foreign = entry != account;
-      final rate =
-          foreign ? await ref.read(ratesRepositoryProvider).rate(entry, account) : null;
+
+      // A hand-typed rate needs no lookup at all, and must not be quietly
+      // replaced by one: it is the rate for this entry, and it is stored on the
+      // row exactly like a fetched one.
+      final manualRate = foreign && _rateManual ? _manualRateE9 : null;
+      final rate = foreign && manualRate == null
+          ? await ref.read(ratesRepositoryProvider).rate(entry, account)
+          : null;
+      final rateE9 = manualRate ?? rate?.rateE9;
+      final rateSource = manualRate != null ? kManualRateSource : rate?.source;
 
       // The mode is stated rather than inferred, so switching an entry back to
       // automatic is something this client can say — not merely the absence of
@@ -176,7 +206,7 @@ class _TransactionSheetState extends ConsumerState<_TransactionSheet> {
       final manual = foreign && _manual && _actual != null;
       final mode = foreign ? (manual ? 'manual' : 'automatic') : null;
 
-      if (foreign && rate == null) {
+      if (foreign && rateE9 == null) {
         setState(() {
           _saving = false;
           _error = 'No $entry to $account rate is available. Enter the amount in '
@@ -194,8 +224,8 @@ class _TransactionSheetState extends ConsumerState<_TransactionSheet> {
           description: note,
           enteredAmountMinor: foreign ? _amount : null,
           enteredCurrency: foreign ? entry : null,
-          exchangeRateE9: rate?.rateE9,
-          rateSource: rate?.source,
+          exchangeRateE9: rateE9,
+          rateSource: rateSource,
           convertedAmountMinor: manual ? _actual : null,
           conversionMode: mode,
         );
@@ -208,8 +238,8 @@ class _TransactionSheetState extends ConsumerState<_TransactionSheet> {
           description: note,
           enteredAmountMinor: foreign ? _amount : null,
           enteredCurrency: foreign ? entry : null,
-          exchangeRateE9: rate?.rateE9,
-          rateSource: rate?.source,
+          exchangeRateE9: rateE9,
+          rateSource: rateSource,
           convertedAmountMinor: manual ? _actual : null,
           conversionMode: mode,
         );
@@ -311,6 +341,10 @@ class _TransactionSheetState extends ConsumerState<_TransactionSheet> {
                 initialActualMinor: widget.transaction?.isManualConversion ?? false
                     ? widget.transaction?.amountMinor
                     : null,
+                rateManual: _rateManual,
+                onRateManualChanged: (manual) => setState(() => _rateManual = manual),
+                onManualRateChanged: (rateE9) => setState(() => _manualRateE9 = rateE9),
+                initialRateE9: widget.transaction?.exchangeRateE9,
               ),
             ],
           ],
