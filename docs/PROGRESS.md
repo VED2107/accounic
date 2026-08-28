@@ -3,8 +3,8 @@
 Status of the Accounic build against `context.md`. This is the file to read first when
 picking the work back up.
 
-**Last updated:** 2026-08-27 (tenth session)
-**Current release:** [v1.5.0](https://github.com/VED2107/accounic/releases/latest)
+**Last updated:** 2026-08-28 (eleventh session)
+**Current release:** [v1.6.0](https://github.com/VED2107/accounic/releases/latest)
 **Overall:** Phases 1–4 complete and verified against the live database. Phase 5
 (performance) measured and the client half tuned — see `docs/performance.md`. Phase 6
 (hardening) partly done.
@@ -26,6 +26,7 @@ Everything found since v1.0.0 was found on a **phone**, and none of it was catch
 | 1.0.5–1.0.7 | delete refusing a person whose history was all retracted; Save and Cancel sitting under the keyboard |
 | 1.1.0 | multi-currency, opening balances, and the rest of the keyboard story on the person form |
 | 1.1.1 | currency made genuinely per person: changing it no longer rewrites history |
+| 1.6.0 | the opening balance separated from the activity it was never part of; transfers between people as one transaction with two linked legs; a PDF statement per account |
 | 1.5.0 | the displayed rate reconciles with the displayed conversion; a rate can be typed by hand and is frozen on the entry; one currency presenter across web and Flutter |
 | 1.4.0 | entries keep the currency they were entered in; the anonymous execute surface closed; Android backups off |
 | 1.3.0 | opening balance on the edit form; the dashboard shows every currency, not only the base one; the app tells you when a newer release exists |
@@ -65,6 +66,9 @@ Nine migrations, applied in order to the live Supabase project.
 | `0010_currency.sql` | `currencies` reference table, `people.currency`, conversion provenance on every ledger row, `is_opening`, the per-owner `exchange_rates` cache, `convert_amount_minor()`, and the engine views rebuilt to carry currency |
 | `0011_currency_mutations.sql` | the write path: currency and opening balance on `create_person()`, restatement on `update_person()` (withdrawn in 0013), conversion arguments on every money RPC, `set_person_opening_balance()` |
 | `0012_currency_reads.sql` | `dashboard()`, `person_page()`, `search_all()`, `activity_page()` and `activity_summary()` made currency-aware |
+| `0020_transfers.sql` | **transfers** — `transfers`, the two linked legs on `transactions`, the deferred trigger that keeps them one thing, `create_transfer()` / `update_transfer()` / `void_transfer()`, RLS, and `transfer_integrity` |
+| `0021_settle_opening_balance.sql` | the opening balance gets its own settle path — `settle_opening_balance()`, the one route allowed to name one, plus its remainder on `person_opening` |
+| `0019_opening_balance.sql` | the opening balance leaves the timeline: `person_opening`, `person_page()` in two sections, settlement against one refused, and an idempotent reclassification of pre-flag rows |
 | `0018_currency_presentation.sql` | `person_page()` timeline reads `activity_entries`, so every row carries the entered figure and its base equivalent; `exchange_rate_source` travels on every activity row; `rate_is_manual()`; an idempotent verification of the historical conversion data that rewrites no amount, currency or rate |
 | `0017_entry_currency.sql` | `activity_entries` view; activity rows carry `entry_amount_minor`/`entry_currency` and `amount_base_minor`; `totals_by_currency` regrouped by ENTRY currency |
 | `0016_revoke_anon.sql` | revokes EXECUTE from `anon` across `public` and resets the default privilege; `assert_own_workspace()` added to the three SECURITY DEFINER helpers that read tenant tables |
@@ -117,13 +121,13 @@ All run against the user's live Supabase project, not mocks.
 
 | Check | Result |
 |---|---|
-| `node db/tools/run-sql.mjs test` | 8 suites pass, including 34 currency-reconciliation assertions (`db/tests/08`) |
+| `node db/tools/run-sql.mjs test` | 10 suites pass — 299 assertions, including 57 for transfers (`db/tests/10`) and 29 for the opening balance (`db/tests/09`) |
 | `node db/tools/smoke-api.mjs` | 33/33 pass over real HTTP with the anon key |
 | `cd web && npx tsc --noEmit` | clean |
-| `cd web && npm test` | 84 pass |
-| `cd web && npx next build` | succeeds, 9 routes |
+| `cd web && npm test` | 110 pass |
+| `cd web && npx next build` | succeeds, 11 routes |
 | `cd app && flutter analyze` | no issues |
-| `cd app && flutter test` | 200 pass |
+| `cd app && flutter test` | 220 pass |
 | `flutter build windows --release` | `accounic.exe` built |
 | `flutter build apk --release` | `app-release.apk` built, 24.3 MB |
 | Installer | silent-installed and the installed binary launched |
@@ -627,3 +631,46 @@ The brief is larger than one release. Not yet done, and worth doing next in this
 
 None of them are blocked; they were left because a token pass first means each of them is
 smaller than it would have been.
+
+---
+
+## 11. Eleventh session — the accounting-model upgrade (v1.6.0)
+
+Full write-up: [`docs/transfers-and-opening-balance.md`](./transfers-and-opening-balance.md).
+
+### 11.1 What shipped
+
+| Area | What changed |
+|---|---|
+| Database | two additive migrations (`0019`, `0020`). No table dropped, no row rewritten, no id regenerated — `snapshot.mjs diff` clean across both |
+| Opening balance | its own section, its own actions, and its own settle path — `settle_opening_balance()` is the only route allowed to name one. Still counted in the position, in full |
+| Transfers | one logical record, two linked ledger entries, a deferred trigger that refuses any commit leaving one without the other |
+| Reconciliation | `transfer_integrity` view — always empty — plus the dashboard invariant pinned in two suites |
+| PDF | `GET /people/:id/statement`, built from `person_page()` and the app's own formatters. Poppins embedded so a rupee sign is a rupee sign |
+| Both clients | the same two sections, the same transfer vocabulary, mirrored and pinned by tests on each side |
+
+### 11.2 Two defects the tests caught, and one the eye did
+
+1. **The deferred trigger never ran.** `assert_transfer_intact()` read
+   `new.transfer_id` inside a CASE whose other branch was the `transfers` table, which
+   has no such column — and PL/pgSQL resolves every field reference in a CASE, not only
+   the branch taken. Every transfer would have failed at commit. It was invisible until
+   `db/tests/10` fired the deferred checks explicitly with `set constraints all
+   immediate`; a rolled-back suite never commits, so a deferred check it does not fire
+   proves nothing.
+2. **The statement's zebra rows painted over the previous row's time.** The shaded
+   rectangle reached 15pt above its own baseline, which is where the row above drew its
+   clock time. Half the times on the page were being erased. Found by looking at the PDF,
+   not by a test — every assertion still passed.
+3. Column widths measured by eye, ellipsising `Transfer to Dhruv Sharma` and every
+   five-figure rupee balance; and the `Dated` / `Recorded` labels drawn at a fixed offset
+   that a long timestamp ran straight through. Both found the same way.
+
+### 11.3 Still true
+
+- The release APK is **debug-signed** — unchanged from previous releases, and still wrong
+  for the Play Store. See §7.3.
+- `db/tools/smoke-api.mjs` cannot run: it signs in as the demo users, which were deleted
+  before the repository was made public (§7.3). The RLS guarantees it used to check over
+  HTTP are covered by `db/tests/02` and `db/tests/10`, which assert isolation as a second
+  real user.

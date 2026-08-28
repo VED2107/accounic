@@ -87,6 +87,22 @@ interface FieldNames {
 }
 
 function fieldNames(prefix: string): FieldNames {
+  // The first step of a transfer: what the user typed, in the SOURCE account's
+  // denomination. It carries a rate and no amount override — there is no
+  // "what actually changed hands" for a figure that has not left anywhere yet,
+  // and create_transfer() accepts an override only on the second step.
+  if (prefix === 'transfer_entry_') {
+    return {
+      entryCurrency: '',
+      accountCurrency: '',
+      rateE9: 'entry_rate_e9',
+      rateSource: 'entry_rate_source',
+      rateMode: 'entry_rate_mode',
+      manualRate: 'entry_manual_rate',
+      convertedAmount: '',
+      conversionMode: '',
+    };
+  }
   return prefix === 'opening_'
     ? {
         // The person form already posts the two currencies from its own
@@ -133,14 +149,16 @@ export function ConversionPanel({
   defaultConvertedMinor = null,
   defaultRateE9 = null,
   defaultRateIsManual = false,
+  allowAmountOverride = true,
   className,
 }: {
   amountMinor: number | null;
   from: string;
   to: string;
   state: ConversionState;
-  /** `'opening_'` for the person form's opening balance. */
-  prefix?: '' | 'opening_';
+  /** `'opening_'` for the person form's opening balance, `'transfer_entry_'`
+   *  for the first step of a transfer. */
+  prefix?: '' | 'opening_' | 'transfer_entry_';
   /** Reopening an entry that was already overridden starts on its own figure. */
   defaultMode?: 'automatic' | 'manual';
   defaultConvertedMinor?: number | null;
@@ -148,6 +166,12 @@ export function ConversionPanel({
   defaultRateE9?: number | null;
   /** Whether that stored rate was typed by a human (upgrade §45). */
   defaultRateIsManual?: boolean;
+  /**
+   * Whether "what actually changed hands" is offered. False where the server
+   * has nowhere to put such a figure, so the control would promise something
+   * the write path cannot keep.
+   */
+  allowAmountOverride?: boolean;
   className?: string;
 }) {
   const source = normaliseCode(from);
@@ -324,7 +348,7 @@ export function ConversionPanel({
         </div>
       ) : null}
 
-      {manual ? (
+      {manual && allowAmountOverride ? (
         <div className="border-t border-line px-4 py-3.5">
           <div className="flex items-baseline justify-between gap-3">
             <label htmlFor={id} className="text-[0.8125rem] font-medium text-ink">
@@ -387,6 +411,7 @@ export function ConversionPanel({
           {rateManual ? 'Use today’s rate' : 'Enter a different rate'}
         </PanelToggle>
 
+        {allowAmountOverride ? (
         <PanelToggle
           active={manual}
           onClick={() => {
@@ -400,10 +425,15 @@ export function ConversionPanel({
         >
           {manual ? 'Use the automatic conversion' : 'Enter what actually changed hands'}
         </PanelToggle>
+        ) : null}
       </div>
 
-      <input type="hidden" name={names.conversionMode} value={manual ? 'manual' : 'automatic'} />
-      <input type="hidden" name={names.convertedAmount} value={manual ? typed : ''} />
+      {names.conversionMode ? (
+        <input type="hidden" name={names.conversionMode} value={manual ? 'manual' : 'automatic'} />
+      ) : null}
+      {names.convertedAmount ? (
+        <input type="hidden" name={names.convertedAmount} value={manual ? typed : ''} />
+      ) : null}
       {/* The rate travels as text and is parsed on the server against the same
           nine-decimal scale the column stores — the client never sends a
           converted figure it worked out from it. The mode is stated rather than
@@ -510,7 +540,7 @@ export function ConversionFields({
   entryCurrency: string;
   accountCurrency: string;
   state: ConversionState;
-  prefix?: '' | 'opening_';
+  prefix?: '' | 'opening_' | 'transfer_entry_';
 }) {
   const names = fieldNames(prefix);
 

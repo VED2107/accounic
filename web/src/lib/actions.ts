@@ -16,6 +16,9 @@ import {
   signInSchema,
   transactionEditSchema,
   transactionSchema,
+  transferEditSchema,
+  transferSchema,
+  openingSettlementSchema,
 } from '@/lib/validation';
 import {
   conversionArgs,
@@ -23,7 +26,13 @@ import {
   MANUAL_RATE_SOURCE,
   type ConversionArgs,
 } from '@/lib/conversion';
-import type { ActionResult, ConversionMode, PersonBalance, Person } from '@/lib/types';
+import type {
+  ActionResult,
+  ConversionMode,
+  PersonBalance,
+  Person,
+  TransferResult,
+} from '@/lib/types';
 
 /**
  * The rate an entry is written at: the one the user typed, or the fetched one.
@@ -630,6 +639,40 @@ export async function createSettlement(
   return ok(data as LedgerMutation);
 }
 
+/**
+ * Settle the opening balance — that entry, and nothing else (upgrade §48).
+ *
+ * The direction is not sent: `settle_opening_balance()` derives it from the
+ * opening entry, so a client cannot record money coming in against a balance
+ * the user owes. The ceiling, the conversion path and the ledger denomination
+ * are all `create_settlement()`'s, unchanged.
+ */
+export async function settleOpeningBalance(
+  _prev: unknown,
+  formData: FormData,
+): Promise<ActionResult<LedgerMutation>> {
+  const parsed = openingSettlementSchema.safeParse(formObject(formData));
+  if (!parsed.success) return { ok: false, ...firstIssue(parsed.error) };
+
+  const money = await moneyArgs(parsed.data);
+  if ('error' in money) return { ok: false, error: money.error, field: 'amount' };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('settle_opening_balance', {
+    p_person_id: parsed.data.person_id,
+    p_date: parsed.data.date,
+    p_note: parsed.data.note ?? null,
+    ...money.args,
+  });
+  if (error) return fail(error, UNCHANGED.settlement);
+
+  revalidatePath(`/people/${parsed.data.person_id}`);
+  revalidatePath('/people');
+  revalidatePath('/activity');
+  revalidatePath('/');
+  return ok(data as LedgerMutation);
+}
+
 export async function voidSettlement(
   personId: string,
   settlementId: string,
@@ -649,6 +692,226 @@ export async function voidSettlement(
   revalidatePath('/activity');
   revalidatePath('/');
   return ok(data as LedgerMutation);
+}
+
+/* --------------------------------------------------------------------------
+ * Transfers (upgrade §46)
+ *
+ * A transfer is ONE logical record with two linked ledger entries, and every
+ * one of these actions operates on the whole of it. There is deliberately no
+ * action here that touches a single leg: the database refuses that outright,
+ * and offering it would be offering a way to lose money from one account
+ * without it arriving in the other.
+ * ----------------------------------------------------------------------- */
+
+/**
+ * Resolve a transfer's two conversions into RPC arguments.
+ *
+ * Two steps, each skipped when its currencies agree:
+ *
+ *     entry currency --entry rate--> source ledger --rate--> destination ledger
+ *
+ * The amount is parsed against the currency it was TYPED in. Neither converted
+ * figure is computed here: the entered amount and the rates travel, and the
+ * database derives both. The single exception is the manual arrival amount,
+ * which is not derived from anything — it is what the user says reached the
+ * other account.
+ */
+async function transferArgs(entry: {
+  amount: string;
+  entry_currency?: string | null;
+  from_currency?: string | null;
+  to_currency?: string | null;
+  entry_rate_e9?: number | null;
+  entry_rate_source?: string | null;
+  entry_rate_mode?: ConversionMode | null;
+  entry_manual_rate?: string | null;
+  rate_e9?: number | null;
+  rate_source?: string | null;
+  rate_mode?: ConversionMode | null;
+  manual_rate?: string | null;
+  converted_amount?: string | null;
+  conversion_mode?: ConversionMode | null;
+}): Promise<{ args: Record<string, unknown> } | { error: string; field?: string }> {
+  const from = normaliseCode(entry.from_currency ?? '') || FALLBACK_CURRENCY;
+  const to = normaliseCode(entry.to_currency ?? '') || from;
+  const typed = normaliseCode(entry.entry_currency ?? '') || from;
+
+  const amount = parseAmountField(entry.amount, typed);
+  if (!amount.ok) return { error: amount.error, field: 'amount' };
+
+  // Step one: what the user typed, in the source account's denomination.
+  let entryRateE9: number | null = null;
+  if (typed !== from) {
+    const chosen = resolveRate(
+      entry.entry_rate_mode,
+      entry.entry_manual_rate,
+      entry.entry_rate_e9 ?? null,
+      entry.entry_rate_source ?? null,
+      typed,
+      from,
+    );
+    if (chosen && 'error' in chosen) return chosen;
+    entryRateE9 = chosen?.rateE9 ?? null;
+
+    if (!entryRateE9) {
+      const rate = await getRate(typed, from);
+      if (!rate) {
+        return {
+          error: `No exchange rate is available for ${typed} to ${from}. Enter the amount in ${from} instead — nothing has been saved.`,
+          field: 'amount',
+        };
+      }
+      entryRateE9 = rate.rateE9;
+    }
+  }
+
+  // Step two: what reaches the destination account.
+  let rateE9: number | null = null;
+  let rateSource: string | null = null;
+  if (from !== to) {
+    const chosen = resolveRate(
+      entry.rate_mode,
+      entry.manual_rate,
+      entry.rate_e9 ?? null,
+      entry.rate_source ?? null,
+      from,
+      to,
+    );
+    if (chosen && 'error' in chosen) return chosen;
+    if (chosen) {
+      rateE9 = chosen.rateE9;
+      rateSource = chosen.source;
+    }
+
+    if (!rateE9) {
+      const rate = await getRate(from, to);
+      if (!rate) {
+        return {
+          error: `No exchange rate is available for ${from} to ${to}. Nothing has been saved.`,
+          field: 'amount',
+        };
+      }
+      rateE9 = rate.rateE9;
+      rateSource = rate.source;
+    }
+  }
+
+  // The arrival override is parsed against the DESTINATION currency: it is the
+  // amount that landed there, which is the whole point of it.
+  const override = manualMinor(entry.converted_amount, entry.conversion_mode, to);
+  if ('error' in override) return { error: override.error, field: 'converted_amount' };
+
+  return {
+    args: {
+      p_amount_minor: amount.minor,
+      p_currency: typed,
+      p_entry_rate_e9: entryRateE9,
+      p_exchange_rate_e9: rateE9,
+      p_rate_source: rateSource,
+      p_converted_amount_minor: override.minor,
+      p_conversion_mode: override.minor === null ? null : 'manual',
+    },
+  };
+}
+
+/** Every screen a transfer can change. Both people, and both totals. */
+function revalidateTransfer(fromPersonId?: string | null, toPersonId?: string | null) {
+  if (fromPersonId) revalidatePath(`/people/${fromPersonId}`);
+  if (toPersonId) revalidatePath(`/people/${toPersonId}`);
+  revalidatePath('/people');
+  revalidatePath('/activity');
+  revalidatePath('/');
+}
+
+export async function createTransfer(
+  _prev: unknown,
+  formData: FormData,
+): Promise<ActionResult<TransferResult>> {
+  const parsed = transferSchema.safeParse(formObject(formData));
+  if (!parsed.success) return { ok: false, ...firstIssue(parsed.error) };
+
+  if (parsed.data.from_person_id === parsed.data.to_person_id) {
+    return {
+      ok: false,
+      error:
+        'Choose two different people — money cannot be transferred to the account it came from.',
+      field: 'to_person_id',
+    };
+  }
+
+  const money = await transferArgs(parsed.data);
+  if ('error' in money) return { ok: false, error: money.error, field: money.field };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('create_transfer', {
+    p_from_person_id: parsed.data.from_person_id,
+    p_to_person_id: parsed.data.to_person_id,
+    p_date: parsed.data.date,
+    p_note: parsed.data.note ?? null,
+    // The database returns the transfer this token already made rather than
+    // making a second one, so a double submit moves the money once.
+    p_client_token: parsed.data.client_token ?? null,
+    ...money.args,
+  });
+  if (error) {
+    return fail(error, 'That transfer could not be recorded. No balance has been changed.');
+  }
+
+  revalidateTransfer(parsed.data.from_person_id, parsed.data.to_person_id);
+  return ok(data as TransferResult);
+}
+
+export async function updateTransfer(
+  _prev: unknown,
+  formData: FormData,
+): Promise<ActionResult<TransferResult>> {
+  const parsed = transferEditSchema.safeParse(formObject(formData));
+  if (!parsed.success) return { ok: false, ...firstIssue(parsed.error) };
+
+  const money = await transferArgs(parsed.data);
+  if ('error' in money) return { ok: false, error: money.error, field: money.field };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('update_transfer', {
+    p_transfer_id: parsed.data.transfer_id,
+    p_date: parsed.data.date,
+    p_note: parsed.data.note ?? null,
+    ...money.args,
+  });
+  if (error) {
+    return fail(error, 'That transfer could not be changed. No balance has been changed.');
+  }
+
+  const result = data as TransferResult;
+  revalidateTransfer(result?.transfer?.from_person_id, result?.transfer?.to_person_id);
+  return ok(result);
+}
+
+/**
+ * Retract a transfer — both sides, in one operation.
+ *
+ * A void, not a delete: both entries stay on both timelines with their amounts
+ * and dates intact, and both balances return to where they were. The database
+ * voids the two legs together and refuses any commit that would leave one
+ * without the other, so this cannot half-succeed.
+ */
+export async function voidTransfer(
+  transferId: string,
+  reason?: string,
+): Promise<ActionResult<TransferResult>> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('void_transfer', {
+    p_transfer_id: transferId,
+    p_reason: reason?.trim() || null,
+  });
+  if (error) {
+    return fail(error, 'That transfer could not be retracted. No balance has been changed.');
+  }
+
+  const result = data as TransferResult;
+  revalidateTransfer(result?.transfer?.from_person_id, result?.transfer?.to_person_id);
+  return ok(result);
 }
 
 /* --------------------------------------------------------------------------

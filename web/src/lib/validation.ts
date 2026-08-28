@@ -211,6 +211,86 @@ export const settlementSchema = z.object({
   note: trimmedOptional(500),
 });
 
+/**
+ * A transfer between two people (upgrade §46).
+ *
+ * The amount is raw text, parsed by the action against `entry_currency` — the
+ * same rule every other money field follows, and the reason ¥1000 and ₹10.00
+ * are both accepted where each is correct.
+ *
+ * Two rates, because a transfer can need two conversions and usually needs
+ * neither: `entry_*` carries what the entered currency is worth in the SOURCE
+ * account's denomination, and the unprefixed pair what that is worth in the
+ * DESTINATION's. Each is ignored when its two currencies are the same, which is
+ * the ordinary case.
+ */
+export const transferSchema = z.object({
+  from_person_id: uuid,
+  to_person_id: uuid,
+  amount: z.string().trim().min(1, 'Enter an amount'),
+  /** What the user typed in. Defaults to the source account's currency. */
+  entry_currency: optionalCurrencyCode,
+  /** The two ledger currencies, sent by the form so validation matches the server. */
+  from_currency: optionalCurrencyCode,
+  to_currency: optionalCurrencyCode,
+  // entry currency -> source ledger currency
+  entry_rate_e9: rateE9,
+  entry_rate_source: trimmedOptional(60),
+  entry_rate_mode: z.enum(['automatic', 'manual']).optional(),
+  entry_manual_rate: z.string().trim().optional(),
+  // source ledger currency -> destination ledger currency
+  rate_e9: rateE9,
+  rate_source: trimmedOptional(60),
+  rate_mode: z.enum(['automatic', 'manual']).optional(),
+  manual_rate: z.string().trim().optional(),
+  /** What actually arrived, when that is not what the rate said. */
+  converted_amount: z.string().trim().optional(),
+  conversion_mode: z.enum(['automatic', 'manual']).optional(),
+  date: isoDate,
+  note: trimmedOptional(500),
+  /**
+   * Idempotency key, minted by the form when it opens.
+   *
+   * A double-submitted form carries one token, and the database returns the
+   * transfer the first submission created rather than making a second. This is
+   * the only defence that works: a disabled button does not survive a refresh,
+   * a retried request, or two tabs.
+   */
+  client_token: z
+    .string()
+    .trim()
+    .min(8, 'That request could not be identified')
+    .max(100)
+    .optional(),
+});
+
+export const transferEditSchema = transferSchema
+  .omit({ from_person_id: true, to_person_id: true, client_token: true })
+  .extend({ transfer_id: uuid });
+
+/**
+ * Settling the opening balance, and only that (upgrade §48).
+ *
+ * No direction: the database derives it from the opening entry, which is the
+ * single mistake this path exists to make impossible. No transaction id
+ * either — there is exactly one opening balance per account and the server
+ * finds it.
+ */
+export const openingSettlementSchema = z.object({
+  person_id: uuid,
+  amount: z.string().trim().min(1, 'Enter an amount'),
+  entry_currency: optionalCurrencyCode,
+  account_currency: optionalCurrencyCode,
+  rate_e9: rateE9,
+  rate_source: trimmedOptional(60),
+  rate_mode: z.enum(['automatic', 'manual']).optional(),
+  manual_rate: z.string().trim().optional(),
+  converted_amount: z.string().trim().optional(),
+  conversion_mode: z.enum(['automatic', 'manual']).optional(),
+  date: isoDate,
+  note: trimmedOptional(500),
+});
+
 export const profileSchema = z.object({
   name: z.string().trim().min(1, 'Enter your name').max(120),
   phone: trimmedOptional(32),

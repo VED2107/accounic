@@ -7,6 +7,14 @@ const nextConfig: NextConfig = {
     // Keeps server action payloads small; this app never posts large bodies.
     serverActions: { bodySizeLimit: '1mb' },
   },
+  // The PDF statement embeds Poppins so that a rupee sign is a rupee sign and
+  // not a missing glyph. The route reads the two .ttf files off disk, and
+  // nothing in the module graph *imports* them, so Next's file tracer cannot
+  // see that they are needed and would leave them out of a deployment bundle.
+  // Naming them here is what makes the export work anywhere but a dev server.
+  outputFileTracingIncludes: {
+    '/people/[id]/statement': ['./src/lib/pdf/fonts/*.ttf'],
+  },
   async headers() {
     // The Supabase project this app talks to. Naming it in the CSP means a
     // script that somehow ran could not exfiltrate to anywhere else — the

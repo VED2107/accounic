@@ -48,6 +48,43 @@ export function fullDate(value: string): string {
   }).format(parseDbDate(value));
 }
 
+/**
+ * "28 Aug 2026" — the date a statement row is dated (upgrade §47).
+ *
+ * `fullDate` spells the month out, which reads well in a sentence and badly in
+ * a column of thirty rows. This is the column form, and it is shared by the
+ * person page and the PDF export so an exported statement and the screen it was
+ * exported from cannot print a date two different ways.
+ */
+export function statementDate(value: string): string {
+  return new Intl.DateTimeFormat('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(parseDbDate(value));
+}
+
+/**
+ * "08:42 PM" — the clock time a row was recorded at.
+ *
+ * Takes a full timestamp, not a calendar date: `transaction_date` carries no
+ * time and never did, so the time shown is `created_at`, which is when the
+ * entry was actually written. Returns '' for anything unparseable rather than
+ * "Invalid Date", because a missing time must not break a statement.
+ */
+export function timeOfDay(isoTimestamp: string | null | undefined): string {
+  if (!isoTimestamp) return '';
+  const at = new Date(isoTimestamp);
+  if (Number.isNaN(at.getTime())) return '';
+  return new Intl.DateTimeFormat('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  })
+    .format(at)
+    .toUpperCase();
+}
+
 export function relativeTime(isoTimestamp: string): string {
   const then = new Date(isoTimestamp).getTime();
   const seconds = Math.round((Date.now() - then) / 1000);

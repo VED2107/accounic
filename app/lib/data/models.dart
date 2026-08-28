@@ -8,6 +8,7 @@
 /// slipped through as a string would otherwise become a silent `0`.
 library;
 import '../core/currencies.dart';
+import '../core/transfers.dart';
 import '../core/direction.dart';
 
 int _int(Object? value) => switch (value) {
@@ -379,6 +380,10 @@ class TimelineEntry {
     String? entryCurrency,
     this.amountBaseMinor,
     this.baseCurrency,
+    this.transferId,
+    this.transferRole,
+    this.transferCounterpartyId,
+    this.transferCounterpartyName,
   })  : _entryAmountMinor = entryAmountMinor,
         _entryCurrency = entryCurrency;
 
@@ -434,6 +439,21 @@ class TimelineEntry {
   /// True when somebody said the rate got it wrong and gave the real figure.
   bool get isManualConversion => conversionMode == 'manual';
 
+  /// The transfer this row is one half of (db/migrations/0020).
+  ///
+  /// Null on an ordinary entry, which is every entry written before transfers
+  /// existed. [transferRole] says which side this row is, and the counterparty
+  /// is the OTHER person — the one the money went to or came from.
+  final String? transferId;
+  final TransferRole? transferRole;
+  final String? transferCounterpartyId;
+  final String? transferCounterpartyName;
+
+  /// True when this row is one leg of a transfer rather than an entry of its
+  /// own. Such a row is never settled and never edited on its own: both are
+  /// refused by the database, and the screen agrees with it.
+  bool get isTransfer => transferId != null;
+
   factory TimelineEntry.fromJson(Map<String, dynamic> json) {
     final kind = json['entry_kind'] as String?;
     final isSettlement = kind == 'settlement';
@@ -469,6 +489,12 @@ class TimelineEntry {
       amountBaseMinor:
           json['amount_base_minor'] == null ? null : _int(json['amount_base_minor']),
       baseCurrency: _str(json['base_currency']),
+      // Present from 0020 on; absent against an older database, where every
+      // row is simply not part of a transfer — which is true.
+      transferId: _str(json['transfer_id']),
+      transferRole: TransferRole.parse(json['transfer_role']),
+      transferCounterpartyId: _str(json['transfer_counterparty_id']),
+      transferCounterpartyName: _str(json['transfer_counterparty_name']),
     );
   }
 
@@ -478,11 +504,13 @@ class TimelineEntry {
   /// Which way the debt runs — what the row is coloured by.
   bool get isReceivable => isSettlement ? isIncoming : (txnType?.isReceivable ?? true);
 
-  String get label => isOpening
-      ? 'Opening balance'
-      : isSettlement
-          ? (isIncoming ? 'Settlement received' : 'Settlement paid')
-          : (txnType?.label ?? '');
+  String get label => isTransfer
+      ? transferLabel(transferRole, transferCounterpartyName)
+      : isOpening
+          ? 'Opening balance'
+          : isSettlement
+              ? (isIncoming ? 'Settlement received' : 'Settlement paid')
+              : (txnType?.label ?? '');
 }
 
 class OpenTransaction {
@@ -518,6 +546,225 @@ class OpenTransaction {
       );
 }
 
+/// public.person_opening — what an account was carried in with (0019).
+///
+/// Its own section on the person screen, never a row in the timeline. It is
+/// still a transaction underneath, so it still counts towards [PersonBalance]
+/// exactly as it always has; what changed is that it is no longer presented as
+/// something that happened on a particular Tuesday, and it can no longer be
+/// settled as an individual transaction.
+class PersonOpening {
+  const PersonOpening({
+    required this.transactionId,
+    required this.signedMinor,
+    required this.amountMinor,
+    required this.ledgerCurrency,
+    required this.entryAmountMinor,
+    required this.entryCurrency,
+    required this.baseCurrency,
+    required this.entryDate,
+    required this.createdAt,
+    this.amountBaseMinor,
+    this.enteredAmountMinor,
+    this.enteredCurrency,
+    this.exchangeRateE9,
+    this.exchangeRateSource,
+    this.conversionMode,
+    this.autoConvertedAmountMinor,
+    this.note,
+    this.settledMinor = 0,
+    int? remainingMinor,
+    this.status = SettlementStatus.open,
+  }) : _remainingMinor = remainingMinor;
+
+  final String transactionId;
+
+  /// Positive when they owe the user, negative when the user owes them.
+  /// Agrees with [PersonBalance.openingMinor] to the minor unit.
+  final int signedMinor;
+
+  /// The same figure unsigned, in the account's ledger currency.
+  final int amountMinor;
+  final String ledgerCurrency;
+
+  /// What was actually entered, and in what. The headline figure.
+  final int entryAmountMinor;
+  final String entryCurrency;
+
+  /// Its value in the workspace currency. Null when no rate is known.
+  final int? amountBaseMinor;
+  final String baseCurrency;
+
+  final int? enteredAmountMinor;
+  final String? enteredCurrency;
+  final int? exchangeRateE9;
+  final String? exchangeRateSource;
+  final String? conversionMode;
+  final int? autoConvertedAmountMinor;
+
+  final String entryDate;
+  final String createdAt;
+  final String? note;
+
+  /// Where the opening balance's OWN settlement stands (db/migrations/0021).
+  ///
+  /// An opening balance is settled through its own action, not through the row
+  /// action the regular transactions use — two sections, two settlement paths,
+  /// one screen. These come from the same FIFO allocator every other row reads.
+  final int settledMinor;
+  final int? _remainingMinor;
+  final SettlementStatus status;
+
+  /// What is left of it. Falls back to the whole amount against a database
+  /// older than 0021, where nothing had been settled against it by this path.
+  int get remainingMinor => _remainingMinor ?? amountMinor;
+
+  /// True while there is still something to settle.
+  bool get isOutstanding => remainingMinor > 0;
+
+  /// True when a human typed the rate this was converted at (upgrade 45).
+  bool get isManualRate => rateIsManual(exchangeRateSource);
+  bool get isManualConversion => conversionMode == 'manual';
+
+  /// True when the person owed the user at the moment the account opened.
+  bool get isReceivable => signedMinor >= 0;
+
+  factory PersonOpening.fromJson(Map<String, dynamic> json) => PersonOpening(
+        transactionId: json['transaction_id'] as String,
+        signedMinor: _int(json['signed_minor']),
+        amountMinor: _int(json['amount_minor']),
+        ledgerCurrency: (json['ledger_currency'] as String?) ?? kFallbackCurrency,
+        entryAmountMinor: json['entry_amount_minor'] == null
+            ? _int(json['amount_minor'])
+            : _int(json['entry_amount_minor']),
+        entryCurrency: (json['entry_currency'] as String?) ??
+            (json['ledger_currency'] as String?) ??
+            kFallbackCurrency,
+        amountBaseMinor:
+            json['amount_base_minor'] == null ? null : _int(json['amount_base_minor']),
+        baseCurrency: (json['base_currency'] as String?) ??
+            (json['ledger_currency'] as String?) ??
+            kFallbackCurrency,
+        enteredAmountMinor:
+            json['entered_amount_minor'] == null ? null : _int(json['entered_amount_minor']),
+        enteredCurrency: _str(json['entered_currency']),
+        exchangeRateE9:
+            json['exchange_rate_e9'] == null ? null : _int(json['exchange_rate_e9']),
+        exchangeRateSource: _str(json['exchange_rate_source']),
+        conversionMode: _str(json['conversion_mode']),
+        autoConvertedAmountMinor: json['auto_converted_amount_minor'] == null
+            ? null
+            : _int(json['auto_converted_amount_minor']),
+        entryDate: (json['entry_date'] as String?) ?? '',
+        createdAt: (json['created_at'] as String?) ?? '',
+        note: _str(json['note']),
+        settledMinor: json['settled_minor'] == null ? 0 : _int(json['settled_minor']),
+        remainingMinor:
+            json['remaining_minor'] == null ? null : _int(json['remaining_minor']),
+        status: SettlementStatus.parse(json['status']) ?? SettlementStatus.open,
+      );
+}
+
+/// public.transfers — one movement of money between two people (0020).
+///
+/// Three amounts, because a cross-currency transfer has three: what the user
+/// typed, what left the source in its own denomination, and what reached the
+/// destination in its own. For a single-currency transfer all three are the
+/// same number, which the database enforces with a CHECK constraint.
+class Transfer {
+  const Transfer({
+    required this.id,
+    required this.fromPersonId,
+    required this.toPersonId,
+    required this.transferDate,
+    required this.entryAmountMinor,
+    required this.entryCurrency,
+    required this.fromAmountMinor,
+    required this.fromCurrency,
+    required this.toAmountMinor,
+    required this.toCurrency,
+    required this.isVoid,
+    this.note,
+    this.entryRateE9,
+    this.exchangeRateE9,
+    this.exchangeRateSource,
+    this.conversionMode,
+    this.autoConvertedAmountMinor,
+  });
+
+  final String id;
+  final String fromPersonId;
+  final String toPersonId;
+  final String transferDate;
+  final String? note;
+
+  final int entryAmountMinor;
+  final String entryCurrency;
+  final int fromAmountMinor;
+  final String fromCurrency;
+  final int toAmountMinor;
+  final String toCurrency;
+
+  /// entry currency -> source ledger currency. Null when they are the same.
+  final int? entryRateE9;
+
+  /// source ledger currency -> destination ledger currency.
+  final int? exchangeRateE9;
+  final String? exchangeRateSource;
+  final String? conversionMode;
+  final int? autoConvertedAmountMinor;
+
+  final bool isVoid;
+
+  /// True when the two sides are in different currencies, and therefore when
+  /// the stored rate is what links them.
+  bool get isConverted => fromCurrency != toCurrency;
+
+  factory Transfer.fromJson(Map<String, dynamic> json) => Transfer(
+        id: json['id'] as String,
+        fromPersonId: json['from_person_id'] as String,
+        toPersonId: json['to_person_id'] as String,
+        transferDate: (json['transfer_date'] as String?) ?? '',
+        note: _str(json['note']),
+        entryAmountMinor: _int(json['entry_amount_minor']),
+        entryCurrency: (json['entry_currency'] as String?) ?? kFallbackCurrency,
+        fromAmountMinor: _int(json['from_amount_minor']),
+        fromCurrency: (json['from_currency'] as String?) ?? kFallbackCurrency,
+        toAmountMinor: _int(json['to_amount_minor']),
+        toCurrency: (json['to_currency'] as String?) ?? kFallbackCurrency,
+        entryRateE9: json['entry_rate_e9'] == null ? null : _int(json['entry_rate_e9']),
+        exchangeRateE9:
+            json['exchange_rate_e9'] == null ? null : _int(json['exchange_rate_e9']),
+        exchangeRateSource: _str(json['exchange_rate_source']),
+        conversionMode: _str(json['conversion_mode']),
+        autoConvertedAmountMinor: json['auto_converted_amount_minor'] == null
+            ? null
+            : _int(json['auto_converted_amount_minor']),
+        isVoid: json['is_void'] as bool? ?? false,
+      );
+}
+
+/// What every transfer RPC returns: the record, and both sides' balances, so
+/// one round trip can reconcile two screens.
+class TransferResult {
+  const TransferResult({required this.transfer, this.fromBalance, this.toBalance});
+
+  final Transfer transfer;
+  final PersonBalance? fromBalance;
+  final PersonBalance? toBalance;
+
+  factory TransferResult.fromJson(Map<String, dynamic> json) => TransferResult(
+        transfer: Transfer.fromJson(json['transfer'] as Map<String, dynamic>),
+        fromBalance: json['from_balance'] == null
+            ? null
+            : PersonBalance.fromJson(
+                Map<String, dynamic>.from(json['from_balance'] as Map)),
+        toBalance: json['to_balance'] == null
+            ? null
+            : PersonBalance.fromJson(Map<String, dynamic>.from(json['to_balance'] as Map)),
+      );
+}
+
 /// public.person_page()
 class PersonPage {
   const PersonPage({
@@ -529,10 +776,23 @@ class PersonPage {
     required this.currency,
     required this.defaultCurrency,
     required this.baseCurrency,
+    this.opening,
+    this.openingHistory = const [],
   });
 
   final Person person;
   final PersonBalance balance;
+
+  /// The opening balance, in its own section (db/migrations/0019). Null when
+  /// the account has none — which is not the same as zero and reads
+  /// differently.
+  final PersonOpening? opening;
+
+  /// Opening balances that were replaced. They affect no balance.
+  final List<PersonOpening> openingHistory;
+
+  /// Regular activity only: credits, debits, settlements and transfer legs.
+  /// The opening balance is deliberately not among them.
   final List<TimelineEntry> timeline;
   final int timelineTotal;
   final List<OpenTransaction> openTransactions;
@@ -552,6 +812,15 @@ class PersonPage {
   factory PersonPage.fromJson(Map<String, dynamic> json) => PersonPage(
         person: Person.fromJson(json['person'] as Map<String, dynamic>),
         balance: PersonBalance.fromJson(json['balance'] as Map<String, dynamic>),
+        // Absent against a database older than 0019, where the opening balance
+        // is still one of the timeline rows and this screen renders as before.
+        opening: json['opening'] == null
+            ? null
+            : PersonOpening.fromJson(Map<String, dynamic>.from(json['opening'] as Map)),
+        openingHistory: [
+          for (final row in (json['opening_history'] as List? ?? []))
+            PersonOpening.fromJson(Map<String, dynamic>.from(row as Map)),
+        ],
         timeline: [
           for (final entry in (json['timeline'] as List? ?? []))
             TimelineEntry.fromJson(entry as Map<String, dynamic>),

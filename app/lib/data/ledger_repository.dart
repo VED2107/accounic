@@ -408,6 +408,43 @@ class LedgerRepository {
     }
   }
 
+  /// Settles a person's opening balance, and only that (upgrade 48).
+  ///
+  /// The direction is not sent: `settle_opening_balance()` derives it from the
+  /// opening entry, so a client cannot record money coming in against a balance
+  /// the user owes. Omitting [amountMinor] settles whatever is left of it,
+  /// which is the common case.
+  Future<LedgerMutation> settleOpeningBalance({
+    required String personId,
+    required String date,
+    int? amountMinor,
+    String? note,
+    int? enteredAmountMinor,
+    String? enteredCurrency,
+    int? exchangeRateE9,
+    String? rateSource,
+    int? convertedAmountMinor,
+    String? conversionMode,
+  }) async {
+    try {
+      final data = await _client.rpc('settle_opening_balance', params: {
+        'p_person_id': personId,
+        'p_amount_minor': amountMinor,
+        'p_date': date,
+        'p_note': note,
+        'p_entered_amount_minor': enteredAmountMinor,
+        'p_entered_currency': enteredCurrency,
+        'p_exchange_rate_e9': exchangeRateE9,
+        'p_rate_source': rateSource,
+        'p_converted_amount_minor': convertedAmountMinor,
+        'p_conversion_mode': conversionMode,
+      });
+      return LedgerMutation.fromJson(Map<String, dynamic>.from(data as Map));
+    } catch (error, stack) {
+      throw Failure.from(error, Unchanged.settlement, stack);
+    }
+  }
+
   Future<LedgerMutation> createSettlement({
     required String personId,
     required int amountMinor,
@@ -428,6 +465,134 @@ class LedgerRepository {
       return LedgerMutation.fromJson(Map<String, dynamic>.from(data as Map));
     } catch (error, stack) {
       throw Failure.from(error, Unchanged.settlement, stack);
+    }
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Transfers (upgrade 46)                                                  */
+  /*                                                                         */
+  /* A transfer is ONE logical record with two linked ledger entries, and     */
+  /* every method here operates on the whole of it. There is deliberately no  */
+  /* call that touches a single leg: the database refuses that outright, and  */
+  /* offering it would be offering a way to lose money from one account       */
+  /* without it arriving in the other.                                       */
+  /* ---------------------------------------------------------------------- */
+
+  /// Moves money from one person to another.
+  ///
+  /// The amount is entered in [currency], which defaults to the SOURCE person's
+  /// ledger currency, and reaches the destination in two steps — each skipped
+  /// when its two currencies are the same, which is the ordinary case:
+  ///
+  ///     entry --entryRateE9--> source ledger --exchangeRateE9--> destination
+  ///
+  /// As everywhere else in this client, the entered figure and the rates travel
+  /// and the database derives both converted amounts. [convertedAmountMinor] is
+  /// the one exception and is an exception on purpose: it is what the user says
+  /// actually arrived, so there is nothing to derive it from.
+  ///
+  /// [clientToken] makes the call idempotent. Send the same token twice — a
+  /// double tap, a retried request after a dropped connection — and the
+  /// database returns the transfer the first call created instead of moving the
+  /// money again.
+  Future<TransferResult> createTransfer({
+    required String fromPersonId,
+    required String toPersonId,
+    required int amountMinor,
+    required String date,
+    String? currency,
+    String? note,
+    int? entryRateE9,
+    int? exchangeRateE9,
+    String? rateSource,
+    int? convertedAmountMinor,
+    String? conversionMode,
+    String? clientToken,
+  }) async {
+    try {
+      final data = await _client.rpc('create_transfer', params: {
+        'p_from_person_id': fromPersonId,
+        'p_to_person_id': toPersonId,
+        'p_amount_minor': amountMinor,
+        'p_currency': currency,
+        'p_date': date,
+        'p_note': note,
+        'p_entry_rate_e9': entryRateE9,
+        'p_exchange_rate_e9': exchangeRateE9,
+        'p_rate_source': rateSource,
+        'p_converted_amount_minor': convertedAmountMinor,
+        'p_conversion_mode': conversionMode,
+        'p_client_token': clientToken,
+      });
+      return TransferResult.fromJson(Map<String, dynamic>.from(data as Map));
+    } catch (error, stack) {
+      throw Failure.from(
+        error,
+        'That transfer could not be recorded. No balance has been changed.',
+        stack,
+      );
+    }
+  }
+
+  /// Retracts a transfer — both sides, in one operation.
+  ///
+  /// A void, not a delete: both entries stay on both timelines with their
+  /// amounts and dates intact, and both balances return to where they were.
+  /// The database voids the two legs together and refuses any commit that would
+  /// leave one without the other, so this cannot half-succeed.
+  Future<TransferResult> voidTransfer(String transferId, {String? reason}) async {
+    try {
+      final data = await _client.rpc('void_transfer', params: {
+        'p_transfer_id': transferId,
+        'p_reason': (reason?.trim().isEmpty ?? true) ? null : reason!.trim(),
+      });
+      return TransferResult.fromJson(Map<String, dynamic>.from(data as Map));
+    } catch (error, stack) {
+      throw Failure.from(
+        error,
+        'That transfer could not be retracted. No balance has been changed.',
+        stack,
+      );
+    }
+  }
+
+  /// Edits the logical transfer, never one side of it.
+  ///
+  /// The two people are not editable: moving a transfer to a different account
+  /// is a different transfer, and the honest way to record that is to retract
+  /// this one and make that one.
+  Future<TransferResult> updateTransfer({
+    required String transferId,
+    int? amountMinor,
+    String? currency,
+    String? date,
+    String? note,
+    int? entryRateE9,
+    int? exchangeRateE9,
+    String? rateSource,
+    int? convertedAmountMinor,
+    String? conversionMode,
+  }) async {
+    try {
+      final data = await _client.rpc('update_transfer', params: {
+        'p_transfer_id': transferId,
+        'p_amount_minor': amountMinor,
+        'p_currency': currency,
+        'p_date': date,
+        'p_note': note,
+        'p_entry_rate_e9': entryRateE9,
+        'p_exchange_rate_e9': exchangeRateE9,
+        'p_rate_source': rateSource,
+        'p_converted_amount_minor': convertedAmountMinor,
+        'p_conversion_mode': conversionMode,
+      });
+      return TransferResult.fromJson(Map<String, dynamic>.from(data as Map));
+    } catch (error, stack) {
+      throw Failure.from(
+        error,
+        'That transfer could not be changed. No balance has been changed.',
+        stack,
+      );
     }
   }
 

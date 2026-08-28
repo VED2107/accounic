@@ -11,6 +11,8 @@ import { Reveal } from '@/components/motion/reveal';
 import { initials } from '@/lib/names';
 import { PersonActionBar } from './person-action-bar';
 import { Timeline } from './timeline';
+import { OpeningBalanceCard } from '@/components/ledger/opening-balance';
+import { StatementButton } from './statement-button';
 import { balanceTone, formatApprox, formatMoney } from '@/lib/money';
 import { currencyLabel } from '@/lib/currencies';
 import { personBalanceSeries } from '@/lib/series';
@@ -69,7 +71,19 @@ export default async function PersonPage({
   const defaultCurrency = data.default_currency ?? currency;
   const currencySwitched = defaultCurrency !== currency;
   const baseCurrency = data.base_currency ?? me?.currency ?? 'INR';
-  const { person, balance, timeline, timeline_total: total, open_transactions: openTxns } = data;
+  const {
+    person,
+    balance,
+    timeline,
+    timeline_total: total,
+    open_transactions: openTxns,
+  } = data;
+  // The opening balance is served in its own key since db/migrations/0019 and
+  // is deliberately absent from `timeline`. Defaulted here so a client pointed
+  // at a database that has not run that migration renders the page it always
+  // did rather than throwing on a missing key.
+  const opening = data.opening ?? null;
+  const openingHistory = data.opening_history ?? [];
   const tone = balanceTone(balance.net_balance);
   const hasMore = (pageIndex + 1) * PAGE_SIZE < total;
   const series = personBalanceSeries(timeline, balance);
@@ -169,11 +183,12 @@ export default async function PersonPage({
                 </p>
               ) : null}
 
+              {/* Named, not detailed: the opening balance has its own section
+                  below, and repeating its figure here would be two places for
+                  one number to be read from. */}
               {balance.opening_minor !== 0 ? (
                 <p className="mt-1 text-[0.75rem] text-ink-faint">
-                  Includes an opening balance of{' '}
-                  {formatMoney(Math.abs(balance.opening_minor), currency)}{' '}
-                  {balance.opening_minor > 0 ? 'in your favour' : 'against you'}
+                  Includes the opening balance below
                 </p>
               ) : null}
             </div>
@@ -239,7 +254,19 @@ export default async function PersonPage({
       </Reveal>
 
       {/* ------------------------------------------------------------------ */}
-      {/* History / details / notes                                           */}
+      {/* Opening balance — its own section, never a row in the history       */}
+      {/* ------------------------------------------------------------------ */}
+      <OpeningBalanceCard
+        person={person}
+        opening={opening}
+        history={openingHistory}
+        currency={currency}
+        baseCurrency={baseCurrency}
+        openingMinor={balance.opening_minor}
+      />
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Regular transactions / details / notes                              */}
       {/* ------------------------------------------------------------------ */}
       <section className="mt-6">
         <div className={cn(SEGMENT_GROUP, 'mb-3')} role="tablist" aria-label="Account sections">
@@ -252,13 +279,25 @@ export default async function PersonPage({
               aria-selected={tab === value}
               className={cn(segmentClass(tab === value), 'capitalize')}
             >
-              {value === 'history' ? 'History' : value === 'details' ? 'Details' : 'Notes'}
+              {value === 'history'
+                ? 'Transactions'
+                : value === 'details'
+                  ? 'Details'
+                  : 'Notes'}
             </Link>
           ))}
         </div>
 
         {tab === 'history' ? (
           <>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-3 px-1">
+              <h2 className="text-[0.6875rem] font-semibold uppercase tracking-wider text-ink-faint">
+                Regular transactions
+              </h2>
+              {/* Credits, debits, transfers and settlements. The opening
+                  balance is not one of them and is not in this list. */}
+              <StatementButton personId={person.id} personName={person.name} />
+            </div>
             <Timeline
               entries={timeline}
               person={person}

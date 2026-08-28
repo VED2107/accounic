@@ -13,6 +13,12 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // See src/lib/pdf/server-only-stub.ts. Only the test runner sees this;
+      // `next build` still resolves the real package, so a client import of a
+      // server-only module still fails the build.
+      'server-only': fileURLToPath(
+        new URL('./src/lib/pdf/server-only-stub.ts', import.meta.url),
+      ),
     },
   },
   test: {

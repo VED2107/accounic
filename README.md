@@ -240,6 +240,7 @@ docs/                       security, performance, deployment, decisions, direct
 - [`docs/performance.md`](./docs/performance.md) — measured numbers, and what made the client slow
 - [`docs/deployment.md`](./docs/deployment.md) — migrations, Vercel, and how the binaries are cut
 - [`docs/accounting-direction.md`](./docs/accounting-direction.md) — what credit and debit mean here
+- [`docs/transfers-and-opening-balance.md`](./docs/transfers-and-opening-balance.md) — transfers, the opening balance as its own section, and the invariants both rest on
 
 ---
 

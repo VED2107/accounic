@@ -168,10 +168,138 @@ export interface TimelineEntry {
   ledger_currency?: string | null;
   amount_base_minor?: number | null;
   base_currency?: string | null;
+  /**
+   * The transfer this row is one half of (db/migrations/0020).
+   *
+   * Null on an ordinary entry, which is every entry written before transfers
+   * existed. `transfer_role` says which side of it this row is, and the
+   * counterparty is the OTHER person — the one this money went to or came from.
+   */
+  transfer_id?: string | null;
+  transfer_role?: TransferRole | null;
+  transfer_counterparty_id?: string | null;
+  transfer_counterparty_name?: string | null;
   /** Present only on transaction entries. */
   settled_minor: number | null;
   remaining_minor: number | null;
   status: SettlementStatus | null;
+}
+
+/** Which side of a transfer a ledger row is (db/migrations/0020). */
+export type TransferRole = 'source' | 'destination';
+
+/**
+ * public.person_opening — what an account was carried in with (0019).
+ *
+ * Its own section on the person page, never a row in the timeline. It is still
+ * a transaction underneath, so it still counts towards `net_balance` exactly as
+ * it always has; what changed is that it is no longer presented as something
+ * that happened on a particular Tuesday, and it can no longer be settled as an
+ * individual transaction.
+ */
+export interface PersonOpening {
+  person_id: string;
+  owner_id: string;
+  transaction_id: string;
+  entry_type: TxnType;
+  /** Positive when they owe the user, negative when the user owes them. */
+  signed_minor: number;
+  /** The same figure unsigned, in the account's ledger currency. */
+  amount_minor: number;
+  ledger_currency: string;
+  /** What was actually entered, and in what. */
+  entry_amount_minor: number;
+  entry_currency: string;
+  /** Its value in the workspace currency. Null when no rate is known. */
+  amount_base_minor: number | null;
+  base_currency: string;
+  entered_amount_minor: number | null;
+  entered_currency: string | null;
+  exchange_rate_e9: number | null;
+  exchange_rate_at: string | null;
+  exchange_rate_source: string | null;
+  /** Whether a human typed that rate. Resolved by public.rate_is_manual(). */
+  rate_is_manual: boolean;
+  conversion_mode: ConversionMode | null;
+  auto_converted_amount_minor: number | null;
+  entry_date: string;
+  note: string | null;
+  created_at: string;
+  /**
+   * Where the opening balance's OWN settlement stands (db/migrations/0021).
+   *
+   * An opening balance is settled through its own action, not through the row
+   * action the regular transactions use — two sections, two settlement paths,
+   * one page. These come from the same FIFO allocator every other row reads.
+   */
+  settled_minor: number;
+  remaining_minor: number;
+  status: SettlementStatus;
+}
+
+/** One superseded opening balance, kept because replacing one retracts it. */
+export interface OpeningHistoryEntry {
+  id: string;
+  amount_minor: number;
+  entry_type: TxnType;
+  entry_date: string;
+  created_at: string;
+  entry_amount_minor: number;
+  entry_currency: string;
+  ledger_currency: string;
+  amount_base_minor: number | null;
+  base_currency: string;
+  entered_amount_minor: number | null;
+  entered_currency: string | null;
+  exchange_rate_e9: number | null;
+  exchange_rate_source: string | null;
+  conversion_mode: ConversionMode | null;
+  auto_converted_amount_minor: number | null;
+}
+
+/**
+ * public.transfers — one movement of money between two people (0020).
+ *
+ * Three amounts, because a cross-currency transfer has three: what the user
+ * typed, what left the source in its own denomination, and what reached the
+ * destination in its own. For a single-currency transfer all three are the same
+ * number, which the database enforces with a CHECK constraint.
+ */
+export interface Transfer {
+  id: string;
+  owner_id: string;
+  from_person_id: string;
+  to_person_id: string;
+  transfer_date: string;
+  note: string | null;
+  entry_amount_minor: number;
+  entry_currency: string;
+  from_amount_minor: number;
+  from_currency: string;
+  to_amount_minor: number;
+  to_currency: string;
+  /** entry currency → source ledger currency. Null when they are the same. */
+  entry_rate_e9: number | null;
+  /** source ledger currency → destination ledger currency. */
+  exchange_rate_e9: number | null;
+  exchange_rate_at: string | null;
+  exchange_rate_source: string | null;
+  conversion_mode: ConversionMode | null;
+  auto_converted_amount_minor: number | null;
+  client_token: string | null;
+  is_void: boolean;
+  void_reason: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** What every transfer RPC returns: the record, and both sides' balances. */
+export interface TransferResult {
+  transfer: Transfer;
+  from_person: Person | null;
+  to_person: Person | null;
+  from_balance: PersonBalance | null;
+  to_balance: PersonBalance | null;
 }
 
 export interface OpenTransaction {
@@ -194,6 +322,14 @@ export interface PersonPage {
   /** What a new entry for this person should default to. */
   default_currency: string;
   base_currency: string;
+  /**
+   * The opening balance, in its own section (db/migrations/0019). Null when the
+   * account has none — which is not the same as zero and reads differently.
+   */
+  opening: PersonOpening | null;
+  /** Opening balances that were replaced. They affect no balance. */
+  opening_history: OpeningHistoryEntry[];
+  /** Regular activity only: credits, debits, settlements and transfer legs. */
   timeline: TimelineEntry[];
   timeline_total: number;
   open_transactions: OpenTransaction[];
@@ -235,6 +371,11 @@ export interface ActivityItem {
   exchange_rate_source?: string | null;
   conversion_mode?: ConversionMode | null;
   auto_converted_amount_minor?: number | null;
+  /** The transfer this row is one leg of, and who the other party is (0020). */
+  transfer_id?: string | null;
+  transfer_role?: TransferRole | null;
+  transfer_counterparty_id?: string | null;
+  transfer_counterparty_name?: string | null;
 }
 
 export interface DashboardPeopleRow {

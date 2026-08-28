@@ -268,12 +268,16 @@ begin
   perform pg_temp.assert(
     'and the base currency beside it',
     v_page ->> 'base_currency' = 'INR');
+  -- Since 0019 the opening balance has its own section and is deliberately NOT
+  -- one of the rows in the regular timeline. It still counts towards the
+  -- balance, which §3 of this file already asserted.
   perform pg_temp.assert(
-    'and marks the opening balance in the timeline',
-    exists (
-      select 1 from jsonb_array_elements(v_page -> 'timeline') e
-      where (e ->> 'is_opening')::boolean
-    ));
+    'the opening balance has its own section, not a timeline row',
+    v_page -> 'opening' ->> 'transaction_id' is not null
+      and not exists (
+        select 1 from jsonb_array_elements(v_page -> 'timeline') e
+        where (e ->> 'is_opening')::boolean
+      ));
 
   -- ---------------------------------------------------------------------------
   -- 8. Changing a person's currency affects future entries ONLY (upgrade §1).

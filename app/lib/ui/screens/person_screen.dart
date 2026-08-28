@@ -14,6 +14,8 @@ import '../../providers.dart';
 import '../motion.dart';
 import '../sheets/person_sheet.dart';
 import '../sheets/settle_sheet.dart';
+import '../sheets/transfer_sheet.dart';
+import '../widgets/opening_balance_card.dart';
 import '../sheets/sheet_scaffold.dart';
 import '../sheets/transaction_sheet.dart';
 import '../widgets/app_page.dart';
@@ -128,19 +130,33 @@ class PersonScreen extends ConsumerWidget {
         ),
       ],
 
-      const SizedBox(height: AppSpacing.xxl),
+      const SizedBox(height: AppSpacing.xl),
+
+      // The opening balance, in its own section — never a row in the history
+      // below (db/migrations/0019). It still counts towards the position card
+      // above, in full, and the card says so.
+      Reveal(
+        delay: const Duration(milliseconds: 90),
+        child: OpeningBalanceCard(page: page),
+      ),
+
+      const SizedBox(height: AppSpacing.xl),
+
+      // Regular activity: credits, debits, transfers and settlements.
+      const SectionHeader('Regular transactions'),
 
       if (page.timeline.isEmpty)
         const Card(
           child: EmptyState(
             icon: AppIcons.quiet,
             title: 'Nothing recorded yet',
-            description: 'Your activity with this account will appear here.',
+            description: 'Credits, debits, transfers and settlements with this '
+                'account will appear here.',
           ),
         )
       else
         for (final (index, group) in groups.indexed) ...[
-          if (index > 0) const SizedBox(height: AppSpacing.xl),
+          if (index > 0) const SizedBox(height: AppSpacing.lg),
           Reveal(
             delay: Motion.stagger(index),
             child: Column(
@@ -338,10 +354,12 @@ class _PositionCard extends StatelessWidget {
                 ],
                 if (balance.openingMinor != 0) ...[
                   const SizedBox(height: AppSpacing.xs),
+                  // Named, not detailed: the opening balance has its own
+                  // section below, and repeating its figure here would be two
+                  // places for one number to be read from. The web client says
+                  // the same sentence.
                   Text(
-                    'Includes an opening balance of '
-                    '${formatMoney(balance.openingMinor.abs(), currency: currency)} '
-                    '${balance.openingMinor > 0 ? 'in your favour' : 'against you'}',
+                    'Includes the opening balance below',
                     style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
                   ),
                 ],
@@ -427,6 +445,22 @@ class _ActionRow extends ConsumerWidget {
             icon: AppIcons.receivable,
             tint: palette.receivable,
             onTap: () => _add(context, ref, MoneyFlow.ownerToPerson),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.sm + 2),
+        // Moving money between two of your own accounts is neither of the
+        // above — nothing is owed differently overall, it just sits somewhere
+        // else. Hence its own control rather than a mode of "add".
+        Expanded(
+          child: _Action(
+            label: 'Transfer',
+            icon: AppIcons.forward,
+            onTap: () async {
+              final saved = await showTransferSheet(context, ref, from: page.balance);
+              if (saved && context.mounted) {
+                showMessage(context, 'Transfer recorded. Both accounts updated.');
+              }
+            },
           ),
         ),
       ],
@@ -741,25 +775,49 @@ class _TimelineTileState extends ConsumerState<TimelineTile> {
   Future<void> _void() async {
     final entry = widget.entry;
     final isTransaction = !entry.isSettlement;
+    final isTransfer = entry.isTransfer;
+    final other = entry.transferCounterpartyName ?? 'the other account';
 
     final ok = await confirm(
       context,
       icon: isTransaction ? AppIcons.delete : AppIcons.settlement,
-      title: isTransaction ? 'Void this transaction?' : 'Reverse this settlement?',
-      confirmLabel: isTransaction ? 'Void' : 'Reverse',
-      body: isTransaction
-          ? 'The transaction stays in the timeline as history but stops counting '
-              'towards any balance. If it has already been settled, void those '
-              'settlements first.'
-          : '${formatMoney(entry.amountMinor, currency: widget.currency)} goes back to '
-              'outstanding. The record stays in the timeline marked as reversed.',
+      title: isTransfer
+          ? 'Retract this transfer?'
+          : isTransaction
+              ? 'Void this transaction?'
+              : 'Reverse this settlement?',
+      confirmLabel: isTransfer
+          ? 'Retract transfer'
+          : isTransaction
+              ? 'Void'
+              : 'Reverse',
+      body: isTransfer
+          ? 'Both sides are retracted together. '
+              '${formatMoney(entry.amountMinor, currency: widget.currency)} returns to '
+              'this account, and the matching entry on $other is retracted with it. '
+              'Nothing is deleted — both entries stay on both timelines, marked '
+              'retracted.'
+          : isTransaction
+              ? 'The transaction stays in the timeline as history but stops counting '
+                  'towards any balance. If it has already been settled, void those '
+                  'settlements first.'
+              : '${formatMoney(entry.amountMinor, currency: widget.currency)} goes back to '
+                  'outstanding. The record stays in the timeline marked as reversed.',
     );
     if (!ok) return;
 
     setState(() => _busy = true);
     try {
       final repository = ref.read(ledgerRepositoryProvider);
-      if (isTransaction) {
+      // A transfer leg is never retracted on its own: the whole transfer is,
+      // and the other person's entry goes with it. The database refuses any
+      // other arrangement, so this is the only call that can succeed.
+      if (isTransfer) {
+        await repository.voidTransfer(
+          entry.transferId!,
+          reason: 'Retracted from the person screen',
+        );
+      } else if (isTransaction) {
         await repository.voidTransaction(entry.id);
       } else {
         await repository.voidSettlement(entry.id);
@@ -843,6 +901,11 @@ class _TimelineTileState extends ConsumerState<TimelineTile> {
                                 const SizedBox(width: AppSpacing.sm),
                                 if (entry.isVoid)
                                   const StatusChip('Voided', tone: StatusTone.muted)
+                                // Settlement chips are meaningless on a
+                                // transfer leg: it is not something the other
+                                // party pays off.
+                                else if (entry.isTransfer)
+                                  const StatusChip('Transfer', tone: StatusTone.muted)
                                 else if (entry.status == SettlementStatus.settled)
                                   const StatusChip('Settled', tone: StatusTone.done)
                                 else if (entry.status == SettlementStatus.partial)
@@ -986,7 +1049,9 @@ class _RowActions extends ConsumerWidget {
           Text(
             [
               fullDate(entry.entryDate),
-              if (!entry.isSettlement && (entry.remainingMinor ?? 0) > 0)
+              if (!entry.isTransfer &&
+                  !entry.isSettlement &&
+                  (entry.remainingMinor ?? 0) > 0)
                 '${formatMoney(entry.remainingMinor!, currency: currency)} still outstanding',
             ].join('  ·  '),
             style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
@@ -1003,7 +1068,13 @@ class _RowActions extends ConsumerWidget {
               spacing: AppSpacing.sm,
               runSpacing: AppSpacing.sm,
               children: [
-                if (!entry.isSettlement && (entry.remainingMinor ?? 0) > 0)
+                // A transfer offers neither: it is not settled by anybody,
+                // and it is never edited one side at a time. Both restrictions
+                // are enforced in the database as well — this is the affordance
+                // agreeing with it.
+                if (!entry.isTransfer &&
+                    !entry.isSettlement &&
+                    (entry.remainingMinor ?? 0) > 0)
                   _RowAction(
                     label: 'Settle this',
                     icon: AppIcons.settlement,
@@ -1022,7 +1093,7 @@ class _RowActions extends ConsumerWidget {
                             }
                           },
                   ),
-                if (!entry.isSettlement)
+                if (!entry.isTransfer && !entry.isSettlement)
                   _RowAction(
                     label: 'Edit',
                     icon: AppIcons.edit,
@@ -1062,7 +1133,11 @@ class _RowActions extends ConsumerWidget {
                           },
                   ),
                 _RowAction(
-                  label: entry.isSettlement ? 'Reverse' : 'Void',
+                  label: entry.isTransfer
+                      ? 'Retract transfer'
+                      : entry.isSettlement
+                          ? 'Reverse'
+                          : 'Void',
                   icon: AppIcons.delete,
                   tone: palette.payable,
                   onTap: busy ? null : onVoid,

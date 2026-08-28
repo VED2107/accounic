@@ -4,9 +4,17 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, ErrorNote } from '@/components/ui/primitives';
 import { ConfirmDialog } from '@/components/ui/modal';
-import { ArchiveIcon, ArrowDownIcon, ArrowUpIcon, EditIcon, SettleIcon } from '@/components/icons';
+import {
+  ArchiveIcon,
+  ArrowDownIcon,
+  ArrowRightIcon,
+  ArrowUpIcon,
+  EditIcon,
+  SettleIcon,
+} from '@/components/icons';
 import { TransactionSheet } from '@/components/ledger/transaction-sheet';
 import { SettleSheet } from '@/components/ledger/settle-sheet';
+import { TransferSheet } from '@/components/ledger/transfer-sheet';
 import { PersonForm } from '@/components/ledger/person-form';
 import { deletePerson, setPersonArchived, voidPersonHistory } from '@/lib/actions';
 import type { OpenTransaction, Person, PersonBalance, TxnType } from '@/lib/types';
@@ -37,6 +45,7 @@ export function PersonActionBar({
   const router = useRouter();
   const [addType, setAddType] = useState<TxnType | null>(null);
   const [settleOpen, setSettleOpen] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [confirm, setConfirm] = useState<
     'archive' | 'restore' | 'delete' | 'void-history' | null
@@ -94,6 +103,14 @@ export function PersonActionBar({
         >
           <ArrowUpIcon className="size-4 text-receivable" />
           Add debit
+        </Button>
+
+        {/* Moving money between two of your own accounts is neither of the
+            above — nothing is owed differently overall, it just sits somewhere
+            else. Hence its own control rather than a mode of "add". */}
+        <Button variant="secondary" onClick={() => setTransferOpen(true)}>
+          <ArrowRightIcon className="size-4" />
+          Transfer
         </Button>
 
         {/* The two icon-only controls stay together when the row wraps on a
@@ -164,6 +181,18 @@ export function PersonActionBar({
         mode="create"
         defaultType={addType ?? TYPE_FOR_FLOW.person_to_owner}
         person={{
+          id: person.id,
+          name: person.name,
+          currency,
+          default_currency: balance.default_currency,
+        }}
+      />
+
+      <TransferSheet
+        open={transferOpen}
+        onClose={() => setTransferOpen(false)}
+        baseCurrency={baseCurrency}
+        from={{
           id: person.id,
           name: person.name,
           currency,

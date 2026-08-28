@@ -237,3 +237,12 @@ export const PersonPlusIcon = (p: IconProps) => (
     <path d="M17 14.5v6M14 17.5h6" />
   </Icon>
 );
+
+/** A page with a downward arrow: exporting this account as a file. */
+export const DownloadIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M13.5 3.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9z" />
+    <path d="M13.5 3.5V9H19" />
+    <path d="M12 12v5M9.75 15l2.25 2 2.25-2" />
+  </Icon>
+);

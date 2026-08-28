@@ -9,8 +9,15 @@ import { Money } from '@/components/money';
 import { TransactionSheet } from '@/components/ledger/transaction-sheet';
 import { RateNote } from '@/components/ledger/conversion';
 import { SettleSheet } from '@/components/ledger/settle-sheet';
-import { ArrowDownIcon, ArrowUpIcon, SettleIcon, WalletIcon } from '@/components/icons';
-import { voidSettlement, voidTransaction } from '@/lib/actions';
+import {
+  ArrowDownIcon,
+  ArrowRightIcon,
+  ArrowUpIcon,
+  SettleIcon,
+  WalletIcon,
+} from '@/components/icons';
+import { voidSettlement, voidTransaction, voidTransfer } from '@/lib/actions';
+import { transferLabel } from '@/lib/transfers';
 import { groupByDate } from '@/lib/dates';
 import { formatApprox, formatMoney } from '@/lib/money';
 import { entryIsReceivable, entryLabel } from '@/lib/direction';
@@ -61,8 +68,12 @@ export function Timeline({
   function doVoid(entry: TimelineEntry) {
     setError(null);
     startTransition(async () => {
-      const result =
-        entry.entry_kind === 'transaction'
+      // A transfer leg is never retracted on its own: the whole transfer is,
+      // and the other person's entry goes with it. The database refuses any
+      // other arrangement, so this is the only call that can succeed.
+      const result = entry.transfer_id
+        ? await voidTransfer(entry.transfer_id, 'Retracted from the person page')
+        : entry.entry_kind === 'transaction'
           ? await voidTransaction(person.id, entry.id)
           : await voidSettlement(person.id, entry.id);
 
@@ -93,6 +104,11 @@ export function Timeline({
             <ul>
               {group.items.map((entry) => {
                 const isSettlement = entry.entry_kind === 'settlement';
+                // A transfer leg is stored as an ordinary debit or credit, and
+                // "Debit" is exactly the wrong word for it: the user moved
+                // their own money between two accounts rather than lending
+                // anything. The label says where it went (lib/transfers.ts).
+                const isTransfer = Boolean(entry.transfer_id);
                 // `money_direction` is the flow of cash; for a transaction the
                 // debt runs the other way, which is what the row is about.
                 const incoming = entry.money_direction === 'in';
@@ -143,7 +159,14 @@ export function Timeline({
                               : 'border-payable-line bg-payable-soft text-payable',
                         )}
                       >
-                        {isSettlement ? (
+                        {isTransfer ? (
+                          <ArrowRightIcon
+                            className={cn(
+                              'size-4',
+                              entry.transfer_role === 'source' && 'rotate-180',
+                            )}
+                          />
+                        ) : isSettlement ? (
                           <SettleIcon className="size-4" />
                         ) : receivable ? (
                           <ArrowUpIcon className="size-4" />
@@ -155,13 +178,21 @@ export function Timeline({
                       <span className="min-w-0 flex-1">
                         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                           <span className="text-[0.8125rem] font-medium text-ink">
-                            {entry.is_opening
-                              ? 'Opening balance'
-                              : entryLabel(entry.entry_kind, entry.entry_type)}
+                            {isTransfer
+                              ? transferLabel(
+                                  entry.transfer_role,
+                                  entry.transfer_counterparty_name,
+                                )
+                              : entry.is_opening
+                                ? 'Opening balance'
+                                : entryLabel(entry.entry_kind, entry.entry_type)}
                           </span>
+                          {/* So the two halves can be recognised as one thing
+                              from either account. */}
+                          {isTransfer ? <StatusChip tone="transfer">Transfer</StatusChip> : null}
                           {entry.is_void ? (
                             <StatusChip tone="void">Voided</StatusChip>
-                          ) : entry.status === 'settled' ? (
+                          ) : isTransfer ? null : entry.status === 'settled' ? (
                             <StatusChip tone="done">Settled</StatusChip>
                           ) : entry.status === 'partial' ? (
                             <StatusChip tone="partial">
@@ -221,16 +252,26 @@ export function Timeline({
 
                     {open && !entry.is_void ? (
                       <div className="flex flex-wrap gap-2 border-t border-line bg-sunken px-4 py-3 sm:px-5">
-                        {entry.entry_kind === 'transaction' && (entry.remaining_minor ?? 0) > 0 ? (
+                        {/* A transfer offers neither: it is not settled by
+                            anybody, and it is never edited one side at a time.
+                            Both restrictions are enforced in the database as
+                            well — this is the affordance agreeing with it. */}
+                        {!isTransfer &&
+                        entry.entry_kind === 'transaction' &&
+                        (entry.remaining_minor ?? 0) > 0 ? (
                           <RowAction onClick={() => setSettlingTxnId(entry.id)}>
                             Settle this
                           </RowAction>
                         ) : null}
-                        {entry.entry_kind === 'transaction' ? (
+                        {!isTransfer && entry.entry_kind === 'transaction' ? (
                           <RowAction onClick={() => setEditing(entry)}>Edit</RowAction>
                         ) : null}
                         <RowAction tone="danger" onClick={() => setConfirmVoid(entry)}>
-                          {entry.entry_kind === 'transaction' ? 'Void' : 'Reverse'}
+                          {isTransfer
+                            ? 'Retract transfer'
+                            : entry.entry_kind === 'transaction'
+                              ? 'Void'
+                              : 'Reverse'}
                         </RowAction>
                       </div>
                     ) : null}
@@ -299,11 +340,35 @@ export function Timeline({
         onConfirm={() => confirmVoid && doVoid(confirmVoid)}
         pending={pending}
         title={
-          confirmVoid?.entry_kind === 'settlement' ? 'Reverse this settlement?' : 'Void this transaction?'
+          confirmVoid?.transfer_id
+            ? 'Retract this transfer?'
+            : confirmVoid?.entry_kind === 'settlement'
+              ? 'Reverse this settlement?'
+              : 'Void this transaction?'
         }
-        confirmLabel={confirmVoid?.entry_kind === 'settlement' ? 'Reverse' : 'Void'}
+        confirmLabel={
+          confirmVoid?.transfer_id
+            ? 'Retract transfer'
+            : confirmVoid?.entry_kind === 'settlement'
+              ? 'Reverse'
+              : 'Void'
+        }
         body={
-          confirmVoid?.entry_kind === 'settlement' ? (
+          confirmVoid?.transfer_id ? (
+            <>
+              <p>
+                Both sides are retracted together.{' '}
+                {formatMoney(confirmVoid.amount_minor, currency)} returns to this account, and
+                the matching entry on{' '}
+                {confirmVoid.transfer_counterparty_name ?? 'the other account'} is retracted
+                with it.
+              </p>
+              <p className="mt-2 text-ink-faint">
+                Nothing is deleted. Both entries stay on both timelines, marked retracted, with
+                their amounts and rate exactly as they were.
+              </p>
+            </>
+          ) : confirmVoid?.entry_kind === 'settlement' ? (
             <>
               The {formatMoney(confirmVoid.amount_minor, currency)} goes back to outstanding. The
               record stays in the timeline marked as reversed.
@@ -325,7 +390,7 @@ function StatusChip({
   tone,
 }: {
   children: React.ReactNode;
-  tone: 'done' | 'partial' | 'void';
+  tone: 'done' | 'partial' | 'void' | 'transfer';
 }) {
   return (
     <span
@@ -334,6 +399,7 @@ function StatusChip({
         tone === 'done' && 'border-receivable-line bg-receivable-soft text-receivable',
         tone === 'partial' && 'border-accent-line bg-accent-soft text-accent',
         tone === 'void' && 'border-line bg-sunken text-ink-faint',
+        tone === 'transfer' && 'border-line-strong bg-sunken text-ink-muted',
       )}
     >
       {children}
