@@ -151,6 +151,7 @@ class ConversionPanel extends ConsumerStatefulWidget {
     this.onRateManualChanged,
     this.onManualRateChanged,
     this.initialRateE9,
+    this.allowAmountOverride = true,
   });
 
   final int? amountMinor;
@@ -179,6 +180,17 @@ class ConversionPanel extends ConsumerStatefulWidget {
 
   /// The rate a stored entry was written at, when one is being edited.
   final int? initialRateE9;
+
+  /// Whether "what actually changed hands" is offered.
+  ///
+  /// False on a transfer's FIRST step, where the server has nowhere to put such
+  /// a figure — `create_transfer()` takes an entry RATE for that leg and a
+  /// converted amount only for the second one. Offering the control there would
+  /// promise something the write path cannot keep. The manual rate is offered
+  /// either way, because that one the write path does keep.
+  ///
+  /// The twin of `allowAmountOverride` on the web's `ConversionPanel`.
+  final bool allowAmountOverride;
 
   @override
   ConsumerState<ConversionPanel> createState() => _ConversionPanelState();
@@ -429,7 +441,7 @@ class _ConversionPanelState extends ConsumerState<ConversionPanel> {
                   ),
                 ),
 
-              if (widget.manual)
+              if (widget.manual && widget.allowAmountOverride)
                 Container(
                   padding: const EdgeInsets.fromLTRB(
                     AppSpacing.lg,
@@ -533,6 +545,7 @@ class _ConversionPanelState extends ConsumerState<ConversionPanel> {
                               fontSize: 12.5, fontWeight: FontWeight.w600),
                         ),
                       ),
+                    if (widget.allowAmountOverride)
                     TextButton(
                       onPressed: () {
                         // The common case is "nearly that, but 43", so the box

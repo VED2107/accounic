@@ -67,13 +67,28 @@ class _TransferSheetState extends ConsumerState<_TransferSheet> {
   String? _entryCurrency;
   int? _amount;
 
-  // The two overrides, both on the SECOND step: what reaches the other account.
-  // There is no override on the first step, because nothing has changed hands
-  // at that point and create_transfer() accepts none.
+  // The overrides on the SECOND step: what reaches the other account.
   bool _manualAmount = false;
   int? _actualMinor;
   bool _manualRate = false;
   int? _typedRateE9;
+
+  // And the rate override on the FIRST step — what leaves the source account
+  // when the amount was typed in some third currency.
+  //
+  // This was missing, and it was the only conversion in either client that
+  // offered the automatic rate without the manual one beside it. The web has
+  // had it all along (`allowAmountOverride={false}` there turns off the AMOUNT
+  // override, not the rate), so the two clients disagreed about what a transfer
+  // could say. `create_transfer()` takes `p_entry_rate_e9` for exactly this
+  // leg — the write path was ready and only the sheet was not asking.
+  //
+  // There is still no AMOUNT override here, and that is deliberate rather than
+  // an omission: `create_transfer()` accepts a converted amount for the second
+  // leg only, so a control here would promise something the write path cannot
+  // keep.
+  bool _manualEntryRate = false;
+  int? _typedEntryRateE9;
 
   /// One token per opened sheet, so a double tap moves the money once.
   ///
@@ -112,13 +127,22 @@ class _TransferSheetState extends ConsumerState<_TransferSheet> {
       _source != null && _destination != null && _source!.personId == _destination!.personId;
 
   /// What leaves the source, previewed. The stored figure is the database's.
+  /// The rate the first step converts at: the one the user typed, or the
+  /// fetched one. A hand-typed rate is used as given and never quietly
+  /// replaced — it is the rate for this transfer.
+  int? get _entryRateE9 {
+    if (_typedCurrency == _fromCurrency) return null;
+    if (_manualEntryRate) return _typedEntryRateE9;
+    return ref.read(rateProvider((from: _typedCurrency, to: _fromCurrency))).value?.rateE9;
+  }
+
   int? get _sourceMinor {
     final amount = _amount;
     if (amount == null) return null;
     if (_typedCurrency == _fromCurrency) return amount;
-    final rate = ref.read(rateProvider((from: _typedCurrency, to: _fromCurrency))).value;
-    if (rate == null) return null;
-    return convertMinor(amount, _typedCurrency, _fromCurrency, rate.rateE9);
+    final rateE9 = _entryRateE9;
+    if (rateE9 == null) return null;
+    return convertMinor(amount, _typedCurrency, _fromCurrency, rateE9);
   }
 
   bool get _ready =>
@@ -126,7 +150,11 @@ class _TransferSheetState extends ConsumerState<_TransferSheet> {
       _destination != null &&
       !_samePerson &&
       _amount != null &&
-      (_typedCurrency == _fromCurrency || _sourceMinor != null);
+      (_typedCurrency == _fromCurrency || _sourceMinor != null) &&
+      // A rate override with nothing valid typed into it is not savable: the
+      // transfer would be written at a rate the user has just said is wrong.
+      !(_manualEntryRate && _typedCurrency != _fromCurrency && _typedEntryRateE9 == null) &&
+      !(_manualRate && _fromCurrency != _toCurrency && _typedRateE9 == null);
 
   Future<void> _save() async {
     if (!_ready || _saving) return;
@@ -136,9 +164,7 @@ class _TransferSheetState extends ConsumerState<_TransferSheet> {
     });
 
     try {
-      final entryRate = _typedCurrency == _fromCurrency
-          ? null
-          : ref.read(rateProvider((from: _typedCurrency, to: _fromCurrency))).value?.rateE9;
+      final entryRate = _entryRateE9;
 
       // A hand-typed rate is used as given and never quietly replaced: it is
       // the rate for this transfer.
@@ -157,7 +183,8 @@ class _TransferSheetState extends ConsumerState<_TransferSheet> {
             note: _note.text.trim().isEmpty ? null : _note.text.trim(),
             entryRateE9: entryRate,
             exchangeRateE9: crossRate,
-            rateSource: _manualRate ? kManualRateSource : null,
+            rateSource:
+                _manualRate || _manualEntryRate ? kManualRateSource : null,
             convertedAmountMinor: _manualAmount ? _actualMinor : null,
             conversionMode: _manualAmount ? 'manual' : null,
             clientToken: _token,
@@ -210,6 +237,8 @@ class _TransferSheetState extends ConsumerState<_TransferSheet> {
                 _entryCurrency = null;
                 _manualRate = false;
                 _manualAmount = false;
+                _manualEntryRate = false;
+                _typedEntryRateE9 = null;
               }),
             ),
           ],
@@ -270,17 +299,25 @@ class _TransferSheetState extends ConsumerState<_TransferSheet> {
             ),
 
             // Step one — only when the user typed in something other than the
-            // source account's own denomination. No amount override: nothing
-            // has changed hands at this point.
+            // source account's own denomination.
+            //
+            // The rate can be overridden here exactly as on every other sheet;
+            // the AMOUNT cannot, because create_transfer() has nowhere to put a
+            // converted figure for this leg. Same rule, same flag name, as the
+            // web's panel.
             if (_typedCurrency != _fromCurrency) ...[
               const SizedBox(height: AppSpacing.md),
               ConversionPanel(
                 amountMinor: _amount,
                 from: _typedCurrency,
                 to: _fromCurrency,
+                allowAmountOverride: false,
                 manual: false,
                 onManualChanged: (_) {},
                 onActualChanged: (_) {},
+                rateManual: _manualEntryRate,
+                onRateManualChanged: (on) => setState(() => _manualEntryRate = on),
+                onManualRateChanged: (rate) => setState(() => _typedEntryRateE9 = rate),
               ),
             ],
 

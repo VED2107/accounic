@@ -4,7 +4,7 @@ Status of the Accounic build against `context.md`. This is the file to read firs
 picking the work back up.
 
 **Last updated:** 2026-08-29 (twelfth session)
-**Current release:** [v1.7.1](https://github.com/VED2107/accounic/releases/latest)
+**Current release:** [v1.7.2](https://github.com/VED2107/accounic/releases/latest)
 **Overall:** Phases 1–4 complete and verified against the live database. Phase 5
 (performance) measured and the client half tuned — see `docs/performance.md`. Phase 6
 (hardening) partly done.
@@ -26,6 +26,7 @@ Everything found since v1.0.0 was found on a **phone**, and none of it was catch
 | 1.0.5–1.0.7 | delete refusing a person whose history was all retracted; Save and Cancel sitting under the keyboard |
 | 1.1.0 | multi-currency, opening balances, and the rest of the keyboard story on the person form |
 | 1.1.1 | currency made genuinely per person: changing it no longer rewrites history |
+| 1.7.2 | a transfer converts by hand as well as automatically, on both steps |
 | 1.7.1 | a settlement offered in the account's own currency, and able to be made in any other |
 | 1.7.0 | cash in hand and the opening balance told apart everywhere; credit and debit against an opening balance; a PDF statement on Windows and Android; the person screen that stopped loading after an opening-balance edit |
 | 1.6.0 | the opening balance separated from the activity it was never part of; transfers between people as one transaction with two linked legs; a PDF statement per account |
@@ -897,3 +898,27 @@ figure, so it is applied only while the two currencies agree; typed in another,
 the database's own over-settlement guard enforces it. And the success state reads
 the settled figure back from the row the database wrote rather than reusing what
 the user typed, which on a converted settlement is a different number.
+
+### 12.9 The transfer sheet had one conversion without its manual half (v1.7.2)
+
+A transfer has two conversions: what the user typed into the source account, and
+the source account into the destination. The second offered both overrides — a
+hand-typed rate, and the amount that actually arrived. The first offered neither,
+and rendered an amount-override button wired to a no-op.
+
+It was the only conversion in either client with an automatic rate and no manual
+one beside it. The web had it all along: there, `allowAmountOverride={false}`
+turns off the AMOUNT override on that step and leaves the rate override alone,
+and `entry_rate_mode` / `entry_manual_rate` have been in the schema and the
+action since transfers shipped. Only the Flutter sheet was not asking, so the two
+clients disagreed about what a transfer could say.
+
+`ConversionPanel` in Dart gains `allowAmountOverride`, the twin of the web flag,
+and the transfer sheet wires a manual entry rate through `_entryRateE9` — which
+the previewed source figure, the save, and the ready check all now read, so the
+figure on screen is the figure that gets written.
+
+There is still no AMOUNT override on the first step, on either client, and that
+is deliberate rather than an omission: `create_transfer()` accepts a converted
+amount for the second leg only, so a control there would promise something the
+write path cannot keep.
