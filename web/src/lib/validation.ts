@@ -291,6 +291,29 @@ export const openingSettlementSchema = z.object({
   note: trimmedOptional(500),
 });
 
+/**
+ * Credit or debit against the opening balance (db/migrations/0022).
+ *
+ * `type` is the stored `txn_type`, exactly as the transaction schema takes it —
+ * the spoken words Credit and Debit are mapped onto it by `lib/direction.ts`
+ * and nowhere else, so this route cannot invent a direction model of its own.
+ */
+export const openingAdjustmentSchema = z.object({
+  person_id: uuid,
+  type: z.enum(['credit', 'debit']),
+  amount: z.string().trim().min(1, 'Enter an amount'),
+  entry_currency: optionalCurrencyCode,
+  account_currency: optionalCurrencyCode,
+  rate_e9: rateE9,
+  rate_source: trimmedOptional(60),
+  rate_mode: z.enum(['automatic', 'manual']).optional(),
+  manual_rate: z.string().trim().optional(),
+  converted_amount: z.string().trim().optional(),
+  conversion_mode: z.enum(['automatic', 'manual']).optional(),
+  date: isoDate,
+  note: trimmedOptional(500),
+});
+
 export const profileSchema = z.object({
   name: z.string().trim().min(1, 'Enter your name').max(120),
   phone: trimmedOptional(32),

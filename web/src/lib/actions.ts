@@ -18,6 +18,7 @@ import {
   transactionSchema,
   transferEditSchema,
   transferSchema,
+  openingAdjustmentSchema,
   openingSettlementSchema,
 } from '@/lib/validation';
 import {
@@ -665,6 +666,51 @@ export async function settleOpeningBalance(
     ...money.args,
   });
   if (error) return fail(error, UNCHANGED.settlement);
+
+  revalidatePath(`/people/${parsed.data.person_id}`);
+  revalidatePath('/people');
+  revalidatePath('/activity');
+  revalidatePath('/');
+  return ok(data as LedgerMutation);
+}
+
+/**
+ * Credit or debit against the opening balance (db/migrations/0022).
+ *
+ * Deliberately NOT `createTransaction`. What this records is not a transaction:
+ * it is a correction to the figure the account was carried in with, and it must
+ * never appear among the regular transactions, never move cash in hand, and
+ * never be counted twice on the dashboard. `adjust_opening_balance()` enforces
+ * all four — this action's only job is to hand it what the form said.
+ *
+ * The conversion path is `moneyArgs`, the same one every other money action
+ * uses: the client sends what was typed, its currency and the rate; the
+ * database does the arithmetic and freezes the rate on the row.
+ */
+export async function adjustOpeningBalance(
+  _prev: unknown,
+  formData: FormData,
+): Promise<ActionResult<LedgerMutation>> {
+  const parsed = openingAdjustmentSchema.safeParse(formObject(formData));
+  if (!parsed.success) return { ok: false, ...firstIssue(parsed.error) };
+
+  const money = await moneyArgs(parsed.data);
+  if ('error' in money) return { ok: false, error: money.error, field: 'amount' };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('adjust_opening_balance', {
+    p_person_id: parsed.data.person_id,
+    p_type: parsed.data.type,
+    p_date: parsed.data.date,
+    p_note: parsed.data.note ?? null,
+    ...money.args,
+  });
+  if (error) {
+    return fail(
+      error,
+      'That opening balance entry could not be saved. Your balance has not been changed.',
+    );
+  }
 
   revalidatePath(`/people/${parsed.data.person_id}`);
   revalidatePath('/people');

@@ -91,6 +91,35 @@ class LedgerRepository {
     }
   }
 
+  /// The whole account, for a statement.
+  ///
+  /// `person_page()` caps a request at 100 rows and a screen only ever wants
+  /// one page; a statement wants all of them. Pages through until the timeline
+  /// is complete or [maxRows] is reached, and merges the pages into one
+  /// [PersonPage] — the same shape, the same figures, more rows. The ceiling
+  /// exists so one enormous account cannot hold the app open forever.
+  ///
+  /// Identical in behaviour to the web statement route, deliberately: the two
+  /// clients export the same document from the same data.
+  Future<PersonPage> personStatementPage(
+    String personId, {
+    int maxRows = 2000,
+  }) async {
+    const pageSize = 100;
+    final first = await personPage(personId, limit: pageSize, offset: 0);
+
+    final timeline = [...first.timeline];
+    final total = first.timelineTotal < maxRows ? first.timelineTotal : maxRows;
+
+    for (var offset = pageSize; offset < total; offset += pageSize) {
+      final next = await personPage(personId, limit: pageSize, offset: offset);
+      if (next.timeline.isEmpty) break;
+      timeline.addAll(next.timeline);
+    }
+
+    return first.withTimeline(timeline);
+  }
+
   Future<SearchResults> search(String query) async {
     try {
       final data = await _client.rpc(
@@ -442,6 +471,52 @@ class LedgerRepository {
       return LedgerMutation.fromJson(Map<String, dynamic>.from(data as Map));
     } catch (error, stack) {
       throw Failure.from(error, Unchanged.settlement, stack);
+    }
+  }
+
+  /// Records a credit or debit against a person's opening balance
+  /// (db/migrations/0022).
+  ///
+  /// [type] is the stored `txn_type`, the same enum `createTransaction` takes —
+  /// the spoken words Credit and Debit are mapped onto it by
+  /// `core/direction.dart` and nowhere else, so this route cannot drift from
+  /// the rest of the ledger. The row it writes is never a regular transaction:
+  /// it stays in the opening book, out of the timeline, and out of cash in
+  /// hand.
+  Future<LedgerMutation> adjustOpeningBalance({
+    required String personId,
+    required TxnType type,
+    required String date,
+    int? amountMinor,
+    String? note,
+    int? enteredAmountMinor,
+    String? enteredCurrency,
+    int? exchangeRateE9,
+    String? rateSource,
+    int? convertedAmountMinor,
+    String? conversionMode,
+  }) async {
+    try {
+      final data = await _client.rpc('adjust_opening_balance', params: {
+        'p_person_id': personId,
+        'p_type': type.wire,
+        'p_amount_minor': amountMinor,
+        'p_date': date,
+        'p_note': note,
+        'p_entered_amount_minor': enteredAmountMinor,
+        'p_entered_currency': enteredCurrency,
+        'p_exchange_rate_e9': exchangeRateE9,
+        'p_rate_source': rateSource,
+        'p_converted_amount_minor': convertedAmountMinor,
+        'p_conversion_mode': conversionMode,
+      });
+      return LedgerMutation.fromJson(Map<String, dynamic>.from(data as Map));
+    } catch (error, stack) {
+      throw Failure.from(
+        error,
+        'That opening balance entry could not be saved. Your balance has not been changed.',
+        stack,
+      );
     }
   }
 

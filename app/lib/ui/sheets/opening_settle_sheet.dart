@@ -25,6 +25,7 @@ Future<bool> showOpeningSettleSheet(
   WidgetRef ref, {
   required Person person,
   required PersonOpening opening,
+  required PositionSplit position,
   required String currency,
 }) async {
   final result = await showAppSheet<bool>(
@@ -32,6 +33,7 @@ Future<bool> showOpeningSettleSheet(
     (context) => _OpeningSettleSheet(
       person: person,
       opening: opening,
+      position: position,
       currency: currency,
     ),
   );
@@ -42,11 +44,22 @@ class _OpeningSettleSheet extends ConsumerStatefulWidget {
   const _OpeningSettleSheet({
     required this.person,
     required this.opening,
+    required this.position,
     required this.currency,
   });
 
   final Person person;
   final PersonOpening opening;
+
+  /// What is left of the whole opening BOOK, not of the balance row alone
+  /// (db/migrations/0022).
+  ///
+  /// The two differ the moment a credit or debit is recorded against the
+  /// opening balance, and the difference is not cosmetic: `settle_opening_balance()`
+  /// settles the book and refuses an amount larger than the book's remainder,
+  /// so a sheet that offered the balance row's own remainder would default to a
+  /// figure the server rejects.
+  final PositionSplit position;
   final String currency;
 
   @override
@@ -57,7 +70,10 @@ class _OpeningSettleSheetState extends ConsumerState<_OpeningSettleSheet> {
   final String _date = todayIso();
   final _note = TextEditingController();
 
-  late int? _amount = widget.opening.remainingMinor;
+  /// What is actually left of the opening book, unsigned.
+  int get _outstanding => widget.position.positionMinor.abs();
+
+  late int? _amount = _outstanding;
   bool _saving = false;
   String? _error;
 
@@ -99,9 +115,11 @@ class _OpeningSettleSheetState extends ConsumerState<_OpeningSettleSheet> {
   @override
   Widget build(BuildContext context) {
     final palette = context.money;
-    final opening = widget.opening;
     final firstName = widget.person.name.split(' ').first;
-    final incoming = opening.signedMinor > 0;
+    // Which way money must move to retire the book, derived from the book's
+    // net position exactly as the server derives it — not from the balance row,
+    // which an adjustment can outweigh.
+    final incoming = widget.position.positionMinor > 0;
 
     return SheetScaffold(
       title: 'Settle the opening balance',
@@ -137,17 +155,17 @@ class _OpeningSettleSheetState extends ConsumerState<_OpeningSettleSheet> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    formatMoney(opening.remainingMinor, currency: widget.currency),
+                    formatMoney(_outstanding, currency: widget.currency),
                     style: context.moneyStyle(
                       MoneySize.large,
                       color: incoming ? palette.receivable : palette.payable,
                     ),
                   ),
-                  if (opening.settledMinor > 0) ...[
+                  if (widget.position.settledMinor > 0) ...[
                     const SizedBox(height: 2),
                     Text(
-                      '${formatMoney(opening.settledMinor, currency: widget.currency)} already '
-                      'settled of ${formatMoney(opening.amountMinor, currency: widget.currency)}',
+                      '${formatMoney(widget.position.settledMinor, currency: widget.currency)} already '
+                      'settled against the opening balance',
                       style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
                     ),
                   ],
@@ -163,8 +181,8 @@ class _OpeningSettleSheetState extends ConsumerState<_OpeningSettleSheet> {
             // and this settles that entry, so there is no currency to choose.
             AmountField(
               currency: widget.currency,
-              initial: opening.remainingMinor,
-              maxMinor: opening.remainingMinor,
+              initial: _outstanding,
+              maxMinor: _outstanding,
               autofocus: true,
               onChanged: (minor) => setState(() => _amount = minor),
             ),

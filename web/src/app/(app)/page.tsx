@@ -29,12 +29,7 @@ import {
 import { friendlyDate, greeting } from '@/lib/dates';
 import { balanceTone, formatApprox, formatMoney } from '@/lib/money';
 import { trendsFromBuckets, type Trend } from '@/lib/series';
-import type {
-  CurrencyToday,
-  CurrencyTotals,
-  Dashboard,
-  DashboardPeopleRow,
-} from '@/lib/types';
+import type { Dashboard, DashboardPeopleRow, WorkspacePosition } from '@/lib/types';
 
 export const metadata = { title: 'Dashboard' };
 
@@ -56,9 +51,14 @@ export default async function DashboardPage() {
     profile,
     today,
     people_with_balance: people,
-    totals_by_currency: byCurrency,
-    today_by_currency: todayByCurrency,
+    cash_in_hand: cashInHand,
+    opening: openingTotal,
   } = data;
+  // Absent against a database that has not run 0022; the card is simply not
+  // drawn there, exactly as the currency card was not drawn before 0015.
+  const hasOpening =
+    Boolean(openingTotal) &&
+    (openingTotal.position !== 0 || openingTotal.people_count > 0);
   // The RPC returns a generous slice; six rows is what keeps this column the
   // same height as the one beside it, and "recent" stops meaning much past that.
   const activity = data.recent_activity.slice(0, 6);
@@ -243,35 +243,41 @@ export default async function DashboardPage() {
       </section>
 
       {/* ------------------------------------------------------------------ */}
-      {/* Every currency that carries entries, kept apart (0015)              */}
+      {/* Cash in hand, and the opening balance beside it (0022)              */}
       {/*                                                                     */}
-      {/* The card above is the whole position in one number, which only      */}
-      {/* exists because the dirhams were converted into rupees first. This   */}
-      {/* is the same money before that step: one row per currency, summed    */}
-      {/* only within itself, and never added across.                         */}
+      {/* This card replaced "By currency". The per-currency breakdown         */}
+      {/* answered a question about presentation — the same money before it    */}
+      {/* was converted — and this one answers a question about the ledger:    */}
+      {/* how much of the position is trading, and how much is what the        */}
+      {/* accounts were carried in with. The two figures are calculated        */}
+      {/* independently by the database and are never added together here.     */}
       {/* ------------------------------------------------------------------ */}
-      {byCurrency.length > 0 ? (
+      {cashInHand ? (
         <Reveal delay={145} className="mt-4 block">
           <Card className="overflow-hidden">
             <CardHeader
-              title="By currency"
+              title="Cash in hand"
               description={
-                byCurrency.length === 1
-                  ? 'Everything so far is in one currency.'
-                  : `Each currency on its own terms. The ${currency} figures above convert all of these into one total.`
+                hasOpening
+                  ? `The regular trading position across every account, converted to ${currency}. The opening balances are counted separately below and are not part of this figure.`
+                  : `The regular trading position across every account, converted to ${currency}.`
               }
             />
-            <ul className="divide-y divide-line">
-              {byCurrency.map((row, index) => (
-                <li key={row.currency} className="reveal-row" style={staggerStyle(index)}>
-                  <CurrencyRow
-                    row={row}
-                    today={todayByCurrency.find((item) => item.currency === row.currency)}
-                    isBase={row.currency === currency}
-                  />
-                </li>
-              ))}
-            </ul>
+            <div className="divide-y divide-line">
+              <WorkspacePositionBlock
+                label="Cash in hand"
+                position={cashInHand}
+                currency={currency}
+              />
+              {hasOpening ? (
+                <WorkspacePositionBlock
+                  label="Opening balance"
+                  position={openingTotal}
+                  currency={currency}
+                  caption="What the accounts were carried in with, less whatever has been settled against it. Independently calculated."
+                />
+              ) : null}
+            </div>
           </Card>
         </Reveal>
       ) : null}
@@ -609,83 +615,80 @@ function SectionBar({
 }
 
 /**
- * One currency's standing position (0015).
+ * One of the two workspace totals, with its own receivable / payable / settled
+ * / today (db/migrations/0022).
  *
- * Every figure on this row is denominated in `row.currency` and was never put
- * through a rate. The workspace currency gets the same row as any other — a
- * single-currency ledger reads identically to a four-currency one, which is
- * what stops the section from looking like it is only for foreign money.
+ * The rule this block exists to make visible: **cash in hand never contains an
+ * opening balance**. Both figures are summed by the database from their own
+ * half of the ledger, and the only place they are added together is the
+ * position card above — which says so.
  */
-function CurrencyRow({
-  row,
-  today,
-  isBase,
+function WorkspacePositionBlock({
+  label,
+  position,
+  currency,
+  caption,
 }: {
-  row: CurrencyTotals;
-  today?: CurrencyToday;
-  isBase: boolean;
+  label: string;
+  position: WorkspacePosition;
+  currency: string;
+  caption?: string;
 }) {
-  const netTone = balanceTone(row.net_position);
-  const moved = today ? today.credit + today.debit + today.settled : 0;
-
-  // The equivalent is supplementary. It appears under the real figure, never in
-  // place of it, and only when the two say different things.
-  const showBase = !isBase && row.net_base_minor != null;
+  const tone = balanceTone(position.position);
 
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3.5 sm:px-5">
-      <span className="flex min-w-0 items-center gap-2">
-        <span className="grid size-9 shrink-0 place-items-center rounded-field border border-line-strong bg-sunken text-[0.6875rem] font-semibold tracking-wide text-ink-muted">
-          {row.currency}
-        </span>
-        <span className="min-w-0">
-          {/* This currency's own money, in this currency. */}
-          <span className="block truncate text-[0.875rem] font-medium text-ink">
-            {formatMoney(Math.abs(row.net_position), row.currency)}{' '}
-            <span
-              className={cn(
-                'text-[0.75rem] font-normal',
-                netTone === 'receivable' && 'text-receivable',
-                netTone === 'payable' && 'text-payable',
-                netTone === 'settled' && 'text-ink-faint',
-              )}
-            >
-              {row.net_position > 0
-                ? 'in your favour'
-                : row.net_position < 0
-                  ? 'against you'
-                  : 'settled'}
-            </span>
-          </span>
-          {showBase ? (
-            <span className="tnum block truncate text-[0.75rem] text-ink-faint">
-              {formatApprox(Math.abs(row.net_base_minor!), row.base_currency)}
-            </span>
-          ) : null}
-          <span className="block truncate text-[0.75rem] text-ink-faint">
-            {row.entry_count} {row.entry_count === 1 ? 'entry' : 'entries'} ·{' '}
-            {row.people_count} {row.people_count === 1 ? 'account' : 'accounts'}
-            {isBase ? ' · your workspace currency' : ''}
-          </span>
-        </span>
-      </span>
+    <div className="px-4 py-4 sm:px-5">
+      <p className="text-[0.6875rem] font-semibold uppercase tracking-wide text-ink-faint">
+        {label}
+      </p>
+      <p
+        className={cn(
+          'tnum mt-1 text-[1.5rem] font-semibold leading-none',
+          tone === 'receivable' && 'text-receivable',
+          tone === 'payable' && 'text-payable',
+          tone === 'settled' && 'text-ink-muted',
+        )}
+      >
+        {formatMoney(Math.abs(position.position), currency)}
+      </p>
+      {caption ? (
+        <p className="mt-1 text-[0.75rem] leading-relaxed text-ink-faint">{caption}</p>
+      ) : null}
 
-      <span className="ml-auto flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-[0.75rem]">
-        <span className="text-receivable">
-          Receivable {formatMoney(row.gross_credit, row.currency)}
-        </span>
-        <span className="text-payable">
-          Payable {formatMoney(row.gross_debit, row.currency)}
-        </span>
-        <span className="text-ink-faint">
-          Settled {formatMoney(row.gross_settled, row.currency)}
-        </span>
-        {moved > 0 ? (
-          <span className="rounded-full border border-line bg-sunken px-2 py-0.5 text-ink-muted">
-            Today {formatMoney(moved, row.currency)}
-          </span>
-        ) : null}
-      </span>
+      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
+        <PositionFigure label="Receivable" minor={position.receivable} currency={currency} tone="receivable" />
+        <PositionFigure label="Payable" minor={position.payable} currency={currency} tone="payable" />
+        <PositionFigure label="Settled" minor={position.settled} currency={currency} />
+        <PositionFigure label="Today" minor={position.today} currency={currency} />
+      </dl>
+    </div>
+  );
+}
+
+function PositionFigure({
+  label,
+  minor,
+  currency,
+  tone,
+}: {
+  label: string;
+  minor: number;
+  currency: string;
+  tone?: 'receivable' | 'payable';
+}) {
+  return (
+    <div className="min-w-0">
+      <dt className="truncate text-[0.6875rem] text-ink-faint">{label}</dt>
+      <dd
+        className={cn(
+          'tnum truncate text-[0.875rem] font-medium',
+          tone === 'receivable' && 'text-receivable',
+          tone === 'payable' && 'text-payable',
+          !tone && 'text-ink-muted',
+        )}
+      >
+        {formatMoney(minor, currency)}
+      </dd>
     </div>
   );
 }

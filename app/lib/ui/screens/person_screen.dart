@@ -10,6 +10,7 @@ import '../../core/layout.dart';
 import '../../core/money.dart';
 import '../../core/theme.dart';
 import '../../data/models.dart';
+import '../../data/statement_download.dart';
 import '../../providers.dart';
 import '../motion.dart';
 import '../sheets/person_sheet.dart';
@@ -133,8 +134,9 @@ class PersonScreen extends ConsumerWidget {
       const SizedBox(height: AppSpacing.xl),
 
       // The opening balance, in its own section — never a row in the history
-      // below (db/migrations/0019). It still counts towards the position card
-      // above, in full, and the card says so.
+      // below (db/migrations/0019), and since 0022 never inside the cash-in-hand
+      // figure either. The card above prints it as a figure of its own, beside
+      // the account position that is the two together.
       Reveal(
         delay: const Duration(milliseconds: 90),
         child: OpeningBalanceCard(page: page),
@@ -143,7 +145,12 @@ class PersonScreen extends ConsumerWidget {
       const SizedBox(height: AppSpacing.xl),
 
       // Regular activity: credits, debits, transfers and settlements.
-      const SectionHeader('Regular transactions'),
+      Row(
+        children: [
+          const Expanded(child: SectionHeader('Regular transactions')),
+          StatementButton(page: page),
+        ],
+      ),
 
       if (page.timeline.isEmpty)
         const Card(
@@ -264,7 +271,13 @@ class _PositionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.money;
     final balance = page.balance;
-    final tone = balanceTone(balance.netBalance);
+    // The headline is CASH IN HAND: the regular trading position, with the
+    // opening balance taken out (db/migrations/0022). The opening balance is a
+    // figure of its own, printed below and in its own section, and the two are
+    // never added together into one number on this screen.
+    final regular = page.regular;
+    final opening = page.openingPosition;
+    final tone = balanceTone(regular.positionMinor);
     final first = page.person.name.split(' ').first;
 
     final color = switch (tone) {
@@ -289,7 +302,7 @@ class _PositionCard extends StatelessWidget {
                     Icon(AppIcons.net, size: AppIconSize.xs, color: palette.inkFaint),
                     const SizedBox(width: AppSpacing.xs + 2),
                     Text(
-                      'CURRENT POSITION',
+                      'CASH IN HAND',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
@@ -306,7 +319,7 @@ class _PositionCard extends StatelessWidget {
                   // Animates when it changes — which is exactly when a
                   // settlement has just been recorded on this screen.
                   child: AnimatedMoney(
-                    balance.netBalance.abs(),
+                    regular.positionMinor.abs(),
                     currency: currency,
                     color: color,
                     style: context.display(context.isCompact ? 34 : 40),
@@ -327,9 +340,9 @@ class _PositionCard extends StatelessWidget {
                     const SizedBox(width: AppSpacing.xs + 2),
                     Text(
                       switch (tone) {
-                        BalanceTone.receivable => '$first owes you',
-                        BalanceTone.payable => 'You owe $first',
-                        BalanceTone.settled => 'Everything is settled',
+                        BalanceTone.receivable => '$first owes you, on regular activity',
+                        BalanceTone.payable => 'You owe $first, on regular activity',
+                        BalanceTone.settled => 'Regular activity is settled',
                       },
                       style: TextStyle(
                         fontSize: 13,
@@ -343,24 +356,40 @@ class _PositionCard extends StatelessWidget {
                 // opening balance if there is one. Both are context rather than
                 // figures anything settles against, so they sit under the
                 // headline in the quiet colour (upgrade §10).
-                if (page.currency != page.baseCurrency && balance.netBalance != 0) ...[
+                if (page.currency != page.baseCurrency && regular.positionMinor != 0) ...[
                   const SizedBox(height: AppSpacing.xs + 2),
                   Text(
-                    balance.netBalanceBase == null
+                    regular.positionBaseMinor == null
                         ? 'No ${page.currency} → ${page.baseCurrency} rate yet'
-                        : '${formatApprox(balance.netBalanceBase!.abs(), currency: page.baseCurrency)} at today’s rate',
+                        : '${formatApprox(regular.positionBaseMinor!.abs(), currency: page.baseCurrency)} at today’s rate',
                     style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
                   ),
                 ],
-                if (balance.openingMinor != 0) ...[
-                  const SizedBox(height: AppSpacing.xs),
-                  // Named, not detailed: the opening balance has its own
-                  // section below, and repeating its figure here would be two
-                  // places for one number to be read from. The web client says
-                  // the same sentence.
-                  Text(
-                    'Includes the opening balance below',
-                    style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
+
+                // The opening balance, stated as its own figure and never
+                // folded into the one above. The account position is printed
+                // beside it so the arithmetic is visible rather than implied —
+                // the reader can see the two figures and their sum, and no
+                // number appears twice inside another.
+                if (balance.hasOpening) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  _SecondaryFigure(
+                    label: 'OPENING BALANCE',
+                    minor: opening.positionMinor,
+                    currency: currency,
+                    caption: opening.positionMinor == 0
+                        ? 'Settled in full'
+                        : opening.positionMinor > 0
+                            ? '$first owed you this when the account opened'
+                            : 'You owed $first this when the account opened',
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  _SecondaryFigure(
+                    label: 'ACCOUNT POSITION',
+                    minor: balance.netBalance,
+                    currency: currency,
+                    caption: 'Cash in hand and the opening balance together',
+                    quiet: true,
                   ),
                 ],
                 const SizedBox(height: AppSpacing.lg + 2),
@@ -369,9 +398,87 @@ class _PositionCard extends StatelessWidget {
             ),
           ),
           Divider(height: 1, color: palette.line),
-          _Figures(balance: balance, currency: currency, tone: tone),
+          _Figures(
+            balance: balance,
+            regular: regular,
+            currency: currency,
+            tone: tone,
+          ),
         ],
       ),
+    );
+  }
+}
+
+/// A figure that sits under the headline without competing with it.
+///
+/// Used for the opening balance and the account position — two numbers the
+/// reader needs beside cash in hand, and neither of which may be mistaken for
+/// it. Smaller, labelled, and never animated: only the headline moves.
+class _SecondaryFigure extends StatelessWidget {
+  const _SecondaryFigure({
+    required this.label,
+    required this.minor,
+    required this.currency,
+    required this.caption,
+    this.quiet = false,
+  });
+
+  final String label;
+  final int minor;
+  final String currency;
+  final String caption;
+  final bool quiet;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.money;
+    final color = quiet
+        ? palette.inkMuted
+        : minor > 0
+            ? palette.receivable
+            : minor < 0
+                ? palette.payable
+                : palette.inkFaint;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.7,
+                color: palette.inkFaint,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: MoneyText(
+                  minor.abs(),
+                  currency: currency,
+                  tone: MoneyTone.neutral,
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        Text(
+          caption,
+          style: TextStyle(fontSize: 12, color: palette.inkFaint),
+        ),
+      ],
     );
   }
 }
@@ -464,6 +571,124 @@ class _ActionRow extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Download this account as a PDF.
+///
+/// The statement is built on the device from `person_page()` — the same data
+/// the screen above is drawn from, through the same row rules in
+/// `core/statement.dart` — so the export cannot disagree with the screen it was
+/// exported from. On Windows this opens the native save dialog; on Android the
+/// file goes to the app's files directory, where a file manager can reach it.
+///
+/// Every outcome is reported. Cancelling the dialog says nothing went wrong,
+/// because nothing did; a failure says what failed and that nothing was saved.
+class StatementButton extends ConsumerStatefulWidget {
+  const StatementButton({super.key, required this.page});
+
+  final PersonPage page;
+
+  @override
+  ConsumerState<StatementButton> createState() => _StatementButtonState();
+}
+
+class _StatementButtonState extends ConsumerState<StatementButton> {
+  bool _busy = false;
+
+  Future<void> _download() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+
+    try {
+      // Every row, not the screenful above: a statement that stopped at 30
+      // entries would be a different document from the one the web exports.
+      final full = await ref
+          .read(ledgerRepositoryProvider)
+          .personStatementPage(widget.page.person.id);
+
+      final me = ref.read(meProvider).valueOrNull;
+      final result = await const StatementDownloader().save(
+        page: full,
+        ownerName: me?.name ?? '',
+      );
+
+      if (!mounted) return;
+      switch (result) {
+        case StatementSaved(:final path, :final chosen):
+          Haptics.success();
+          showMessage(
+            context,
+            chosen ? 'Statement saved to $path' : 'Statement saved to $path',
+          );
+        case StatementSaveCancelled():
+          // The user closed the dialog. Nothing to report and nothing wrong.
+          break;
+        case StatementSaveFailed(:final message):
+          showMessage(context, message, error: true);
+      }
+    } on Failure catch (failure) {
+      // The account could not be read — an expired session, no network, a
+      // person that has since been deleted. The message says which.
+      if (mounted) showMessage(context, failure.message, error: true);
+    } catch (_) {
+      if (mounted) {
+        showMessage(
+          context,
+          'The statement could not be created. Nothing has been saved.',
+          error: true,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.money;
+
+    return Hoverable(
+      builder: (context, hovered) => Pressable(
+        onTap: _busy ? null : _download,
+        child: AnimatedContainer(
+          duration: Motion.fast,
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: hovered ? palette.raised : Colors.transparent,
+            borderRadius: AppRadius.fieldAll,
+            border: Border.all(color: hovered ? palette.lineStrong : palette.line),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_busy)
+                SizedBox(
+                  width: AppIconSize.xs,
+                  height: AppIconSize.xs,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: palette.inkMuted,
+                  ),
+                )
+              else
+                Icon(AppIcons.download, size: AppIconSize.xs, color: palette.inkMuted),
+              const SizedBox(width: AppSpacing.sm),
+              Text(
+                _busy ? 'Preparing…' : 'Download PDF',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: palette.inkMuted,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1203,10 +1428,22 @@ class _RowAction extends StatelessWidget {
 
 /// Credited, debited, settled, remaining — the four figures the position is made
 /// of, laid out two by two so they fit a phone without shrinking.
+/// The four figures under the headline.
+///
+/// Every one of them is the REGULAR half (db/migrations/0022): these sit
+/// beneath a card headed "Cash in hand", so a total that quietly included the
+/// opening balance would contradict the number it is printed under. The opening
+/// book's own credit, debit and settled figures are in its own section.
 class _Figures extends StatelessWidget {
-  const _Figures({required this.balance, required this.currency, required this.tone});
+  const _Figures({
+    required this.balance,
+    required this.regular,
+    required this.currency,
+    required this.tone,
+  });
 
   final PersonBalance balance;
+  final PositionSplit regular;
   final String currency;
   final BalanceTone tone;
 
@@ -1267,17 +1504,17 @@ class _Figures extends StatelessWidget {
               cell(
                 'Credited to you',
                 AppIcons.payable,
-                balance.totalDebit,
-                balance.totalDebit > 0 ? MoneyTone.payable : MoneyTone.neutral,
-                balance.totalDebit > 0 ? palette.payable : null,
+                regular.debitMinor,
+                regular.debitMinor > 0 ? MoneyTone.payable : MoneyTone.neutral,
+                regular.debitMinor > 0 ? palette.payable : null,
               ),
               VerticalDivider(width: 1, color: palette.line),
               cell(
                 'Debited to them',
                 AppIcons.receivable,
-                balance.totalCredit,
-                balance.totalCredit > 0 ? MoneyTone.receivable : MoneyTone.neutral,
-                balance.totalCredit > 0 ? palette.receivable : null,
+                regular.creditMinor,
+                regular.creditMinor > 0 ? MoneyTone.receivable : MoneyTone.neutral,
+                regular.creditMinor > 0 ? palette.receivable : null,
               ),
             ],
           ),
@@ -1290,7 +1527,7 @@ class _Figures extends StatelessWidget {
               cell(
                 'Settled',
                 AppIcons.settlement,
-                balance.totalSettled,
+                regular.settledMinor,
                 MoneyTone.neutral,
                 null,
               ),
@@ -1299,8 +1536,8 @@ class _Figures extends StatelessWidget {
                 tone == BalanceTone.payable ? 'You will pay' : 'You will receive',
                 AppIcons.net,
                 tone == BalanceTone.payable
-                    ? balance.outstandingPayable
-                    : balance.outstandingReceivable,
+                    ? regular.payableMinor
+                    : regular.receivableMinor,
                 switch (tone) {
                   BalanceTone.payable => MoneyTone.payable,
                   BalanceTone.receivable => MoneyTone.receivable,

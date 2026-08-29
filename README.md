@@ -2,7 +2,7 @@
 
 A small, fast, personal accounting system. Three clients, one backend, one database.
 
-Current release: **[v1.5.0](https://github.com/VED2107/accounic/releases/latest)** —
+Current release: **[v1.7.0](https://github.com/VED2107/accounic/releases/latest)** —
 Windows installer, Windows portable zip, and an Android APK. The app checks GitHub
 Releases on launch and tells you when a newer one exists.
 
