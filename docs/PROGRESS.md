@@ -4,7 +4,7 @@ Status of the Accounic build against `context.md`. This is the file to read firs
 picking the work back up.
 
 **Last updated:** 2026-08-29 (twelfth session)
-**Current release:** [v1.7.0](https://github.com/VED2107/accounic/releases/latest)
+**Current release:** [v1.7.1](https://github.com/VED2107/accounic/releases/latest)
 **Overall:** Phases 1–4 complete and verified against the live database. Phase 5
 (performance) measured and the client half tuned — see `docs/performance.md`. Phase 6
 (hardening) partly done.
@@ -26,6 +26,7 @@ Everything found since v1.0.0 was found on a **phone**, and none of it was catch
 | 1.0.5–1.0.7 | delete refusing a person whose history was all retracted; Save and Cancel sitting under the keyboard |
 | 1.1.0 | multi-currency, opening balances, and the rest of the keyboard story on the person form |
 | 1.1.1 | currency made genuinely per person: changing it no longer rewrites history |
+| 1.7.1 | a settlement offered in the account's own currency, and able to be made in any other |
 | 1.7.0 | cash in hand and the opening balance told apart everywhere; credit and debit against an opening balance; a PDF statement on Windows and Android; the person screen that stopped loading after an opening-balance edit |
 | 1.6.0 | the opening balance separated from the activity it was never part of; transfers between people as one transaction with two linked legs; a PDF statement per account |
 | 1.5.0 | the displayed rate reconciles with the displayed conversion; a rate can be typed by hand and is frozen on the entry; one currency presenter across web and Flutter |
@@ -795,12 +796,12 @@ running the Windows release and looking at it — the same lesson as every relea
 
 | Check | Result |
 |---|---|
-| `node db/tools/run-sql.mjs test` | 11 suites, **407 assertions** — including 53 new in `db/tests/11_cash_in_hand.sql` |
+| `node db/tools/run-sql.mjs test` | 11 suites, **409 assertions** — including 55 new in `db/tests/11_cash_in_hand.sql` |
 | `cd web && npx tsc --noEmit` | clean |
 | `cd web && npm test` | **120 pass** (110 + 10 new) |
 | `cd web && npx next build` | succeeds, 11 routes |
 | `cd app && flutter analyze` | no issues |
-| `cd app && flutter test` | **236 pass** (220 + 16 new) |
+| `cd app && flutter test` | **240 pass** (220 + 20 new) |
 | `flutter build windows --release` | built |
 | `flutter build apk --release` | built, 27.0 MB |
 | Installer | silent-installed, and the installed 1.7.0 binary launched and rendered |
@@ -817,3 +818,82 @@ every account in the project re-checked: all 19 reconcile.
 **Not verified on a device:** the Android half of the PDF save path. No Android emulator
 runs on this machine (§9.3), so Android remains widget tests at phone metrics plus a
 sideloaded APK. The code path differs from Windows only in where the file is written.
+
+### 12.7 Three more, found by looking at the shipped build
+
+**The settle sheet named the wrong currency.** A dirham account showing "Cash in
+hand 350 AED" opened its settle sheet offering **350 INR**. `settle_sheet.dart`
+read `currencyProvider` — the *workspace* currency — for every figure it drew,
+while every figure it draws comes from `person_balances`, which denominates them
+in the *account's* ledger currency. The database was never wrong:
+`create_settlement()` takes the amount in the account's denomination either way.
+What was wrong was the label on the number, which on a financial screen is the
+whole of it — and on a currency with different decimals it would have parsed the
+typed amount into the wrong number of minor units too.
+
+One line, and the only place in the Flutter client that had it: the other seven
+`currencyProvider` reads are cross-person totals (activity, people, dashboard)
+or a fallback for a person who has named no currency, and are correct. The web
+never had the bug — it passes `person_page().currency`, which is the account's.
+`app/test/settle_currency_test.dart` pins AED, USD and INR, and would have
+failed before the fix because `kFallbackCurrency` is INR.
+
+**Both figures, everywhere.** A foreign-currency account now prints what it is
+*and* what it is worth, on all three positions rather than only the headline:
+
+```
+CASH IN HAND        350 AED    ≈ ₹8,470.00 INR
+OPENING BALANCE   2,000 AED    ≈ ₹48,400.00 INR
+ACCOUNT POSITION  2,350 AED    ≈ ₹56,870.00 INR
+```
+
+and the dashboard says what its converted totals were converted *from*:
+`₹19,469 INR · from 350 AED`, `₹43,900 INR · from 2,000 AED`. Those per-currency
+originals come from `totals_by_currency`, which 0022 had already split into
+`cash_net_position` and `opening_net_position` — the data was there and unread.
+
+**The statement's masthead.** The Dart PDF had no wordmark where the web
+statement has one. It now draws the same thing the web draws, and nothing more:
+"Accounic" at 15pt bold in the brand blue, "Account statement" opposite. A drawn
+mark was tried and removed — the web statement has none, and two clients
+exporting the same document must produce the same document.
+
+The dirham symbol printed as two boxes in the account line for the same reason
+the rupee sign did: Poppins does not carry `د.إ`. The currency is printed as
+`AED — UAE Dirham` instead, and `_canDraw()` now guards every amount the same
+way `supportsAll()` does on the web.
+
+### 12.8 Settlement in another currency (v1.7.1)
+
+Two faults in the settlement path, both reported from the shipped build.
+
+**The sheet named the wrong currency.** `settle_sheet.dart` read
+`currencyProvider` — the *workspace* currency — for every figure it drew, while
+every figure it draws comes from `person_balances`, which denominates them in
+the *account's* ledger currency. A dirham account showing "Cash in hand 350 AED"
+opened its settle sheet offering **350 INR**. The database was never wrong; the
+label on the number was, and on a currency with different decimals the typed
+amount would have been parsed into the wrong number of minor units as well.
+
+One line, and the only place in the Flutter client that had it: the other seven
+`currencyProvider` reads are cross-person totals or a fallback for a person who
+has named no currency. The web never had it — it passes `person_page().currency`.
+`app/test/settle_currency_test.dart` pins AED, USD and INR, and would have failed
+before the fix because `kFallbackCurrency` is INR.
+
+**A settlement could not be made in another currency at all.** Both clients
+locked the entry currency to the account's and told the user to put the real
+figure in the note. `create_settlement()` has taken the conversion arguments
+since 0011 and `settle_opening_balance()` since 0021 — only the clients were not
+sending them. Both settle sheets, on both clients, now carry the same currency
+picker and the same `ConversionPanel` the transaction sheet has, which means
+**both** overrides: a hand-typed rate, and the amount that actually arrived once
+a bank had taken its cut. Wherever an automatic conversion is offered, the manual
+one is offered beside it — including the opening balance's own settle and adjust
+sheets.
+
+The ceiling is the one thing that does not cross. It is an account-currency
+figure, so it is applied only while the two currencies agree; typed in another,
+the database's own over-settlement guard enforces it. And the success state reads
+the settled figure back from the row the database wrote rather than reusing what
+the user typed, which on a converted settlement is a different number.

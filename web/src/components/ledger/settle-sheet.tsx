@@ -15,6 +15,8 @@ import {
 } from '@/components/ui/primitives';
 import { SettledMark } from '@/components/ui/toast';
 import { AmountInput } from '@/components/ledger/amount-input';
+import { CurrencySelect } from '@/components/ledger/currency-select';
+import { ConversionFields, ConversionPanel, useRate } from '@/components/ledger/conversion';
 import { SubmitRow } from '@/components/ledger/transaction-sheet';
 import { createSettlement } from '@/lib/actions';
 import { formatMoney } from '@/lib/money';
@@ -61,6 +63,12 @@ export function SettleSheet({
   const [transactionId, setTransactionId] = useState<string>(presetTransactionId ?? '');
   const [amount, setAmount] = useState<number | null>(null);
   const [done, setDone] = useState<{ amount: number; remaining: number } | null>(null);
+
+  /// The currency the payment is being TYPED in. Follows the account until the
+  /// user says otherwise, because the ordinary case should cost no decisions.
+  const [entryCurrency, setEntryCurrency] = useState(currency);
+  const foreign = entryCurrency !== currency;
+  const rate = useRate(entryCurrency, currency);
 
   const [state, formAction] = useActionState<ActionResult<unknown> | null, FormData>(
     createSettlement,
@@ -167,14 +175,17 @@ export function SettleSheet({
           <input type="hidden" name="direction" value={direction} />
           <input type="hidden" name="transaction_id" value={transactionId} />
           {/*
-            A settlement is recorded in the account's own currency: the ceiling
-            it is checked against is an account-currency figure, and offering a
-            second currency here would mean checking a converted amount against
-            a limit that moves with the rate. The amount that was actually
-            handed over in another currency belongs in the note.
+            A settlement may be handed over in a currency the account is not kept
+            in — a dirham account paid off in rupees. `create_settlement()` has
+            taken the conversion arguments since db/migrations/0011; the sheet
+            simply was not offering them, and told the user to put the real
+            figure in the note instead.
+
+            The ceiling is the one thing that cannot cross: it is an
+            account-currency figure, so it is applied only while the two agree.
+            Typed in another currency, the database's own over-settlement guard
+            is what enforces it.
           */}
-          <input type="hidden" name="entry_currency" value={currency} />
-          <input type="hidden" name="account_currency" value={currency} />
 
           <FormSections>
             {bothSides || matching.length > 0 ? (
@@ -237,7 +248,7 @@ export function SettleSheet({
               </FormSection>
             ) : null}
 
-            <FormSection title="Amount" aside={currency}>
+            <FormSection title="Amount" aside={foreign ? `Account keeps ${currency}` : currency}>
               {/* The arithmetic, done for the reader (context.md §9). */}
               <div className="grid grid-cols-3 divide-x divide-line rounded-card border border-line bg-sunken">
                 <Cell label="Outstanding" value={formatMoney(max, currency)} />
@@ -253,13 +264,38 @@ export function SettleSheet({
                 />
               </div>
 
-              <AmountInput
-                currency={currency}
-                autoFocus
-                max={max}
-                onValidChange={setAmount}
-                label="Settlement amount"
-                error={state && !state.ok && state.field === 'amount' ? state.error : undefined}
+              <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
+                <AmountInput
+                  currency={entryCurrency}
+                  autoFocus
+                  max={foreign ? undefined : max}
+                  onValidChange={setAmount}
+                  label="Settlement amount"
+                  error={state && !state.ok && state.field === 'amount' ? state.error : undefined}
+                />
+                <CurrencySelect
+                  name="entry_currency_visible"
+                  label="Paid in"
+                  value={entryCurrency}
+                  onChange={setEntryCurrency}
+                  hint={foreign ? undefined : 'Account currency'}
+                  className="sm:w-56"
+                />
+              </div>
+
+              {/* Both overrides, because both questions are real: the rate may
+                  be wrong, and the amount that actually arrived may differ from
+                  what any rate implies once a bank has taken its cut. */}
+              <ConversionPanel
+                amountMinor={amount}
+                from={entryCurrency}
+                to={currency}
+                state={rate}
+              />
+              <ConversionFields
+                entryCurrency={entryCurrency}
+                accountCurrency={currency}
+                state={rate}
               />
             </FormSection>
 

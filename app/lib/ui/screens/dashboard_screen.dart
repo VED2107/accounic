@@ -138,6 +138,7 @@ class DashboardScreen extends ConsumerWidget {
           child: _CashInHandCard(
             cash: cash,
             opening: data.openingTotal,
+            byCurrency: data.totalsByCurrency,
             baseCurrency: currency,
           ),
         ),
@@ -567,12 +568,41 @@ class _CashInHandCard extends StatelessWidget {
   const _CashInHandCard({
     required this.cash,
     required this.opening,
+    required this.byCurrency,
     required this.baseCurrency,
   });
 
   final WorkspacePosition cash;
   final WorkspacePosition? opening;
+
+  /// The same money before it was converted, one row per currency it was
+  /// actually entered in (db/migrations/0017, split by 0022).
+  final List<CurrencyTotals> byCurrency;
   final String baseCurrency;
+
+  /// The original figures behind a converted total, as one line.
+  ///
+  /// A total in the workspace currency only exists because the dirhams were
+  /// converted into rupees first; this says what they were before that step.
+  /// Rows in the workspace currency are left out — the headline above already
+  /// is that figure, and repeating it would say nothing.
+  static String? _originals(
+    List<CurrencyTotals> totals,
+    String baseCurrency, {
+    required bool opening,
+  }) {
+    final parts = <String>[
+      for (final row in totals)
+        if (row.currency != baseCurrency)
+          if ((opening ? row.openingNetPosition : row.cashNetPosition) != 0)
+            formatMoney(
+              (opening ? row.openingNetPosition : row.cashNetPosition).abs(),
+              currency: row.currency,
+            ),
+    ];
+    if (parts.isEmpty) return null;
+    return parts.join('  ·  ');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -606,6 +636,7 @@ class _CashInHandCard extends StatelessWidget {
             label: 'CASH IN HAND',
             position: cash,
             currency: baseCurrency,
+            originals: _originals(byCurrency, baseCurrency, opening: false),
           ),
           if (hasOpening) ...[
             Divider(height: 1, color: palette.line),
@@ -613,6 +644,7 @@ class _CashInHandCard extends StatelessWidget {
               label: 'OPENING BALANCE',
               position: opening!,
               currency: baseCurrency,
+              originals: _originals(byCurrency, baseCurrency, opening: true),
               caption: 'What the accounts were carried in with, less whatever has '
                   'been settled against it. Independently calculated.',
             ),
@@ -629,12 +661,18 @@ class _WorkspacePositionBlock extends StatelessWidget {
     required this.label,
     required this.position,
     required this.currency,
+    this.originals,
     this.caption,
   });
 
   final String label;
   final WorkspacePosition position;
   final String currency;
+
+  /// The figures this total was converted from, in the currencies they were
+  /// entered in. Null on a single-currency workspace, where the headline
+  /// already is the original.
+  final String? originals;
   final String? caption;
 
   @override
@@ -710,6 +748,13 @@ class _WorkspacePositionBlock extends StatelessWidget {
               ),
             ),
           ),
+          if (originals != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              'from $originals',
+              style: TextStyle(fontSize: 12.5, color: palette.inkMuted),
+            ),
+          ],
           if (caption != null) ...[
             const SizedBox(height: 2),
             Text(

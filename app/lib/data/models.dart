@@ -1251,6 +1251,8 @@ class CurrencyTotals {
     required this.entryCount,
     required this.peopleCount,
     this.netBaseMinor,
+    this.cashNetPosition = 0,
+    this.openingNetPosition = 0,
   });
 
   /// The currency the entries were actually made in — not the denomination of
@@ -1275,6 +1277,12 @@ class CurrencyTotals {
   final int entryCount;
   final int peopleCount;
 
+  /// The same net position split into its two books (db/migrations/0022), still
+  /// in [currency] and still never mixed with another one. These are what let
+  /// the dashboard print the ORIGINAL currency behind each converted total.
+  final int cashNetPosition;
+  final int openingNetPosition;
+
   /// Whether the equivalent says anything the primary figure does not.
   bool get showsBaseEquivalent => netBaseMinor != null && baseCurrency != currency;
 
@@ -1286,6 +1294,10 @@ class CurrencyTotals {
         grossSettled: _int(json['gross_settled']),
         netPosition: _int(json['net_position']),
         netBaseMinor: json['net_base_minor'] == null ? null : _int(json['net_base_minor']),
+        cashNetPosition: json['cash_net_position'] == null
+            ? _int(json['net_position'])
+            : _int(json['cash_net_position']),
+        openingNetPosition: _int(json['opening_net_position']),
         entryCount: _int(json['entry_count']),
         peopleCount: _int(json['people_count']),
       );
@@ -1515,10 +1527,18 @@ class ActivityPage {
 /// What every mutation returns: the row, plus the refreshed balance so the UI
 /// can reconcile without a second round trip (context.md §14, §23).
 class LedgerMutation {
-  const LedgerMutation({required this.balance, this.recordId});
+  const LedgerMutation({required this.balance, this.recordId, this.amountMinor});
 
   final PersonBalance? balance;
   final String? recordId;
+
+  /// What the row the database wrote is worth in the ACCOUNT's currency.
+  ///
+  /// On a cross-currency entry this is not the figure the user typed — they
+  /// typed rupees and the account keeps dirhams — and it is the database that
+  /// did the conversion. Reading it back is how a screen states what actually
+  /// landed without converting anything itself.
+  final int? amountMinor;
 
   factory LedgerMutation.fromJson(Map<String, dynamic> json) {
     final record = (json['transaction'] ?? json['settlement']) as Map<String, dynamic>?;
@@ -1526,6 +1546,8 @@ class LedgerMutation {
     return LedgerMutation(
       balance: balance == null ? null : PersonBalance.fromJson(balance),
       recordId: record?['id'] as String?,
+      amountMinor:
+          record?['amount_minor'] == null ? null : _int(record!['amount_minor']),
     );
   }
 }

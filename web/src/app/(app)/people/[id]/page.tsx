@@ -224,6 +224,8 @@ export default async function PersonPage({
                     label="Opening balance"
                     minor={openingPosition.position}
                     currency={currency}
+                    baseMinor={openingPosition.position_base}
+                    baseCurrency={baseCurrency}
                     caption={
                       openingPosition.position === 0
                         ? 'Settled in full'
@@ -236,6 +238,8 @@ export default async function PersonPage({
                     label="Account position"
                     minor={balance.net_balance}
                     currency={currency}
+                    baseMinor={balance.net_balance_base}
+                    baseCurrency={baseCurrency}
                     caption="Cash in hand and the opening balance together"
                     quiet
                   />
@@ -424,12 +428,21 @@ function SecondaryFigure({
   minor,
   currency,
   caption,
+  baseMinor,
+  baseCurrency,
   quiet = false,
 }: {
   label: string;
   minor: number;
   currency: string;
   caption: string;
+  /**
+   * The same figure in the workspace currency. Printed only when it says
+   * something the figure above does not — that is, on an account kept in
+   * another currency — and marked as the approximation it is.
+   */
+  baseMinor?: number | null;
+  baseCurrency?: string;
   quiet?: boolean;
 }) {
   return (
@@ -448,6 +461,13 @@ function SecondaryFigure({
       >
         {formatMoney(Math.abs(minor), currency)}
       </p>
+      {baseCurrency && baseCurrency !== currency && minor !== 0 ? (
+        <p className="tnum text-[0.75rem] text-ink-faint">
+          {baseMinor == null
+            ? `No ${currency} → ${baseCurrency} rate yet`
+            : formatApprox(Math.abs(baseMinor), baseCurrency)}
+        </p>
+      ) : null}
       <p className="text-[0.75rem] text-ink-faint">{caption}</p>
     </div>
   );

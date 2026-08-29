@@ -520,13 +520,27 @@ class LedgerRepository {
     }
   }
 
+  /// Records a settlement.
+  ///
+  /// The conversion arguments are the same ones every other money RPC takes,
+  /// and they are here for the same reason: a payment can be handed over in a
+  /// currency the account is not kept in. Send [amountMinor] when the two
+  /// agree; send [enteredAmountMinor] with its currency and rate when they do
+  /// not, and the database derives the account figure. This client never sends
+  /// a converted number it worked out itself.
   Future<LedgerMutation> createSettlement({
     required String personId,
-    required int amountMinor,
     required String date,
+    int? amountMinor,
     SettlementDirection? direction,
     String? transactionId,
     String? note,
+    int? enteredAmountMinor,
+    String? enteredCurrency,
+    int? exchangeRateE9,
+    String? rateSource,
+    int? convertedAmountMinor,
+    String? conversionMode,
   }) async {
     try {
       final data = await _client.rpc('create_settlement', params: {
@@ -536,6 +550,12 @@ class LedgerRepository {
         'p_transaction_id': transactionId,
         'p_date': date,
         'p_note': note,
+        'p_entered_amount_minor': enteredAmountMinor,
+        'p_entered_currency': enteredCurrency,
+        'p_exchange_rate_e9': exchangeRateE9,
+        'p_rate_source': rateSource,
+        'p_converted_amount_minor': convertedAmountMinor,
+        'p_conversion_mode': conversionMode,
       });
       return LedgerMutation.fromJson(Map<String, dynamic>.from(data as Map));
     } catch (error, stack) {

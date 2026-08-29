@@ -377,6 +377,12 @@ class _PositionCard extends StatelessWidget {
                     label: 'OPENING BALANCE',
                     minor: opening.positionMinor,
                     currency: currency,
+                    // The workspace equivalent, on an account kept in another
+                    // currency. Every figure on this card then says both what
+                    // it is and what it is worth, rather than leaving the
+                    // reader to convert one of the three in their head.
+                    baseMinor: opening.positionBaseMinor,
+                    baseCurrency: page.baseCurrency,
                     caption: opening.positionMinor == 0
                         ? 'Settled in full'
                         : opening.positionMinor > 0
@@ -388,6 +394,8 @@ class _PositionCard extends StatelessWidget {
                     label: 'ACCOUNT POSITION',
                     minor: balance.netBalance,
                     currency: currency,
+                    baseMinor: balance.netBalanceBase,
+                    baseCurrency: page.baseCurrency,
                     caption: 'Cash in hand and the opening balance together',
                     quiet: true,
                   ),
@@ -421,6 +429,8 @@ class _SecondaryFigure extends StatelessWidget {
     required this.minor,
     required this.currency,
     required this.caption,
+    this.baseMinor,
+    this.baseCurrency,
     this.quiet = false,
   });
 
@@ -428,6 +438,12 @@ class _SecondaryFigure extends StatelessWidget {
   final int minor;
   final String currency;
   final String caption;
+
+  /// The same figure in the workspace currency. Printed only when it says
+  /// something the figure above does not — that is, on an account kept in
+  /// another currency — and marked as the approximation it is.
+  final int? baseMinor;
+  final String? baseCurrency;
   final bool quiet;
 
   @override
@@ -474,6 +490,13 @@ class _SecondaryFigure extends StatelessWidget {
             ),
           ],
         ),
+        if (baseCurrency != null && baseCurrency != currency && minor != 0)
+          Text(
+            baseMinor == null
+                ? 'No $currency → $baseCurrency rate yet'
+                : formatApprox(baseMinor!.abs(), currency: baseCurrency),
+            style: TextStyle(fontSize: 12, color: palette.inkFaint),
+          ),
         Text(
           caption,
           style: TextStyle(fontSize: 12, color: palette.inkFaint),

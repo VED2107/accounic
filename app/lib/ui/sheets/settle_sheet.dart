@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/currencies.dart';
 import '../../core/dates.dart';
 import '../../core/failure.dart';
 import '../../core/money.dart';
@@ -11,6 +12,7 @@ import '../motion.dart';
 import '../widgets/amount_field.dart';
 import '../../core/icons.dart';
 import '../../core/layout.dart';
+import '../widgets/currency_field.dart';
 import '../widgets/forms.dart';
 import 'sheet_scaffold.dart';
 
@@ -71,6 +73,39 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
   bool _saving = false;
   String? _error;
 
+  /// The currency the payment is being TYPED in. Follows the account until the
+  /// user says otherwise, because the ordinary case should cost no decisions.
+  ///
+  /// A settlement may legitimately be handed over in another currency — a
+  /// dirham account paid off in rupees — and until now this sheet refused to
+  /// hear it. `create_settlement()` has taken the conversion arguments since
+  /// db/migrations/0011; only the client was not sending them.
+  String? _entryCurrency;
+
+  /// Whether the converted figure was replaced by what actually changed hands,
+  /// and what that figure is, in the ACCOUNT currency.
+  bool _manual = false;
+  int? _actual;
+
+  /// Whether the RATE is one the user typed rather than the fetched one, and
+  /// that rate. Separate from the override above: one says what a unit is
+  /// worth, the other says what actually arrived.
+  bool _rateManual = false;
+  int? _manualRateE9;
+
+  String get _accountCurrency => widget.balance.currency;
+  String get _entry => _entryCurrency ?? _accountCurrency;
+  bool get _foreign => _entry != _accountCurrency;
+
+  bool get _canSave =>
+      _amount != null &&
+      !_saving &&
+      // An override with nothing valid typed into it is not savable: the ledger
+      // figure would be missing, and falling back to the automatic one silently
+      // would be the opposite of what the user asked for.
+      !(_manual && _foreign && _actual == null) &&
+      !(_rateManual && _foreign && _manualRateE9 == null);
+
   /// Set once the settlement is committed. The figures are captured at that
   /// moment rather than read back from the balance, which the refresh has
   /// already moved.
@@ -119,23 +154,62 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
           : widget.balance.outstandingPayable);
 
   Future<void> _save() async {
-    if (_amount == null || _saving) return;
+    if (!_canSave) return;
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _saving = true;
       _error = null;
     });
 
     try {
-      await ref.read(ledgerRepositoryProvider).createSettlement(
+      final foreign = _foreign;
+      final entry = _entry;
+      final account = _accountCurrency;
+
+      // A hand-typed rate needs no lookup and must not be quietly replaced by
+      // one: it is the rate for this settlement, stored on the row exactly as a
+      // fetched one is.
+      final manualRate = foreign && _rateManual ? _manualRateE9 : null;
+      final rate = foreign && manualRate == null
+          ? await ref.read(ratesRepositoryProvider).rate(entry, account)
+          : null;
+      final rateE9 = manualRate ?? rate?.rateE9;
+      final rateSource = manualRate != null ? kManualRateSource : rate?.source;
+
+      final manual = foreign && _manual && _actual != null;
+      final mode = foreign ? (manual ? 'manual' : 'automatic') : null;
+
+      if (foreign && rateE9 == null) {
+        setState(() {
+          _saving = false;
+          _error = 'No $entry to $account rate is available. Enter the amount in '
+              '$account instead — nothing has been saved.';
+        });
+        return;
+      }
+
+      final result = await ref.read(ledgerRepositoryProvider).createSettlement(
             personId: widget.balance.personId,
-            amountMinor: _amount!,
+            // Cross-currency: send what was typed and the rate, and let the
+            // database derive the account figure. Never a number computed here.
+            amountMinor: foreign ? null : _amount,
             date: _date,
             direction: _direction,
             transactionId: _transactionId,
             note: _note.text.trim().isEmpty ? null : _note.text.trim(),
+            enteredAmountMinor: foreign ? _amount : null,
+            enteredCurrency: foreign ? entry : null,
+            exchangeRateE9: rateE9,
+            rateSource: rateSource,
+            convertedAmountMinor: manual ? _actual : null,
+            conversionMode: mode,
           );
-      final settled = _amount!;
-      final remaining = _max - settled;
+
+      // What actually landed in the account, which on a converted settlement is
+      // not the figure the user typed. Read back from the row the database
+      // wrote rather than re-derived here.
+      final settled = result.amountMinor ?? _amount!;
+      final remaining = (_max - settled).clamp(0, _max);
       ref.refreshLedger(personId: widget.balance.personId);
       if (mounted) {
         setState(() {
@@ -153,7 +227,17 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final currency = ref.watch(currencyProvider);
+    // The ACCOUNT's currency, not the workspace's.
+    //
+    // This read `currencyProvider` — the workspace currency — so a settlement
+    // against a dirham account opened offering "350 INR" for an outstanding
+    // 350 AED. Every figure on this sheet is one of that account's own, and
+    // `person_balances` denominates all of them in its ledger currency; the
+    // workspace currency has no business here at all. The database was never
+    // wrong (the amount is written in the account's denomination either way),
+    // but the sheet was telling the user it was about to settle a different
+    // sum of money.
+    final currency = widget.balance.currency;
     final incoming = _direction == SettlementDirection.moneyIn;
     final accent = incoming ? context.money.receivable : context.money.payable;
 
@@ -190,7 +274,7 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
       busy: _saving,
       primaryColor: accent,
       primaryLabel: 'Settle now',
-      onPrimary: _amount == null ? null : _save,
+      onPrimary: _canSave ? _save : null,
       children: [
         FormSection(
           first: true,
@@ -308,7 +392,7 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
 
         FormSection(
           title: 'Amount',
-          aside: currency,
+          aside: _foreign ? 'Account keeps $currency' : currency,
           children: [
             _Arithmetic(
               outstanding: _max,
@@ -318,12 +402,43 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
             ),
             const SizedBox(height: AppSpacing.md),
             AmountField(
-              key: ValueKey('settle-$_direction-$_transactionId'),
-              currency: currency,
+              key: ValueKey('settle-$_direction-$_transactionId-$_entry'),
+              currency: _entry,
               autofocus: true,
-              maxMinor: _max,
+              // The ceiling is an ACCOUNT-currency figure, so it can only be
+              // applied to an amount typed in that currency. Typed in another,
+              // the over-settlement guard in the database is what enforces it —
+              // clamping a rupee figure against a dirham ceiling would be
+              // comparing two different quantities.
+              maxMinor: _foreign ? null : _max,
               onChanged: (minor) => setState(() => _amount = minor),
             ),
+            const SizedBox(height: AppSpacing.md),
+            CurrencyField(
+              label: 'Paid in',
+              value: _entry,
+              onChanged: (next) => setState(() => _entryCurrency = next),
+              helper: _foreign
+                  ? 'Converted into $currency when it is saved'
+                  : 'This account is kept in $currency',
+            ),
+            if (_foreign) ...[
+              const SizedBox(height: AppSpacing.md),
+              // Both overrides, because both questions are real: the rate may be
+              // wrong, and the amount that actually arrived may differ from what
+              // any rate implies once a bank has taken its cut.
+              ConversionPanel(
+                amountMinor: _amount,
+                from: _entry,
+                to: currency,
+                manual: _manual,
+                onManualChanged: (manual) => setState(() => _manual = manual),
+                onActualChanged: (minor) => setState(() => _actual = minor),
+                rateManual: _rateManual,
+                onRateManualChanged: (manual) => setState(() => _rateManual = manual),
+                onManualRateChanged: (rateE9) => setState(() => _manualRateE9 = rateE9),
+              ),
+            ],
           ],
         ),
 

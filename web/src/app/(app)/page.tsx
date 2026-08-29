@@ -29,7 +29,12 @@ import {
 import { friendlyDate, greeting } from '@/lib/dates';
 import { balanceTone, formatApprox, formatMoney } from '@/lib/money';
 import { trendsFromBuckets, type Trend } from '@/lib/series';
-import type { Dashboard, DashboardPeopleRow, WorkspacePosition } from '@/lib/types';
+import type {
+  CurrencyTotals,
+  Dashboard,
+  DashboardPeopleRow,
+  WorkspacePosition,
+} from '@/lib/types';
 
 export const metadata = { title: 'Dashboard' };
 
@@ -53,6 +58,7 @@ export default async function DashboardPage() {
     people_with_balance: people,
     cash_in_hand: cashInHand,
     opening: openingTotal,
+    totals_by_currency: byCurrency,
   } = data;
   // Absent against a database that has not run 0022; the card is simply not
   // drawn there, exactly as the currency card was not drawn before 0015.
@@ -268,12 +274,14 @@ export default async function DashboardPage() {
                 label="Cash in hand"
                 position={cashInHand}
                 currency={currency}
+                originals={originalsOf(byCurrency, currency, false)}
               />
               {hasOpening ? (
                 <WorkspacePositionBlock
                   label="Opening balance"
                   position={openingTotal}
                   currency={currency}
+                  originals={originalsOf(byCurrency, currency, true)}
                   caption="What the accounts were carried in with, less whatever has been settled against it. Independently calculated."
                 />
               ) : null}
@@ -623,15 +631,45 @@ function SectionBar({
  * half of the ledger, and the only place they are added together is the
  * position card above — which says so.
  */
+/**
+ * The original figures behind a converted total, as one line.
+ *
+ * A total in the workspace currency only exists because the dirhams were
+ * converted into rupees first; this says what they were before that step. Rows
+ * in the workspace currency are left out — the headline already is that figure,
+ * and repeating it would say nothing.
+ */
+function originalsOf(
+  totals: CurrencyTotals[],
+  baseCurrency: string,
+  opening: boolean,
+): string | undefined {
+  const parts: string[] = [];
+  for (const row of totals) {
+    if (row.currency === baseCurrency) continue;
+    const minor = (opening ? row.opening_net_position : row.cash_net_position) ?? 0;
+    if (minor === 0) continue;
+    parts.push(formatMoney(Math.abs(minor), row.currency));
+  }
+  return parts.length > 0 ? parts.join('  ·  ') : undefined;
+}
+
 function WorkspacePositionBlock({
   label,
   position,
   currency,
+  originals,
   caption,
 }: {
   label: string;
   position: WorkspacePosition;
   currency: string;
+  /**
+   * The figures this total was converted from, in the currencies they were
+   * entered in. Absent on a single-currency workspace, where the headline
+   * already is the original.
+   */
+  originals?: string;
   caption?: string;
 }) {
   const tone = balanceTone(position.position);
@@ -651,6 +689,9 @@ function WorkspacePositionBlock({
       >
         {formatMoney(Math.abs(position.position), currency)}
       </p>
+      {originals ? (
+        <p className="tnum mt-1 text-[0.75rem] text-ink-muted">from {originals}</p>
+      ) : null}
       {caption ? (
         <p className="mt-1 text-[0.75rem] leading-relaxed text-ink-faint">{caption}</p>
       ) : null}

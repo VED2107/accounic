@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { Badge, Card, ErrorNote, Field, Input, cn } from '@/components/ui/primitives';
 import { ConfirmDialog, Modal } from '@/components/ui/modal';
 import { AmountInput } from '@/components/ledger/amount-input';
+import { CurrencySelect } from '@/components/ledger/currency-select';
+import { ConversionFields, ConversionPanel, useRate } from '@/components/ledger/conversion';
 import { SubmitRow } from '@/components/ledger/transaction-sheet';
 import { useToast } from '@/components/ui/toast';
 import { todayIso } from '@/lib/dates';
@@ -498,6 +500,13 @@ function OpeningSettleSheet({
   // keyed on the result's identity rather than on its truth.
   const handled = useRef<ActionResult<unknown> | null>(null);
 
+  // The currency the payment is being TYPED in, and both conversion
+  // overrides. Offered wherever an automatic conversion is.
+  const [entryCurrency, setEntryCurrency] = useState(currency);
+  const [amount, setAmount] = useState<number | null>(null);
+  const foreign = entryCurrency !== currency;
+  const rate = useRate(entryCurrency, currency);
+
   useEffect(() => {
     if (!state?.ok || handled.current === state) return;
     handled.current = state;
@@ -535,10 +544,10 @@ function OpeningSettleSheet({
         {state && !state.ok && !state.field ? <ErrorNote>{state.error}</ErrorNote> : null}
 
         <input type="hidden" name="person_id" value={person.id} />
-        {/* The amount is typed and recorded in the account's own denomination:
-            the opening balance is stored in it, and this settles that entry. */}
-        <input type="hidden" name="entry_currency" value={currency} />
-        <input type="hidden" name="account_currency" value={currency} />
+        {/* An opening balance can be paid off in a currency the account is not
+            kept in, exactly as an ordinary settlement can.
+            `settle_opening_balance()` has taken the conversion arguments since
+            db/migrations/0021. */}
 
         <div className="rounded-card border border-line bg-sunken px-4 py-3">
           <p className="text-[0.75rem] text-ink-muted">Outstanding on the opening balance</p>
@@ -553,12 +562,36 @@ function OpeningSettleSheet({
           ) : null}
         </div>
 
-        <AmountInput
-          currency={currency}
-          autoFocus
-          max={outstanding}
-          defaultValue={minorToInput(outstanding, currency)}
-          error={fieldError('amount')}
+        <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
+          <AmountInput
+            currency={entryCurrency}
+            autoFocus
+            max={foreign ? undefined : outstanding}
+            defaultValue={foreign ? undefined : minorToInput(outstanding, currency)}
+            onValidChange={setAmount}
+            error={fieldError('amount')}
+          />
+          <CurrencySelect
+            name="entry_currency_visible"
+            label="Paid in"
+            value={entryCurrency}
+            onChange={setEntryCurrency}
+            hint={foreign ? undefined : 'Account currency'}
+            className="sm:w-56"
+          />
+        </div>
+
+        <ConversionPanel
+          amountMinor={amount}
+          from={entryCurrency}
+          to={currency}
+          state={rate}
+          defaultRateE9={opening.exchange_rate_e9 ?? null}
+        />
+        <ConversionFields
+          entryCurrency={entryCurrency}
+          accountCurrency={currency}
+          state={rate}
         />
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -632,6 +665,13 @@ function OpeningAdjustSheet({
   // keyed on the result's identity rather than on its truth.
   const handled = useRef<ActionResult<unknown> | null>(null);
 
+  // The currency the payment is being TYPED in, and both conversion
+  // overrides. Offered wherever an automatic conversion is.
+  const [entryCurrency, setEntryCurrency] = useState(currency);
+  const [amount, setAmount] = useState<number | null>(null);
+  const foreign = entryCurrency !== currency;
+  const rate = useRate(entryCurrency, currency);
+
   useEffect(() => {
     if (!state?.ok || handled.current === state) return;
     handled.current = state;
@@ -663,8 +703,6 @@ function OpeningAdjustSheet({
         <input type="hidden" name="person_id" value={person.id} />
         {/* The stored enum, resolved by lib/direction.ts and nowhere else. */}
         <input type="hidden" name="type" value={TYPE_FOR_FLOW[flow]} />
-        <input type="hidden" name="entry_currency" value={currency} />
-        <input type="hidden" name="account_currency" value={currency} />
 
         <div className="rounded-card border border-line bg-sunken px-4 py-3">
           <p className="text-[0.75rem] text-ink-muted">What this account opened with</p>
@@ -678,7 +716,35 @@ function OpeningAdjustSheet({
           </p>
         </div>
 
-        <AmountInput currency={currency} autoFocus error={fieldError('amount')} />
+        <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
+          <AmountInput
+            currency={entryCurrency}
+            autoFocus
+            onValidChange={setAmount}
+            error={fieldError('amount')}
+          />
+          <CurrencySelect
+            name="entry_currency_visible"
+            label="Entered in"
+            value={entryCurrency}
+            onChange={setEntryCurrency}
+            hint={foreign ? undefined : 'Account currency'}
+            className="sm:w-56"
+          />
+        </div>
+
+        <ConversionPanel
+          amountMinor={amount}
+          from={entryCurrency}
+          to={currency}
+          state={rate}
+          defaultRateE9={opening.exchange_rate_e9 ?? null}
+        />
+        <ConversionFields
+          entryCurrency={entryCurrency}
+          accountCurrency={currency}
+          state={rate}
+        />
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Date" htmlFor="opening-adjust-date" error={fieldError('date')}>

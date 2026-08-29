@@ -150,7 +150,29 @@ class PersonStatement {
     }
   }
 
-  /// True once the embedded face is in use, so symbols are safe to print.
+  /// Whether the embedded face can draw every character of [text].
+  ///
+  /// Poppins covers Latin and a handful of currency marks; it does not cover
+  /// `د.إ`, `৳`, `₫`, `₩`, `₪`, `₦`, `₱` or `฿`. Rather than ask the font —
+  /// which needs a live render context this code does not have — the rule is
+  /// stated as the ranges the face is known to carry, and anything outside them
+  /// is assumed undrawable. Erring that way costs a symbol; erring the other
+  /// way prints a box where a currency should be. The twin of `supportsAll()`
+  /// in `web/src/lib/pdf/typeface.ts`.
+  static bool _canDraw(String text) {
+    for (final rune in text.runes) {
+      final ok = rune < 0x0250 || // Latin, Latin-1 Supplement, Latin Extended
+          rune == 0x20B9 || // ₹
+          rune == 0x20AC || // €
+          rune == 0x2248 || // ≈
+          rune == 0x00B7 || // ·
+          rune == 0x2212; // −
+      if (!ok) return false;
+    }
+    return true;
+  }
+
+  /// True once the embedded face is in use, so symbols may be drawable at all.
   static bool get _hasGlyphs => _cachedTheme?.defaultTextStyle.font != null;
 
   /// An amount, with its symbol only when the face can actually draw one.
@@ -160,9 +182,9 @@ class PersonStatement {
   /// INR` rather than a tofu box followed by `6,000.00 INR`. Nothing about the
   /// amount changes; only whether a symbol precedes it.
   static String _money(int minor, String currency, {bool compactDecimals = true}) {
-    if (_hasGlyphs) {
-      return formatMoney(minor, currency: currency, compactDecimals: compactDecimals);
-    }
+    final withSymbol =
+        formatMoney(minor, currency: currency, compactDecimals: compactDecimals);
+    if (_hasGlyphs && _canDraw(withSymbol)) return withSymbol;
     return formatMinor(
       minor,
       currency: currency,
@@ -224,10 +246,49 @@ class PersonStatement {
         ),
       );
 
+  /// The brand blue the wordmark is set in — `--brand-2`, the same value
+  /// `web/src/lib/pdf/statement.ts` uses, so a statement exported from either
+  /// client is the same document.
+  static const PdfColor _brand = PdfColor.fromInt(0xFF2563EB);
+
+  /// The masthead — the same one the web statement prints.
+  ///
+  /// The wordmark, and nothing else. `web/src/lib/pdf/statement.ts` draws
+  /// exactly this: "Accounic" at 15pt bold in the brand blue on the left,
+  /// "Account statement" at 10.5pt bold and muted on the right. A drawn mark
+  /// was tried here and dropped — it does not appear on the web statement, and
+  /// two clients exporting the same document must produce the same document.
+  static pw.Widget _masthead() {
+    return pw.Row(
+      crossAxisAlignment: pw.CrossAxisAlignment.center,
+      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+      children: [
+        pw.Text(
+          'Accounic',
+          style: pw.TextStyle(
+            fontSize: 15,
+            fontWeight: pw.FontWeight.bold,
+            color: _brand,
+          ),
+        ),
+        pw.Text(
+          'Account statement',
+          style: pw.TextStyle(
+            fontSize: 10.5,
+            fontWeight: pw.FontWeight.bold,
+            color: PdfColors.grey700,
+          ),
+        ),
+      ],
+    );
+  }
+
   static pw.Widget _title(PersonPage page, String ownerName, DateTime now) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
+        _masthead(),
+        pw.SizedBox(height: 14),
         pw.Row(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
@@ -245,7 +306,12 @@ class PersonStatement {
                 pw.Text(
                   [
                     page.person.type.label,
-                    currencyLabel(page.currency),
+                    // The code and the name, never `currencyLabel` — that
+                    // carries the symbol, and the embedded face has no glyph
+                    // for several of them (د.إ, ৳, ₫). A statement that prints
+                    // an account's currency as two empty boxes is worse than
+                    // one that prints "AED — UAE Dirham".
+                    '${normaliseCode(page.currency)} — ${currencyName(page.currency)}',
                     if (page.person.phone != null) page.person.phone!,
                   ].join('  ·  '),
                   style: _muted(9),

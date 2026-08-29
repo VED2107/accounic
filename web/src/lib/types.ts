@@ -508,6 +508,13 @@ export interface CurrencyTotals {
   /** credit - debit, in `currency`. Never mixed with another currency. */
   net_position: number;
   /**
+   * The same net position split into its two books (db/migrations/0022), still
+   * in `currency` and still never mixed with another one. These are what let
+   * the dashboard print the ORIGINAL currency behind each converted total.
+   */
+  cash_net_position?: number;
+  opening_net_position?: number;
+  /**
    * `net_position` converted to `base_currency` by the engine's own converter.
    * Supplementary — the figure above is the real one. Null when no rate is
    * cached, which means "not known", never zero.

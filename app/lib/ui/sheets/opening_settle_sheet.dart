@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/currencies.dart';
 import '../../core/dates.dart';
 import '../../core/failure.dart';
 import '../../core/money.dart';
@@ -8,6 +9,7 @@ import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../providers.dart';
 import '../widgets/amount_field.dart';
+import '../widgets/currency_field.dart';
 import '../widgets/forms.dart';
 import '../../core/layout.dart';
 import 'sheet_scaffold.dart';
@@ -77,6 +79,29 @@ class _OpeningSettleSheetState extends ConsumerState<_OpeningSettleSheet> {
   bool _saving = false;
   String? _error;
 
+  /// The currency the payment is being TYPED in. An opening balance can be paid
+  /// off in a currency the account is not kept in, exactly as an ordinary
+  /// settlement can, and `settle_opening_balance()` has taken the conversion
+  /// arguments since db/migrations/0021.
+  String? _entryCurrency;
+
+  /// The two overrides. One says what a unit is worth; the other says what
+  /// actually arrived once a bank had taken its cut. Both are offered wherever
+  /// an automatic conversion is.
+  bool _manual = false;
+  int? _actual;
+  bool _rateManual = false;
+  int? _manualRateE9;
+
+  String get _entry => _entryCurrency ?? widget.currency;
+  bool get _foreign => _entry != widget.currency;
+
+  bool get _canSave =>
+      _amount != null &&
+      !_saving &&
+      !(_manual && _foreign && _actual == null) &&
+      !(_rateManual && _foreign && _manualRateE9 == null);
+
   @override
   void dispose() {
     _note.dispose();
@@ -84,21 +109,51 @@ class _OpeningSettleSheetState extends ConsumerState<_OpeningSettleSheet> {
   }
 
   Future<void> _save() async {
-    if (_amount == null || _saving) return;
+    if (!_canSave) return;
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _saving = true;
       _error = null;
     });
 
     try {
+      final foreign = _foreign;
+      final entry = _entry;
+      final account = widget.currency;
+
+      final manualRate = foreign && _rateManual ? _manualRateE9 : null;
+      final rate = foreign && manualRate == null
+          ? await ref.read(ratesRepositoryProvider).rate(entry, account)
+          : null;
+      final rateE9 = manualRate ?? rate?.rateE9;
+      final rateSource = manualRate != null ? kManualRateSource : rate?.source;
+
+      final manual = foreign && _manual && _actual != null;
+      final mode = foreign ? (manual ? 'manual' : 'automatic') : null;
+
+      if (foreign && rateE9 == null) {
+        setState(() {
+          _saving = false;
+          _error = 'No $entry to $account rate is available. Enter the amount in '
+              '$account instead — nothing has been saved.';
+        });
+        return;
+      }
+
       // No direction: settle_opening_balance() derives it from the opening
-      // entry, so this client cannot record money coming in against a balance
-      // the user owes.
+      // book's net position, so this client cannot record money coming in
+      // against a balance the user owes.
       await ref.read(ledgerRepositoryProvider).settleOpeningBalance(
             personId: widget.person.id,
-            amountMinor: _amount,
+            amountMinor: foreign ? null : _amount,
             date: _date,
             note: _note.text.trim().isEmpty ? null : _note.text.trim(),
+            enteredAmountMinor: foreign ? _amount : null,
+            enteredCurrency: foreign ? entry : null,
+            exchangeRateE9: rateE9,
+            rateSource: rateSource,
+            convertedAmountMinor: manual ? _actual : null,
+            conversionMode: mode,
           );
       ref.refreshLedger(personId: widget.person.id);
       if (mounted) Navigator.of(context).pop(true);
@@ -129,7 +184,7 @@ class _OpeningSettleSheetState extends ConsumerState<_OpeningSettleSheet> {
       error: _error,
       busy: _saving,
       primaryLabel: 'Record settlement',
-      onPrimary: _amount == null ? null : _save,
+      onPrimary: _canSave ? _save : null,
       children: [
         FormSection(
           first: true,
@@ -176,16 +231,45 @@ class _OpeningSettleSheetState extends ConsumerState<_OpeningSettleSheet> {
         ),
         FormSection(
           title: 'Amount',
+          aside: _foreign ? 'Account keeps ${widget.currency}' : null,
           children: [
-            // The opening balance is stored in the account's own denomination
-            // and this settles that entry, so there is no currency to choose.
             AmountField(
-              currency: widget.currency,
-              initial: _outstanding,
-              maxMinor: _outstanding,
+              key: ValueKey('opening-settle-$_entry'),
+              currency: _entry,
+              initial: _foreign ? null : _outstanding,
+              // The ceiling is an account-currency figure and can only be
+              // applied to an amount typed in that currency. Typed in another,
+              // the database's own guard is what enforces it.
+              maxMinor: _foreign ? null : _outstanding,
               autofocus: true,
               onChanged: (minor) => setState(() => _amount = minor),
             ),
+            const SizedBox(height: AppSpacing.md),
+            CurrencyField(
+              label: 'Paid in',
+              value: _entry,
+              onChanged: (next) => setState(() => _entryCurrency = next),
+              helper: _foreign
+                  ? 'Converted into ${widget.currency} when it is saved'
+                  : 'This account is kept in ${widget.currency}',
+            ),
+            if (_foreign) ...[
+              const SizedBox(height: AppSpacing.md),
+              ConversionPanel(
+                amountMinor: _amount,
+                from: _entry,
+                to: widget.currency,
+                manual: _manual,
+                onManualChanged: (manual) => setState(() => _manual = manual),
+                onActualChanged: (minor) => setState(() => _actual = minor),
+                rateManual: _rateManual,
+                onRateManualChanged: (manual) => setState(() => _rateManual = manual),
+                onManualRateChanged: (rateE9) => setState(() => _manualRateE9 = rateE9),
+                // The opening balance's own rate is the sensible starting point
+                // for a payment against it.
+                initialRateE9: widget.opening.exchangeRateE9,
+              ),
+            ],
           ],
         ),
         FormSection(

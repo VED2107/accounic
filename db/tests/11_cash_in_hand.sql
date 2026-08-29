@@ -499,6 +499,28 @@ begin
 
   perform pg_temp.assert_reconciles('after the opening balance was edited');
 
+  -- THE SPILL (db/migrations/0023). Replacing a SETTLED opening balance orphans
+  -- the settlement that named it: its target is now void, so the whole amount
+  -- spills. Before 0023 that spill was account-wide and landed on whatever row
+  -- was oldest — frequently an ordinary credit — so editing an opening balance
+  -- silently moved cash in hand. It was non-deterministic too: rows written in
+  -- one transaction share `created_at`, so the tie-break fell to a random uuid
+  -- and this suite passed and failed on alternate runs.
+  --
+  -- Cash in hand is 800 here and was 800 before the edit. That is the assertion.
+  perform pg_temp.assert(
+    'an orphaned opening settlement never spills onto a regular transaction',
+    (v_page -> 'regular' ->> 'position')::bigint = 80000
+      and (v_page -> 'regular' ->> 'receivable')::bigint = 100000
+      and (v_page -> 'regular' ->> 'settled')::bigint = 0);
+
+  perform pg_temp.assert(
+    'and the regular transactions are still reported as open',
+    not exists (
+      select 1 from jsonb_array_elements(v_page -> 'timeline') e
+      where e ->> 'entry_kind' = 'transaction'
+        and coalesce((e ->> 'settled_minor')::bigint, 0) <> 0));
+
   -- The adjustments made in §2 survive a balance replacement: they are separate
   -- movements of money, not part of the figure that was corrected.
   perform pg_temp.assert(
