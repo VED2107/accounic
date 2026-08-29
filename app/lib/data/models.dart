@@ -237,6 +237,17 @@ class PersonBalance {
     this.netBalanceBase,
     this.netBalanceDefault,
     this.openingMinor = 0,
+    this.cashInHandMinor = 0,
+    this.cashInHandBase,
+    this.openingNetMinor = 0,
+    this.openingNetBase,
+    this.regularReceivable = 0,
+    this.regularPayable = 0,
+    this.regularSettledTotal = 0,
+    this.openingReceivable = 0,
+    this.openingPayable = 0,
+    this.openingSettledTotal = 0,
+    this.openingEntryCount = 0,
   }) : _defaultCurrency = defaultCurrency;
 
   final String personId;
@@ -264,7 +275,41 @@ class PersonBalance {
   final int? netBalanceDefault;
 
   /// The opening balance as a signed figure: positive when they owe the user.
+  /// The GROSS figure — what the account was carried in with, before anything
+  /// was settled against it. For what is left of it, see [openingNetMinor].
   final int openingMinor;
+
+  /// The two halves of [netBalance] (db/migrations/0022).
+  ///
+  ///     cashInHandMinor + openingNetMinor == netBalance
+  ///
+  /// always, and the database asserts it. [cashInHandMinor] is the regular
+  /// trading position — credits, debits, transfers and their settlements — and
+  /// never contains the opening balance. [openingNetMinor] is what is left of
+  /// the opening book: the balance the account opened with, plus any credit or
+  /// debit recorded against it, less whatever has been settled against it.
+  ///
+  /// They are shown as two figures and never added together on screen.
+  final int cashInHandMinor;
+  final int? cashInHandBase;
+  final int openingNetMinor;
+  final int? openingNetBase;
+
+  /// The halves of each, for the sides a screen shows under the headline.
+  final int regularReceivable;
+  final int regularPayable;
+  final int regularSettledTotal;
+  final int openingReceivable;
+  final int openingPayable;
+  final int openingSettledTotal;
+
+  /// How many rows the opening book holds. Zero means the account has no
+  /// opening balance at all, which is not the same as one of zero.
+  final int openingEntryCount;
+
+  /// True when this account has an opening book worth showing its own section
+  /// for.
+  bool get hasOpening => openingEntryCount > 0 || openingMinor != 0;
 
   /// True when this person's history and their entry default have parted ways.
   bool get hasSwitchedCurrency => defaultCurrency != currency;
@@ -313,6 +358,31 @@ class PersonBalance {
             ? null
             : _int(json['net_balance_default']),
         openingMinor: _int(json['opening_minor']),
+        // Absent against a database older than 0022. Falling back to the whole
+        // position is the honest reading there: without the split, everything
+        // the account holds is what it holds.
+        cashInHandMinor: json['cash_in_hand_minor'] == null
+            ? _int(json['net_balance'])
+            : _int(json['cash_in_hand_minor']),
+        cashInHandBase: json['cash_in_hand_base'] == null
+            ? null
+            : _int(json['cash_in_hand_base']),
+        openingNetMinor: _int(json['opening_net_minor']),
+        openingNetBase:
+            json['opening_net_base'] == null ? null : _int(json['opening_net_base']),
+        regularReceivable: json['regular_receivable'] == null
+            ? _int(json['outstanding_receivable'])
+            : _int(json['regular_receivable']),
+        regularPayable: json['regular_payable'] == null
+            ? _int(json['outstanding_payable'])
+            : _int(json['regular_payable']),
+        regularSettledTotal: json['regular_settled_total'] == null
+            ? _int(json['total_settled'])
+            : _int(json['regular_settled_total']),
+        openingReceivable: _int(json['opening_receivable']),
+        openingPayable: _int(json['opening_payable']),
+        openingSettledTotal: _int(json['opening_settled_total']),
+        openingEntryCount: _int(json['opening_entry_count']),
       );
 
   bool get hasOutstanding => outstandingReceivable > 0 || outstandingPayable > 0;
@@ -370,6 +440,8 @@ class TimelineEntry {
     this.status,
     this.txnType,
     this.isOpening = false,
+    this.openingRole,
+    this.openingScope = false,
     this.enteredAmountMinor,
     this.enteredCurrency,
     this.exchangeRateE9,
@@ -384,11 +456,17 @@ class TimelineEntry {
     this.transferRole,
     this.transferCounterpartyId,
     this.transferCounterpartyName,
+    this.createdAt = '',
   })  : _entryAmountMinor = entryAmountMinor,
         _entryCurrency = entryCurrency;
 
   final String id;
   final bool isSettlement;
+
+  /// When the row was written, as opposed to the day it is dated. A statement
+  /// prints both, because two entries on one day are otherwise
+  /// indistinguishable on paper — and it is what orders rows within a day.
+  final String createdAt;
   final SettlementDirection direction;
   final int amountMinor;
   final String entryDate;
@@ -401,6 +479,20 @@ class TimelineEntry {
 
   /// A balance carried in from before the account existed (upgrade 3).
   final bool isOpening;
+
+  /// Which part of the opening book this row is: 'balance' for what the account
+  /// opened with, 'adjustment' for a credit or debit recorded against it. Null
+  /// on a settlement and on every ordinary transaction (db/migrations/0022).
+  final String? openingRole;
+
+  /// True when the row belongs to the opening book at all — including a
+  /// settlement made against the opening balance, which is not itself flagged.
+  /// The regular timeline holds no row for which this is true.
+  final bool openingScope;
+
+  /// True when this row is a credit or debit recorded against the opening
+  /// balance rather than what the account opened with.
+  bool get isOpeningAdjustment => openingRole == 'adjustment';
 
   /// What was actually handed over, when that was not the account's currency.
   /// Frozen at entry: a later rate move never touches it (upgrade 8).
@@ -469,7 +561,13 @@ class TimelineEntry {
       settledMinor: json['settled_minor'] == null ? null : _int(json['settled_minor']),
       remainingMinor: json['remaining_minor'] == null ? null : _int(json['remaining_minor']),
       status: SettlementStatus.parse(json['status']),
+      createdAt: (json['created_at'] as String?) ?? '',
       isOpening: json['is_opening'] as bool? ?? false,
+      openingRole: _str(json['opening_role']),
+      // Absent against a database older than 0022, where the only rows that
+      // belonged to the opening book were the flagged transactions themselves.
+      openingScope:
+          json['opening_scope'] as bool? ?? (json['is_opening'] as bool? ?? false),
       enteredAmountMinor:
           json['entered_amount_minor'] == null ? null : _int(json['entered_amount_minor']),
       enteredCurrency: _str(json['entered_currency']),
@@ -630,7 +728,14 @@ class PersonOpening {
   bool get isReceivable => signedMinor >= 0;
 
   factory PersonOpening.fromJson(Map<String, dynamic> json) => PersonOpening(
-        transactionId: json['transaction_id'] as String,
+        // `transaction_id` on `opening`, and — before db/migrations/0022 — `id`
+        // on a row of `opening_history`. A blunt `as String` on the first key
+        // was the whole of the "That account could not be loaded." bug: history
+        // is empty until the user edits an opening balance for the first time,
+        // so the cast never ran until the moment it started throwing on every
+        // load of that person. 0022 makes the two payloads the same shape; this
+        // still reads either, so an older database does not break a newer app.
+        transactionId: _str(json['transaction_id']) ?? _str(json['id']) ?? '',
         signedMinor: _int(json['signed_minor']),
         amountMinor: _int(json['amount_minor']),
         ledgerCurrency: (json['ledger_currency'] as String?) ?? kFallbackCurrency,
@@ -766,6 +871,89 @@ class TransferResult {
 }
 
 /// public.person_page()
+/// One of the two positions an account holds (db/migrations/0022).
+///
+/// `person_page()` states both outright — the cash-in-hand position under
+/// `regular`, the opening book's under `opening_position` — so that no client
+/// subtracts one from the other and no two clients can disagree about which is
+/// which. Every figure here is the database's; this class does no arithmetic.
+class PositionSplit {
+  const PositionSplit({
+    required this.currency,
+    required this.baseCurrency,
+    required this.positionMinor,
+    this.positionBaseMinor,
+    this.receivableMinor = 0,
+    this.payableMinor = 0,
+    this.settledMinor = 0,
+    this.creditMinor = 0,
+    this.debitMinor = 0,
+    this.entryCount = 0,
+  });
+
+  final String currency;
+  final String baseCurrency;
+
+  /// Signed: positive when they owe the user, negative when the user owes them.
+  final int positionMinor;
+  final int? positionBaseMinor;
+
+  final int receivableMinor;
+  final int payableMinor;
+  final int settledMinor;
+  final int creditMinor;
+  final int debitMinor;
+
+  /// Rows behind this position. Only meaningful for the opening book, where
+  /// zero means the account has no opening balance at all.
+  final int entryCount;
+
+  bool get isReceivable => positionMinor >= 0;
+  bool get isEmpty => positionMinor == 0 && entryCount == 0;
+
+  factory PositionSplit.fromJson(
+    Map<String, dynamic> json, {
+    required String fallbackCurrency,
+    required String fallbackBaseCurrency,
+  }) =>
+      PositionSplit(
+        currency: (json['currency'] as String?) ?? fallbackCurrency,
+        baseCurrency: (json['base_currency'] as String?) ?? fallbackBaseCurrency,
+        positionMinor: _int(json['position']),
+        positionBaseMinor:
+            json['position_base'] == null ? null : _int(json['position_base']),
+        receivableMinor: _int(json['receivable']),
+        payableMinor: _int(json['payable']),
+        settledMinor: _int(json['settled']),
+        creditMinor: _int(json['credit']),
+        debitMinor: _int(json['debit']),
+        entryCount: _int(json['entry_count']),
+      );
+
+  /// What an older database gives us: the balance row, split the only way it
+  /// can be. Keeps the screen honest against a backend that predates 0022
+  /// rather than showing two figures it cannot actually tell apart.
+  factory PositionSplit.fromBalance(
+    PersonBalance balance, {
+    required bool opening,
+  }) =>
+      PositionSplit(
+        currency: balance.currency,
+        baseCurrency: balance.baseCurrency,
+        positionMinor:
+            opening ? balance.openingNetMinor : balance.cashInHandMinor,
+        positionBaseMinor:
+            opening ? balance.openingNetBase : balance.cashInHandBase,
+        receivableMinor:
+            opening ? balance.openingReceivable : balance.regularReceivable,
+        payableMinor: opening ? balance.openingPayable : balance.regularPayable,
+        settledMinor: opening
+            ? balance.openingSettledTotal
+            : balance.regularSettledTotal,
+        entryCount: opening ? balance.openingEntryCount : balance.transactionCount,
+      );
+}
+
 class PersonPage {
   const PersonPage({
     required this.person,
@@ -778,10 +966,51 @@ class PersonPage {
     required this.baseCurrency,
     this.opening,
     this.openingHistory = const [],
-  });
+    this.openingActivity = const [],
+    PositionSplit? regular,
+    PositionSplit? openingPosition,
+  })  : _regular = regular,
+        _openingPosition = openingPosition;
 
   final Person person;
   final PersonBalance balance;
+
+  final PositionSplit? _regular;
+  final PositionSplit? _openingPosition;
+
+  /// The account's regular trading position — its cash in hand. Never contains
+  /// the opening balance (db/migrations/0022).
+  PositionSplit get regular =>
+      _regular ?? PositionSplit.fromBalance(balance, opening: false);
+
+  /// The opening book's position, on its own. Shown beside [regular], never
+  /// inside it, and never added to it on screen.
+  PositionSplit get openingPosition =>
+      _openingPosition ?? PositionSplit.fromBalance(balance, opening: true);
+
+  /// Credits, debits and settlements recorded against the opening balance.
+  /// These are deliberately absent from [timeline]: they are not regular
+  /// transactions and must never be shown among them.
+  final List<TimelineEntry> openingActivity;
+
+  /// The same page with a longer timeline, for a statement that pages through
+  /// every row rather than showing one screenful. Every other figure is
+  /// unchanged, because every other figure is the whole account's already.
+  PersonPage withTimeline(List<TimelineEntry> rows) => PersonPage(
+        person: person,
+        balance: balance,
+        timeline: rows,
+        timelineTotal: timelineTotal,
+        openTransactions: openTransactions,
+        currency: currency,
+        defaultCurrency: defaultCurrency,
+        baseCurrency: baseCurrency,
+        opening: opening,
+        openingHistory: openingHistory,
+        openingActivity: openingActivity,
+        regular: _regular,
+        openingPosition: _openingPosition,
+      );
 
   /// The opening balance, in its own section (db/migrations/0019). Null when
   /// the account has none — which is not the same as zero and reads
@@ -821,6 +1050,30 @@ class PersonPage {
           for (final row in (json['opening_history'] as List? ?? []))
             PersonOpening.fromJson(Map<String, dynamic>.from(row as Map)),
         ],
+        openingActivity: [
+          for (final entry in (json['opening_activity'] as List? ?? []))
+            TimelineEntry.fromJson(Map<String, dynamic>.from(entry as Map)),
+        ],
+        regular: json['regular'] == null
+            ? null
+            : PositionSplit.fromJson(
+                Map<String, dynamic>.from(json['regular'] as Map),
+                fallbackCurrency:
+                    (json['currency'] as String?) ?? kFallbackCurrency,
+                fallbackBaseCurrency: (json['base_currency'] as String?) ??
+                    (json['currency'] as String?) ??
+                    kFallbackCurrency,
+              ),
+        openingPosition: json['opening_position'] == null
+            ? null
+            : PositionSplit.fromJson(
+                Map<String, dynamic>.from(json['opening_position'] as Map),
+                fallbackCurrency:
+                    (json['currency'] as String?) ?? kFallbackCurrency,
+                fallbackBaseCurrency: (json['base_currency'] as String?) ??
+                    (json['currency'] as String?) ??
+                    kFallbackCurrency,
+              ),
         timeline: [
           for (final entry in (json['timeline'] as List? ?? []))
             TimelineEntry.fromJson(entry as Map<String, dynamic>),
@@ -1075,6 +1328,55 @@ class CurrencyToday {
       );
 }
 
+/// One workspace-level total, in the workspace currency (db/migrations/0022).
+///
+/// The dashboard shows two of these and never one: `Cash in hand` is the
+/// consolidated regular position, `Opening balance` is the opening book's. They
+/// are calculated independently by the database and add up to the net position,
+/// which is what makes it safe to print both without double-counting anything.
+class WorkspacePosition {
+  const WorkspacePosition({
+    required this.baseCurrency,
+    required this.positionMinor,
+    this.receivableMinor = 0,
+    this.payableMinor = 0,
+    this.settledMinor = 0,
+    this.todayMinor = 0,
+    this.todayCount = 0,
+    this.peopleCount = 0,
+  });
+
+  final String baseCurrency;
+
+  /// Signed: positive when the workspace is owed, negative when it owes.
+  final int positionMinor;
+  final int receivableMinor;
+  final int payableMinor;
+  final int settledMinor;
+
+  /// Everything that moved today within this half of the ledger.
+  final int todayMinor;
+  final int todayCount;
+  final int peopleCount;
+
+  bool get isReceivable => positionMinor >= 0;
+
+  factory WorkspacePosition.fromJson(
+    Map<String, dynamic> json, {
+    required String fallbackBaseCurrency,
+  }) =>
+      WorkspacePosition(
+        baseCurrency: (json['base_currency'] as String?) ?? fallbackBaseCurrency,
+        positionMinor: _int(json['position']),
+        receivableMinor: _int(json['receivable']),
+        payableMinor: _int(json['payable']),
+        settledMinor: _int(json['settled']),
+        todayMinor: _int(json['today']),
+        todayCount: _int(json['today_count']),
+        peopleCount: _int(json['people_count']),
+      );
+}
+
 /// public.dashboard()
 class Dashboard {
   const Dashboard({
@@ -1087,7 +1389,19 @@ class Dashboard {
     required this.baseCurrency,
     this.totalsByCurrency = const [],
     this.todayByCurrency = const [],
+    this.cashInHand,
+    this.openingTotal,
   });
+
+  /// The consolidated regular position, converted to the workspace currency.
+  /// Never contains an opening balance. Null against a database older than
+  /// 0022, where the split does not exist and the screen falls back to the one
+  /// figure it always had.
+  final WorkspacePosition? cashInHand;
+
+  /// The opening book's position, calculated independently and shown beside
+  /// [cashInHand] — never inside it.
+  final WorkspacePosition? openingTotal;
 
   final OwnerSummary summary;
   final TodayTotals today;
@@ -1109,8 +1423,23 @@ class Dashboard {
 
   factory Dashboard.fromJson(Map<String, dynamic> json) {
     final profile = (json['profile'] as Map<String, dynamic>?) ?? const {};
+    final base = (json['base_currency'] as String?) ??
+        (profile['currency'] as String?) ??
+        kFallbackCurrency;
     return Dashboard(
       summary: OwnerSummary.fromJson(json['summary'] as Map<String, dynamic>),
+      cashInHand: json['cash_in_hand'] == null
+          ? null
+          : WorkspacePosition.fromJson(
+              Map<String, dynamic>.from(json['cash_in_hand'] as Map),
+              fallbackBaseCurrency: base,
+            ),
+      openingTotal: json['opening'] == null
+          ? null
+          : WorkspacePosition.fromJson(
+              Map<String, dynamic>.from(json['opening'] as Map),
+              fallbackBaseCurrency: base,
+            ),
       today: TodayTotals.fromJson(json['today'] as Map<String, dynamic>),
       currency: (profile['currency'] as String?) ?? kFallbackCurrency,
       baseCurrency: (json['base_currency'] as String?) ??

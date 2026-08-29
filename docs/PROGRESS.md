@@ -3,8 +3,8 @@
 Status of the Accounic build against `context.md`. This is the file to read first when
 picking the work back up.
 
-**Last updated:** 2026-08-28 (eleventh session)
-**Current release:** [v1.6.0](https://github.com/VED2107/accounic/releases/latest)
+**Last updated:** 2026-08-29 (twelfth session)
+**Current release:** [v1.7.0](https://github.com/VED2107/accounic/releases/latest)
 **Overall:** Phases 1–4 complete and verified against the live database. Phase 5
 (performance) measured and the client half tuned — see `docs/performance.md`. Phase 6
 (hardening) partly done.
@@ -26,6 +26,7 @@ Everything found since v1.0.0 was found on a **phone**, and none of it was catch
 | 1.0.5–1.0.7 | delete refusing a person whose history was all retracted; Save and Cancel sitting under the keyboard |
 | 1.1.0 | multi-currency, opening balances, and the rest of the keyboard story on the person form |
 | 1.1.1 | currency made genuinely per person: changing it no longer rewrites history |
+| 1.7.0 | cash in hand and the opening balance told apart everywhere; credit and debit against an opening balance; a PDF statement on Windows and Android; the person screen that stopped loading after an opening-balance edit |
 | 1.6.0 | the opening balance separated from the activity it was never part of; transfers between people as one transaction with two linked legs; a PDF statement per account |
 | 1.5.0 | the displayed rate reconciles with the displayed conversion; a rate can be typed by hand and is frozen on the entry; one currency presenter across web and Flutter |
 | 1.4.0 | entries keep the currency they were entered in; the anonymous execute surface closed; Android backups off |
@@ -50,7 +51,7 @@ Each now has a widget test pinning it — see README §4.
 
 ## 2. Database — `db/` (complete)
 
-Nine migrations, applied in order to the live Supabase project.
+Twenty-two migrations, applied in order to the live Supabase project.
 
 | File | Contents |
 |---|---|
@@ -66,6 +67,7 @@ Nine migrations, applied in order to the live Supabase project.
 | `0010_currency.sql` | `currencies` reference table, `people.currency`, conversion provenance on every ledger row, `is_opening`, the per-owner `exchange_rates` cache, `convert_amount_minor()`, and the engine views rebuilt to carry currency |
 | `0011_currency_mutations.sql` | the write path: currency and opening balance on `create_person()`, restatement on `update_person()` (withdrawn in 0013), conversion arguments on every money RPC, `set_person_opening_balance()` |
 | `0012_currency_reads.sql` | `dashboard()`, `person_page()`, `search_all()`, `activity_page()` and `activity_summary()` made currency-aware |
+| `0022_cash_in_hand.sql` | **cash in hand and the opening balance become two positions** — `opening_role` splits the opening book into a balance row and its adjustments, `opening_scope` classifies every row of the feed (settlements included), `person_balances` and `owner_summary` carry both halves, and `cash_in_hand_minor + opening_net_minor = net_balance` is asserted at migration time. Also `adjust_opening_balance()`, a book-wide `settle_opening_balance()`, and the `opening_history` key that made the person screen unparseable |
 | `0020_transfers.sql` | **transfers** — `transfers`, the two linked legs on `transactions`, the deferred trigger that keeps them one thing, `create_transfer()` / `update_transfer()` / `void_transfer()`, RLS, and `transfer_integrity` |
 | `0021_settle_opening_balance.sql` | the opening balance gets its own settle path — `settle_opening_balance()`, the one route allowed to name one, plus its remainder on `person_opening` |
 | `0019_opening_balance.sql` | the opening balance leaves the timeline: `person_opening`, `person_page()` in two sections, settlement against one refused, and an idempotent reclassification of pre-flag rows |
@@ -674,3 +676,144 @@ Full write-up: [`docs/transfers-and-opening-balance.md`](./transfers-and-opening
   before the repository was made public (§7.3). The RLS guarantees it used to check over
   HTTP are covered by `db/tests/02` and `db/tests/10`, which assert isolation as a second
   real user.
+
+---
+
+## 12. Twelfth session — cash in hand, the opening book, and the crash between them (v1.7.0)
+
+### 12.1 The bug that started it
+
+The desktop app reported **"Couldn't load this account · That account could not be
+loaded."** on one person, and only after their opening balance had been edited.
+
+It was not a data problem, and it was not the database. `person_page()` returned a
+perfectly good payload; the Flutter client could not parse it.
+
+`person_page()` served `opening` keyed on `transaction_id` and each row of
+`opening_history` keyed on `id`. One Dart model parses both, and its `transactionId` was
+a non-nullable `String` read with a bare cast:
+
+```dart
+transactionId: json['transaction_id'] as String,   // Null is not a subtype of String
+```
+
+`opening_history` is empty until the user replaces an opening balance for the first time —
+replacing one retracts the old rather than editing it — so the cast never ran until the
+moment it started throwing on **every subsequent load of that person**. That is why it
+looked like editing an opening balance had corrupted the account: the save had always
+worked, and the read after it never would again.
+
+The web client was unaffected: it has a separate `OpeningHistoryEntry` type keyed on `id`,
+so it never went through the failing model. Neither `flutter analyze` nor 220 passing Dart
+tests could see it, because no test had ever built a page with a non-empty
+`opening_history` — the exact shape the bug needs.
+
+Fixed in both directions, deliberately:
+
+* `0022` serves `opening_history` with the **same keys as `opening`**, including
+  `transaction_id`, so one payload shape feeds one model;
+* `PersonOpening.fromJson` falls back to `id`, so a newer app cannot be broken by an older
+  database.
+
+`db/tests/11` asserts that every key `opening` carries, `opening_history` carries too —
+which is the invariant, rather than the symptom.
+
+### 12.2 Cash in hand and the opening balance are two positions
+
+The opening balance was summed into every headline figure with no way to take it back out,
+so no screen could show the regular trading position on its own. `0022` splits it:
+
+```
+cash_in_hand_minor + opening_net_minor = net_balance
+```
+
+asserted at migration time against live data, re-asserted in `db/tests/11` after every kind
+of entry, and true for all 19 accounts in the live project on the day it shipped —
+**including every historical one**, with no backfill. That is the point of deriving the
+split from `transaction_settlement_status()`, the FIFO allocator every screen already
+reads, rather than storing a classification that could drift from it.
+
+| Where | Before | After |
+|---|---|---|
+| Dashboard | "By currency" card | **Cash in hand** and **Opening balance** as two totals, each with its own receivable / payable / settled / today |
+| Person | "Current position" (everything) | **Cash in hand** headline, **Opening balance** and **Account position** beside it |
+| Person figures | lifetime totals | the regular halves — they sit under a card headed "Cash in hand" |
+| Timeline | opening settlements appeared among the transactions | `not opening_scope`: the opening book never reaches it |
+| PDF | one position | the same three figures, and an Opening balance activity table of its own |
+
+`opening_scope` is one derived boolean covering both halves of the feed — a transaction is
+in the opening book when it is flagged, a settlement when it names a flagged transaction.
+Derived, never stored, so every historical row was classified the moment the migration ran.
+
+### 12.3 Credit and debit against an opening balance
+
+The opening balance became a small **book** rather than a single row: one `opening_role =
+'balance'`, plus any number of `'adjustment'` rows written by `adjust_opening_balance()`.
+The unique index that meant "one opening row per person" now means "one opening *balance*
+per person", which is what it was always for.
+
+An adjustment is an ordinary transaction in every respect except two flags, which is what
+keeps it out of `timeline`, out of `open_transactions` and out of cash in hand with **no
+second code path for the arithmetic** — the same reason `0010` made the opening balance a
+transaction in the first place. The direction model is untouched: `p_type` is the stored
+enum, and the clients map the spoken words through `direction.ts` / `direction.dart` and
+nowhere else.
+
+`settle_opening_balance()` was generalised to settle the book: the direction comes from the
+book's net position, and the settlements are **targeted** at the opening rows, because the
+FIFO spill is account-wide and an untargeted settlement would leak onto regular
+transactions and move cash in hand.
+
+### 12.4 The statement, on the desktop
+
+Windows and Android now have **Download PDF** on the person screen. It is generated on the
+device with the `pdf` package, from `person_page()`, through the row rules in
+`core/statement.dart` — the Dart twin of `web/src/lib/pdf/rows.ts`, which computes no
+money and walks its running balance with `netDelta()` exactly as the web does. Windows
+opens a native save dialog; Android writes to the app's external files directory. Cancel is
+a first-class outcome, not an error.
+
+### 12.5 Two bugs found by driving the binary, not by testing it
+
+Both were invisible to `flutter analyze` and to a green test suite, and both were found by
+running the Windows release and looking at it — the same lesson as every release since
+1.0.1.
+
+1. **Every `₹` printed as a tofu box.** The `pdf` package defaults to the PDF standard-14
+   fonts, which have no rupee glyph. On a financial document the reader cannot then tell
+   what currency the number is in. Poppins is already bundled for the app's headings and
+   covers `₹`, so the statement embeds it — and carries the same ISO-code fallback the web
+   statement has, through an injected `StatementFormatter`.
+
+2. **The settle sheet offered a figure the server would refuse.** With a ₹5,000 opening
+   balance, a ₹1,000 opening credit and a ₹500 opening debit, it defaulted to ₹5,000 — the
+   balance row's own remainder — while the book had ₹4,500 left. `settle_opening_balance()`
+   settles the book and refuses more than its remainder. Both clients now read the
+   position, and `app/test/cash_in_hand_test.dart` pins the distinction.
+
+### 12.6 Verification
+
+| Check | Result |
+|---|---|
+| `node db/tools/run-sql.mjs test` | 11 suites, **407 assertions** — including 53 new in `db/tests/11_cash_in_hand.sql` |
+| `cd web && npx tsc --noEmit` | clean |
+| `cd web && npm test` | **120 pass** (110 + 10 new) |
+| `cd web && npx next build` | succeeds, 11 routes |
+| `cd app && flutter analyze` | no issues |
+| `cd app && flutter test` | **236 pass** (220 + 16 new) |
+| `flutter build windows --release` | built |
+| `flutter build apk --release` | built, 27.0 MB |
+| Installer | silent-installed, and the installed 1.7.0 binary launched and rendered |
+
+**Driven on Windows, screenshot by screenshot:** dashboard (cash in hand ₹10,999 and
+opening balance ₹4,500 as two totals, summing to the ₹6,499 net position) → the person
+whose screen used to fail, now loading with all three figures → Download PDF → native save
+dialog → a valid `%PDF-1.5` with the opening book in its own section → opening-balance
+Credit ₹1,000 and Debit ₹500 on a scratch account, **cash in hand unchanged at ₹0 through
+both** → Settle ₹4,500 → settled in full, with the regular "Settled" figure still ₹0 and
+**zero regular transaction rows created**. The scratch account was deleted afterwards and
+every account in the project re-checked: all 19 reconcile.
+
+**Not verified on a device:** the Android half of the PDF save path. No Android emulator
+runs on this machine (§9.3), so Android remains widget tests at phone metrics plus a
+sideloaded APK. The code path differs from Windows only in where the file is written.

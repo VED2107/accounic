@@ -89,21 +89,81 @@ function page(entries: TimelineEntry[], net: number, opening: PersonOpening | nu
       transaction_count: entries.length,
       opening_minor: opening?.signed_minor ?? 0,
       last_activity_at: null,
+      // db/migrations/0022: the two halves of net_balance. These fixtures
+      // have no opening balance unless one is passed, so cash in hand is the
+      // whole position and the opening half is zero — which is exactly what
+      // the invariant demands.
+      cash_in_hand_minor: net - (opening?.signed_minor ?? 0),
+      cash_in_hand_base: net - (opening?.signed_minor ?? 0),
+      opening_net_minor: opening?.signed_minor ?? 0,
+      opening_net_base: opening?.signed_minor ?? 0,
+      regular_credit_minor: 0,
+      regular_debit_minor: 0,
+      regular_receivable: 0,
+      regular_payable: 0,
+      regular_settled_total: 0,
+      opening_credit_minor: 0,
+      opening_debit_minor: 0,
+      opening_receivable: 0,
+      opening_payable: 0,
+      opening_settled_total: 0,
+      opening_entry_count: opening ? 1 : 0,
     },
     currency: 'INR',
     default_currency: 'INR',
     base_currency: 'INR',
     opening,
     opening_history: [],
+    opening_activity: [],
+    regular: {
+      currency: 'INR',
+      base_currency: 'INR',
+      position: net - (opening?.signed_minor ?? 0),
+      position_base: net - (opening?.signed_minor ?? 0),
+      receivable: 0,
+      payable: 0,
+      settled: 0,
+      credit: 0,
+      debit: 0,
+    },
+    opening_position: {
+      currency: 'INR',
+      base_currency: 'INR',
+      position: opening?.signed_minor ?? 0,
+      position_base: opening?.signed_minor ?? 0,
+      receivable: 0,
+      payable: 0,
+      settled: 0,
+      credit: 0,
+      debit: 0,
+      entry_count: opening ? 1 : 0,
+    },
     timeline: entries,
     timeline_total: entries.length,
     open_transactions: [],
   };
 }
 
+/**
+ * `buildStatementRows` for a whole page.
+ *
+ * Since db/migrations/0022 the function takes the rows and the position they
+ * close on, so the same code can walk the regular timeline and the opening
+ * book. These tests are all about the regular timeline, so this names that
+ * pairing once instead of at every call site.
+ */
+function buildStatementRowsFor(
+  data: PersonPage,
+  currency: string,
+  baseCurrency: string,
+  format: StatementFormatter,
+) {
+  return buildStatementRows(data.timeline, data.regular.position, currency, baseCurrency, format);
+}
+
 describe('what a statement row says', () => {
   it('carries the date, the time, the type, the original amount and its currency', () => {
-    const rows = buildStatementRows(
+    const rows = buildStatementRowsFor(
       page(
         [
           entry({
@@ -139,7 +199,7 @@ describe('what a statement row says', () => {
   });
 
   it('prints the rate at a precision that reproduces the converted figure', () => {
-    const rows = buildStatementRows(
+    const rows = buildStatementRowsFor(
       page(
         [
           entry({
@@ -163,7 +223,7 @@ describe('what a statement row says', () => {
   });
 
   it('never shows an INR equivalent as if it were the original amount', () => {
-    const rows = buildStatementRows(
+    const rows = buildStatementRowsFor(
       page(
         [
           entry({
@@ -185,7 +245,7 @@ describe('what a statement row says', () => {
   });
 
   it('shows no equivalent when nothing was converted', () => {
-    const rows = buildStatementRows(
+    const rows = buildStatementRowsFor(
       page([entry({ amount_minor: 100000, entry_amount_minor: 100000, entry_currency: 'INR' })], 100000),
       'INR',
       'INR',
@@ -199,7 +259,7 @@ describe('what a statement row says', () => {
 
 describe('transfers on a statement', () => {
   it('names the other party rather than calling the leg a credit or a debit', () => {
-    const rows = buildStatementRows(
+    const rows = buildStatementRowsFor(
       page(
         [
           entry({
@@ -227,7 +287,7 @@ describe('transfers on a statement', () => {
   });
 
   it('reads from the other side too', () => {
-    const rows = buildStatementRows(
+    const rows = buildStatementRowsFor(
       page(
         [
           entry({
@@ -253,7 +313,7 @@ describe('transfers on a statement', () => {
 
 describe('the running balance', () => {
   it('lands exactly on the position the database reports', () => {
-    const rows = buildStatementRows(
+    const rows = buildStatementRowsFor(
       page(
         [
           entry({ id: 'a', entry_type: 'credit', amount_minor: 500000, entry_date: '2026-08-01' }),
@@ -274,7 +334,7 @@ describe('the running balance', () => {
   });
 
   it('ignores voided entries, exactly as every balance does', () => {
-    const rows = buildStatementRows(
+    const rows = buildStatementRowsFor(
       page(
         [
           entry({ id: 'a', entry_type: 'credit', amount_minor: 500000, entry_date: '2026-08-01' }),
@@ -341,7 +401,7 @@ describe('the opening balance block', () => {
 
   it('is never one of the transaction rows', () => {
     const built = page([entry({ id: 'x', amount_minor: 100000 })], 1139369, opening);
-    const rows = buildStatementRows(built, 'INR', 'INR', FORMAT);
+    const rows = buildStatementRowsFor(built, 'INR', 'INR', FORMAT);
     expect(rows.every((row) => row.type !== 'Opening balance')).toBe(true);
     expect(rows).toHaveLength(1);
   });

@@ -226,15 +226,66 @@ export async function buildPersonStatement(input: StatementInput): Promise<Uint8
 
   drawMasthead(ctx);
   drawIdentity(ctx, person.name, person.type, person.phone, person.email, person.is_archived);
-  drawPosition(ctx, balance.net_balance, currency, balance.net_balance_base, baseCurrency, person.name);
-  drawOpening(ctx, opening, balance.opening_minor, currency, baseCurrency);
+  // Cash in hand leads; the opening balance is a figure of its own beside it,
+  // and the account position is the two together (db/migrations/0022). The
+  // statement never prints one number that silently contains the other.
+  drawPosition(ctx, data, currency, baseCurrency, person.name);
+  drawOpening(ctx, data, currency, baseCurrency);
 
-  const rows = buildStatementRows(data, currency, baseCurrency, FORMAT);
+  const rows = buildStatementRows(
+    data.timeline,
+    regularPosition(data).position,
+    currency,
+    baseCurrency,
+    FORMAT,
+  );
   drawTable(ctx, rows, currency, baseCurrency, truncated);
   drawTotals(ctx, data, currency);
   paginate(ctx, person.name);
 
   return doc.save();
+}
+
+/**
+ * The two halves of the account, as the database states them.
+ *
+ * `person_page()` serves both outright since db/migrations/0022. The
+ * fallbacks below are for a statement exported against a database that has
+ * not run it, where the whole position is all there is to print and pretending
+ * otherwise would be inventing a split from figures that cannot make one.
+ */
+function regularPosition(data: PersonPage) {
+  const { balance } = data;
+  return (
+    data.regular ?? {
+      currency: data.currency,
+      base_currency: data.base_currency,
+      position: balance.net_balance,
+      position_base: balance.net_balance_base,
+      receivable: balance.outstanding_receivable,
+      payable: balance.outstanding_payable,
+      settled: balance.total_settled,
+      credit: balance.total_credit,
+      debit: balance.total_debit,
+    }
+  );
+}
+
+function openingPosition(data: PersonPage) {
+  return (
+    data.opening_position ?? {
+      currency: data.currency,
+      base_currency: data.base_currency,
+      position: 0,
+      position_base: null,
+      receivable: 0,
+      payable: 0,
+      settled: 0,
+      credit: 0,
+      debit: 0,
+      entry_count: 0,
+    }
+  );
 }
 
 function newPage(ctx: Ctx) {
@@ -298,14 +349,21 @@ function drawIdentity(
 
 function drawPosition(
   ctx: Ctx,
-  netMinor: number,
+  data: PersonPage,
   currency: string,
-  netBaseMinor: number | null,
   baseCurrency: string,
   name: string,
 ) {
+  const regular = regularPosition(data);
+  const opening = openingPosition(data);
+  const netMinor = regular.position;
+  const netBaseMinor = regular.position_base;
+  const hasOpening =
+    (opening.entry_count ?? 0) > 0 || data.balance.opening_minor !== 0;
+
   const tone = balanceTone(netMinor);
-  const height = currency !== baseCurrency && netBaseMinor !== null ? 74 : 62;
+  const base = currency !== baseCurrency && netBaseMinor !== null ? 74 : 62;
+  const height = hasOpening ? base + 30 : base;
 
   ctx.page.drawRectangle({
     x: MARGIN,
@@ -319,7 +377,7 @@ function drawPosition(
 
   const firstName = name.split(' ')[0] ?? name;
   let y = ctx.y - 17;
-  drawLeft(ctx, 'Current position', MARGIN + 14, y, ctx.regular, 8.5, INK_MUTED);
+  drawLeft(ctx, 'Cash in hand', MARGIN + 14, y, ctx.regular, 8.5, INK_MUTED);
 
   y -= 22;
   drawLeft(
@@ -336,10 +394,10 @@ function drawPosition(
   drawLeft(
     ctx,
     tone === 'receivable'
-      ? `${firstName} owes you`
+      ? `${firstName} owes you, on regular activity`
       : tone === 'payable'
-        ? `You owe ${firstName}`
-        : 'Everything is settled',
+        ? `You owe ${firstName}, on regular activity`
+        : 'Regular activity is settled',
     MARGIN + 14,
     y,
     ctx.regular,
@@ -357,6 +415,19 @@ function drawPosition(
       ctx.regular,
       8.5,
       INK_FAINT,
+    );
+  }
+
+  // The opening balance, stated as its own figure and never folded into the
+  // one above; the account position beside it, so the arithmetic is visible
+  // rather than implied. No number here appears inside another.
+  if (hasOpening) {
+    y -= 18;
+    secondaryFigure(
+      ctx, 'OPENING BALANCE', opening.position, currency, MARGIN + 14, y,
+    );
+    secondaryFigure(
+      ctx, 'ACCOUNT POSITION', data.balance.net_balance, currency, MARGIN + 190, y, true,
     );
   }
 
@@ -393,11 +464,14 @@ function drawPosition(
  */
 function drawOpening(
   ctx: Ctx,
-  opening: PersonPage['opening'],
-  openingMinor: number,
+  data: PersonPage,
   currency: string,
   baseCurrency: string,
 ) {
+  const opening = data.opening;
+  const openingMinor = data.balance.opening_minor;
+  const position = openingPosition(data);
+  const activity = data.opening_activity ?? [];
   ensure(ctx, 92);
   drawLeft(ctx, 'OPENING BALANCE', MARGIN, ctx.y, ctx.bold, 8, INK_FAINT);
   ctx.y -= 6;
@@ -466,17 +540,83 @@ function drawOpening(
   labelledRight(ctx, 'Dated', lines.dated, ctx.y + 26);
   labelledRight(ctx, 'Recorded', lines.recorded, ctx.y + 13);
 
-  ctx.y -= 14;
+  if (lines.settlement) {
+    ctx.y -= 12;
+    drawLeft(ctx, lines.settlement, MARGIN, ctx.y, ctx.regular, 8, INK_MUTED);
+  }
+
+  ctx.y -= 12;
   drawLeft(
     ctx,
-    'Counted in the current position above. Not a credit or a debit, and not settled on its own.',
+    `Outstanding ${pdfMoney(Math.abs(position.position), currency)}`,
+    MARGIN,
+    ctx.y,
+    ctx.bold,
+    8.5,
+    position.position > 0 ? RECEIVABLE : position.position < 0 ? PAYABLE : INK_MUTED,
+  );
+
+  ctx.y -= 13;
+  drawLeft(
+    ctx,
+    'Kept apart from cash in hand. The account position above is the two together.',
     MARGIN,
     ctx.y,
     ctx.regular,
     7.5,
     INK_FAINT,
   );
-  ctx.y -= 24;
+  ctx.y -= 22;
+
+  // The opening book’s own credits, debits and settlements. They are here and
+  // never in the regular table below — that is the whole point of the section.
+  if (activity.length > 0) {
+    const rows = buildStatementRows(
+      activity,
+      position.position,
+      currency,
+      baseCurrency,
+      FORMAT,
+    );
+    ensure(ctx, 70);
+    drawLeft(ctx, 'OPENING BALANCE ACTIVITY', MARGIN, ctx.y, ctx.bold, 8, INK_FAINT);
+    ctx.y -= 6;
+    rule(ctx, ctx.y);
+    ctx.y -= 16;
+    drawTableHead(ctx);
+    rows.forEach((row, index) => {
+      drawRow(ctx, row, index);
+    });
+    ctx.y -= 14;
+  }
+}
+
+/**
+ * A figure that sits under the headline without competing with it.
+ *
+ * Used for the opening balance and the account position — two numbers the
+ * reader needs beside cash in hand, and neither of which may be mistaken for
+ * it. `quiet` marks the account position, which is a sum rather than a side.
+ */
+function secondaryFigure(
+  ctx: Ctx,
+  label: string,
+  minor: number,
+  currency: string,
+  x: number,
+  y: number,
+  quiet = false,
+) {
+  drawLeft(ctx, label, x, y, ctx.bold, 7, INK_FAINT);
+  drawLeft(
+    ctx,
+    pdfMoney(Math.abs(minor), currency, { compactDecimals: false }),
+    x,
+    y - 12,
+    ctx.bold,
+    11,
+    quiet ? INK_MUTED : minor > 0 ? RECEIVABLE : minor < 0 ? PAYABLE : INK_MUTED,
+  );
 }
 
 function drawTableHead(ctx: Ctx) {
@@ -547,6 +687,48 @@ function drawTable(
   drawTableHead(ctx);
 
   rows.forEach((row, index) => {
+    drawRow(ctx, row, index);
+  });
+
+  rule(ctx, ctx.y + 8);
+  ctx.y -= 6;
+
+  if (truncated) {
+    drawLeft(
+      ctx,
+      'Older entries exist on this account and are not listed here. The balance column is carried forward from them.',
+      MARGIN,
+      ctx.y,
+      ctx.regular,
+      7.5,
+      INK_FAINT,
+    );
+    ctx.y -= 12;
+  }
+
+  drawLeft(
+    ctx,
+    currency === baseCurrency
+      ? 'Amounts are shown in the currency they were entered in. Balances are in the account currency.'
+      : `Amounts are shown in the currency they were entered in. Balances are in ${currency}; equivalents are conversions into ${baseCurrency}.`,
+    MARGIN,
+    ctx.y,
+    ctx.regular,
+    7.5,
+    INK_FAINT,
+  );
+  ctx.y -= 24;
+}
+
+/**
+ * One row of a statement table.
+ *
+ * Extracted so the opening-balance section can draw its own activity with
+ * exactly this row, rather than a near-copy of it that could drift. Both
+ * tables are the same table; only the rows fed to them differ.
+ */
+function drawRow(ctx: Ctx, row: StatementRow, index: number) {
+  {
     const height = row.rate ? 30 : 23;
     if (ctx.y - height < MARGIN + 44) {
       newPage(ctx);
@@ -642,36 +824,7 @@ function drawTable(
     }
 
     ctx.y -= height;
-  });
-
-  rule(ctx, ctx.y + 8);
-  ctx.y -= 6;
-
-  if (truncated) {
-    drawLeft(
-      ctx,
-      'Older entries exist on this account and are not listed here. The balance column is carried forward from them.',
-      MARGIN,
-      ctx.y,
-      ctx.regular,
-      7.5,
-      INK_FAINT,
-    );
-    ctx.y -= 12;
   }
-
-  drawLeft(
-    ctx,
-    currency === baseCurrency
-      ? 'Amounts are shown in the currency they were entered in. Balances are in the account currency.'
-      : `Amounts are shown in the currency they were entered in. Balances are in ${currency}; equivalents are conversions into ${baseCurrency}.`,
-    MARGIN,
-    ctx.y,
-    ctx.regular,
-    7.5,
-    INK_FAINT,
-  );
-  ctx.y -= 24;
 }
 
 /**
@@ -684,7 +837,10 @@ function drawTable(
  */
 function drawTotals(ctx: Ctx, data: PersonPage, currency: string) {
   ensure(ctx, 68);
-  const balance = data.balance;
+  // The REGULAR halves: these sit under a statement headed "Cash in hand", so a
+  // total that quietly included the opening balance would contradict the figure
+  // it is printed under (db/migrations/0022).
+  const regular = regularPosition(data);
 
   drawLeft(ctx, 'TOTALS', MARGIN, ctx.y, ctx.bold, 8, INK_FAINT);
   ctx.y -= 6;
@@ -692,16 +848,16 @@ function drawTotals(ctx: Ctx, data: PersonPage, currency: string) {
   ctx.y -= 16;
 
   const cells: Array<{ label: string; value: string; color: ReturnType<typeof rgb> }> = [
-    { label: 'Credited to you', value: pdfMoney(balance.total_debit, currency), color: PAYABLE },
-    { label: 'Debited to them', value: pdfMoney(balance.total_credit, currency), color: RECEIVABLE },
-    { label: 'Settled', value: pdfMoney(balance.total_settled, currency), color: INK },
+    { label: 'Credited to you', value: pdfMoney(regular.debit, currency), color: PAYABLE },
+    { label: 'Debited to them', value: pdfMoney(regular.credit, currency), color: RECEIVABLE },
+    { label: 'Settled', value: pdfMoney(regular.settled, currency), color: INK },
     {
-      label: 'Current position',
-      value: pdfMoney(Math.abs(balance.net_balance), currency, { compactDecimals: false }),
+      label: 'Cash in hand',
+      value: pdfMoney(Math.abs(regular.position), currency, { compactDecimals: false }),
       color:
-        balanceTone(balance.net_balance) === 'receivable'
+        balanceTone(regular.position) === 'receivable'
           ? RECEIVABLE
-          : balanceTone(balance.net_balance) === 'payable'
+          : balanceTone(regular.position) === 'payable'
             ? PAYABLE
             : INK,
     },

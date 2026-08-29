@@ -3,7 +3,7 @@ import { entryLabel } from '@/lib/direction';
 import { transferLabel } from '@/lib/transfers';
 import { normaliseCode } from '@/lib/currencies';
 import { statementDate, timeOfDay } from '@/lib/dates';
-import type { PersonOpening, PersonPage, TimelineEntry } from '@/lib/types';
+import type { PersonOpening, TimelineEntry } from '@/lib/types';
 
 /**
  * What a statement says, before anything is drawn (upgrade §47).
@@ -62,7 +62,11 @@ export function rowType(entry: TimelineEntry): string {
   if (entry.transfer_id) {
     return transferLabel(entry.transfer_role, entry.transfer_counterparty_name);
   }
-  if (entry.is_opening) return 'Opening balance';
+  if (entry.is_opening) {
+    return entry.opening_role === 'adjustment'
+      ? `Opening ${entryLabel('transaction', entry.entry_type).toLowerCase()}`
+      : 'Opening balance';
+  }
   return entryLabel(entry.entry_kind, entry.entry_type);
 }
 
@@ -119,6 +123,8 @@ export interface OpeningLines {
   recorded: string;
   /** Whose favour it runs in, in words. */
   direction: string;
+  /** Where its own settlement stands, or null when nothing has been settled. */
+  settlement: string | null;
 }
 
 export function openingLines(
@@ -159,36 +165,48 @@ export function openingLines(
       openingMinor >= 0
         ? 'Owed to you when the account opened'
         : 'Owed by you when the account opened',
+    settlement:
+      opening.settled_minor > 0
+        ? `${format.money(opening.settled_minor, currency)} settled` +
+          (opening.remaining_minor > 0
+            ? ` · ${format.money(opening.remaining_minor, currency)} left`
+            : ' · settled in full')
+        : null,
   };
 }
 
 /**
  * Every printable row, oldest first, with a running balance.
  *
- * The running balance is walked FORWARD from a figure derived by subtracting
- * every listed entry's effect from the balance the database reports, using
- * `netDelta()` — the same function the person page's sparkline uses. Two
- * consequences worth stating:
+ * `closingMinor` is the position these rows END on — cash in hand for the
+ * regular transactions, the opening book's position for the opening activity.
+ * The running figure is walked FORWARD from it minus the effect of every
+ * listed row, using `netDelta()` — the same function the person page’s
+ * sparkline uses. Two consequences worth stating:
  *
- *   * the last row lands exactly on the position printed at the top of the
- *     statement, rather than on an independently accumulated approximation;
- *   * the starting figure already contains the opening balance and anything
- *     older than the rows listed, which is why a truncated export says so.
+ *   * the last row lands exactly on the figure printed at the top of its
+ *     section, rather than on an independently accumulated approximation;
+ *   * the starting figure already contains anything older than the rows
+ *     listed, which is why a truncated export says so.
+ *
+ * Since db/migrations/0022 the regular timeline carries no opening-book row
+ * at all, so the balance this walks is cash in hand and says so.
  */
 export function buildStatementRows(
-  page: PersonPage,
+  entries: TimelineEntry[],
+  closingMinor: number,
   currency: string,
   baseCurrency: string,
   format: StatementFormatter,
 ): StatementRow[] {
   // person_page() returns newest first; a statement reads oldest first.
-  const ordered = [...page.timeline].sort((a, b) => {
+  const ordered = [...entries].sort((a, b) => {
     if (a.entry_date !== b.entry_date) return a.entry_date < b.entry_date ? -1 : 1;
     return a.created_at < b.created_at ? -1 : 1;
   });
 
   const total = ordered.reduce((sum, entry) => sum + netDelta(entry), 0);
-  let running = page.balance.net_balance - total;
+  let running = closingMinor - total;
 
   return ordered.map((entry) => {
     running += netDelta(entry);

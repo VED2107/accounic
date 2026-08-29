@@ -123,18 +123,21 @@ class DashboardScreen extends ConsumerWidget {
         ),
       ],
 
-      // Every currency that carries entries, kept apart (db/migrations/0015).
-      // The card above is the whole position in one number, which only exists
-      // because the dirhams were converted into rupees first. This is the same
-      // money before that step: one row per currency, summed only within
-      // itself, and never added across.
-      if (data.totalsByCurrency.isNotEmpty) ...[
+      // Cash in hand, and the opening balance beside it (db/migrations/0022).
+      //
+      // This card replaced "By currency". The per-currency breakdown answered a
+      // question about presentation — the same money before it was converted —
+      // and this one answers a question about the ledger: how much of the
+      // position is trading, and how much is what the accounts were carried in
+      // with. The two figures are calculated independently by the database and
+      // are never added together into one number here.
+      if (data.cashInHand case final cash?) ...[
         const SizedBox(height: AppSpacing.md),
         Reveal(
           delay: const Duration(milliseconds: 90),
-          child: _CurrencyBreakdown(
-            totals: data.totalsByCurrency,
-            today: data.todayByCurrency,
+          child: _CashInHandCard(
+            cash: cash,
+            opening: data.openingTotal,
             baseCurrency: currency,
           ),
         ),
@@ -554,23 +557,31 @@ class _NetTrend extends ConsumerWidget {
 /// summed only within each currency. The workspace currency gets the same row
 /// as any other, so a single-currency ledger reads exactly like a four-currency
 /// one rather than looking like a panel for foreign money.
-class _CurrencyBreakdown extends StatelessWidget {
-  const _CurrencyBreakdown({
-    required this.totals,
-    required this.today,
+/// Cash in hand, and the opening balance beside it (db/migrations/0022).
+///
+/// The rule this card exists to make visible: **cash in hand never contains an
+/// opening balance**. They are two positions, each summed from its own half of
+/// the ledger by the database, and the only place they are added together is
+/// the position card above — which says so.
+class _CashInHandCard extends StatelessWidget {
+  const _CashInHandCard({
+    required this.cash,
+    required this.opening,
     required this.baseCurrency,
   });
 
-  final List<CurrencyTotals> totals;
-  final List<CurrencyToday> today;
+  final WorkspacePosition cash;
+  final WorkspacePosition? opening;
   final String baseCurrency;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.money;
+    final hasOpening =
+        opening != null && (opening!.positionMinor != 0 || opening!.peopleCount > 0);
 
     return SectionCard(
-      title: 'By currency',
+      title: 'Cash in hand',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -582,150 +593,138 @@ class _CurrencyBreakdown extends StatelessWidget {
               0,
             ),
             child: Text(
-              totals.length == 1
-                  ? 'Everything so far is in one currency.'
-                  : 'Each currency on its own terms. The $baseCurrency figures above '
-                      'convert all of these into one total.',
+              hasOpening
+                  ? 'The regular trading position across every account, converted to '
+                      '$baseCurrency. The opening balances are counted separately below '
+                      'and are not part of this figure.'
+                  : 'The regular trading position across every account, converted to '
+                      '$baseCurrency.',
               style: TextStyle(fontSize: 12.5, height: 1.4, color: palette.inkFaint),
             ),
           ),
-          for (final row in totals)
-            _CurrencyRow(
-              row: row,
-              today: today
-                  .where((entry) => entry.currency == row.currency)
-                  .firstOrNull,
-              isBase: row.currency == baseCurrency,
+          _WorkspacePositionBlock(
+            label: 'CASH IN HAND',
+            position: cash,
+            currency: baseCurrency,
+          ),
+          if (hasOpening) ...[
+            Divider(height: 1, color: palette.line),
+            _WorkspacePositionBlock(
+              label: 'OPENING BALANCE',
+              position: opening!,
+              currency: baseCurrency,
+              caption: 'What the accounts were carried in with, less whatever has '
+                  'been settled against it. Independently calculated.',
             ),
+          ],
         ],
       ),
     );
   }
 }
 
-class _CurrencyRow extends StatelessWidget {
-  const _CurrencyRow({required this.row, required this.today, required this.isBase});
+/// One of the two totals, with its own receivable / payable / settled / today.
+class _WorkspacePositionBlock extends StatelessWidget {
+  const _WorkspacePositionBlock({
+    required this.label,
+    required this.position,
+    required this.currency,
+    this.caption,
+  });
 
-  final CurrencyTotals row;
-  final CurrencyToday? today;
-  final bool isBase;
+  final String label;
+  final WorkspacePosition position;
+  final String currency;
+  final String? caption;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.money;
-    final net = row.netPosition;
+    final net = position.positionMinor;
     final tone = net > 0
         ? palette.receivable
         : net < 0
             ? palette.payable
             : palette.inkMuted;
-    final moved = today?.moved ?? 0;
+
+    Widget figure(String name, int minor, Color color) => Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11.5, color: palette.inkFaint),
+              ),
+              const SizedBox(height: 1),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: MoneyText(
+                  minor,
+                  currency: currency,
+                  tone: MoneyTone.neutral,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
 
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.lg,
-        vertical: AppSpacing.md,
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.md,
+        AppSpacing.lg,
+        AppSpacing.md,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 38,
-                height: 34,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: palette.sunken,
-                  borderRadius: AppRadius.fieldAll,
-                  border: Border.all(color: palette.line),
-                ),
-                child: Text(
-                  row.currency,
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.4,
-                    color: palette.inkMuted,
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // This currency's own money, in this currency.
-                    Text(
-                      formatMoney(net.abs(), currency: row.currency),
-                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-                    ),
-                    // The base equivalent is supplementary: under the figure,
-                    // never in place of it.
-                    if (row.showsBaseEquivalent) ...[
-                      const SizedBox(height: 1),
-                      Text(
-                        formatApprox(row.netBaseMinor!.abs(), currency: row.baseCurrency),
-                        style: TextStyle(fontSize: 12, color: palette.inkFaint),
-                      ),
-                    ],
-                    const SizedBox(height: 1),
-                    Text(
-                      net > 0
-                          ? 'in your favour'
-                          : net < 0
-                              ? 'against you'
-                              : 'settled',
-                      style: TextStyle(fontSize: 12, color: tone),
-                    ),
-                  ],
-                ),
-              ),
-              if (moved > 0)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: palette.sunken,
-                    borderRadius: AppRadius.fieldAll,
-                    border: Border.all(color: palette.line),
-                  ),
-                  child: Text(
-                    'Today ${formatMoney(moved, currency: row.currency)}',
-                    style: TextStyle(fontSize: 11.5, color: palette.inkMuted),
-                  ),
-                ),
-            ],
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.7,
+              color: palette.inkFaint,
+            ),
           ),
-          const SizedBox(height: AppSpacing.sm),
-          Wrap(
-            spacing: AppSpacing.md,
-            runSpacing: AppSpacing.xs,
+          const SizedBox(height: AppSpacing.xs),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: MoneyText(
+              net.abs(),
+              currency: currency,
+              tone: MoneyTone.neutral,
+              style: TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.w700,
+                color: tone,
+              ),
+            ),
+          ),
+          if (caption != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              caption!,
+              style: TextStyle(fontSize: 12, height: 1.4, color: palette.inkFaint),
+            ),
+          ],
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Receivable ${formatMoney(row.grossCredit, currency: row.currency)}',
-                style: TextStyle(fontSize: 12, color: palette.receivable),
-              ),
-              Text(
-                'Payable ${formatMoney(row.grossDebit, currency: row.currency)}',
-                style: TextStyle(fontSize: 12, color: palette.payable),
-              ),
-              Text(
-                'Settled ${formatMoney(row.grossSettled, currency: row.currency)}',
-                style: TextStyle(fontSize: 12, color: palette.inkFaint),
-              ),
-              Text(
-                '${row.entryCount} ${row.entryCount == 1 ? 'entry' : 'entries'} · '
-                '${row.peopleCount} ${row.peopleCount == 1 ? 'account' : 'accounts'}',
-                style: TextStyle(fontSize: 12, color: palette.inkFaint),
-              ),
-              if (isBase)
-                Text(
-                  'your workspace currency',
-                  style: TextStyle(fontSize: 12, color: palette.inkFaint),
-                ),
+              figure('Receivable', position.receivableMinor, palette.receivable),
+              figure('Payable', position.payableMinor, palette.payable),
+              figure('Settled', position.settledMinor, palette.inkMuted),
+              figure('Today', position.todayMinor, palette.inkMuted),
             ],
           ),
         ],
@@ -733,6 +732,7 @@ class _CurrencyRow extends StatelessWidget {
     );
   }
 }
+
 
 /// What moved today. Three small figures read faster than one line of prose
 /// containing three figures — and it only appears on a day something happened.

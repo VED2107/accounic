@@ -75,7 +75,10 @@ begin
           and lower(btrim(coalesce(c.description, ''))) = 'opening balance'
       )
   )
-  update public.transactions t set is_opening = true
+  -- `opening_role` arrived with 0022 and is not nullable while `is_opening` is
+  -- true. A row reclassified today is the balance the account opened with,
+  -- which is what 0022 backfilled every pre-existing opening row to.
+  update public.transactions t set is_opening = true, opening_role = 'balance'
     from candidate c where t.id = c.id;
   get diagnostics v_n = row_count;
   return v_n;

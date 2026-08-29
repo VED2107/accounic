@@ -84,7 +84,37 @@ export default async function PersonPage({
   // did rather than throwing on a missing key.
   const opening = data.opening ?? null;
   const openingHistory = data.opening_history ?? [];
-  const tone = balanceTone(balance.net_balance);
+  const openingActivity = data.opening_activity ?? [];
+  // The two halves the page shows separately (db/migrations/0022). `regular` is
+  // cash in hand — the trading position with the opening balance taken out —
+  // and `opening_position` is the opening book's own. Both are stated by the
+  // database so nothing here subtracts one from the other. Defaulted for a
+  // database that has not run 0022, where the whole position is all there is.
+  const regular = data.regular ?? {
+    currency,
+    base_currency: baseCurrency,
+    position: balance.net_balance,
+    position_base: balance.net_balance_base,
+    receivable: balance.outstanding_receivable,
+    payable: balance.outstanding_payable,
+    settled: balance.total_settled,
+    credit: balance.total_credit,
+    debit: balance.total_debit,
+  };
+  const openingPosition = data.opening_position ?? {
+    currency,
+    base_currency: baseCurrency,
+    position: 0,
+    position_base: null,
+    receivable: 0,
+    payable: 0,
+    settled: 0,
+    credit: 0,
+    debit: 0,
+    entry_count: 0,
+  };
+  const hasOpening = (openingPosition.entry_count ?? 0) > 0 || balance.opening_minor !== 0;
+  const tone = balanceTone(regular.position);
   const hasMore = (pageIndex + 1) * PAGE_SIZE < total;
   const series = personBalanceSeries(timeline, balance);
   const firstName = person.name.split(' ')[0];
@@ -140,7 +170,7 @@ export default async function PersonPage({
         <Panel>
           <div className="relative flex flex-wrap items-end justify-between gap-5 px-5 py-6 sm:px-6">
             <div className="relative min-w-0">
-              <p className="text-[0.8125rem] font-medium text-ink-muted">Current position</p>
+              <p className="text-[0.8125rem] font-medium text-ink-muted">Cash in hand</p>
               <p
                 className={cn(
                   // The account's headline figure, on the money scale like every other
@@ -154,7 +184,7 @@ export default async function PersonPage({
               >
                 {/* Animates when it changes — which is exactly when a settlement
                     has just been recorded on this page. */}
-                <CountUp minor={Math.abs(balance.net_balance)} currency={currency} />
+                <CountUp minor={Math.abs(regular.position)} currency={currency} />
               </p>
               <p
                 className={cn(
@@ -165,31 +195,51 @@ export default async function PersonPage({
                 )}
               >
                 {tone === 'receivable'
-                  ? `${firstName} owes you`
+                  ? `${firstName} owes you, on regular activity`
                   : tone === 'payable'
-                    ? `You owe ${firstName}`
-                    : 'Everything is settled'}
+                    ? `You owe ${firstName}, on regular activity`
+                    : 'Regular activity is settled'}
               </p>
 
               {/* The same position in the workspace's currency. Shown only when
                   there is another currency to show, and labelled as an
                   approximation at today's rate, because that is what it is —
                   nothing settles against this figure. */}
-              {currency !== baseCurrency && balance.net_balance !== 0 ? (
+              {currency !== baseCurrency && regular.position !== 0 ? (
                 <p className="mt-1.5 text-[0.8125rem] text-ink-faint">
-                  {balance.net_balance_base === null
+                  {regular.position_base === null
                     ? `No ${currency} → ${baseCurrency} rate yet`
-                    : `${formatApprox(Math.abs(balance.net_balance_base), baseCurrency)} at today’s rate`}
+                    : `${formatApprox(Math.abs(regular.position_base), baseCurrency)} at today’s rate`}
                 </p>
               ) : null}
 
-              {/* Named, not detailed: the opening balance has its own section
-                  below, and repeating its figure here would be two places for
-                  one number to be read from. */}
-              {balance.opening_minor !== 0 ? (
-                <p className="mt-1 text-[0.75rem] text-ink-faint">
-                  Includes the opening balance below
-                </p>
+              {/* The opening balance, stated as its own figure and never folded
+                  into the one above. The account position is printed beside it
+                  so the arithmetic is visible rather than implied — the reader
+                  can see the two figures and their sum, and no number appears
+                  twice inside another. */}
+              {hasOpening ? (
+                <div className="mt-4 flex flex-wrap gap-x-8 gap-y-3">
+                  <SecondaryFigure
+                    label="Opening balance"
+                    minor={openingPosition.position}
+                    currency={currency}
+                    caption={
+                      openingPosition.position === 0
+                        ? 'Settled in full'
+                        : openingPosition.position > 0
+                          ? `${firstName} owed you this when the account opened`
+                          : `You owed ${firstName} this when the account opened`
+                    }
+                  />
+                  <SecondaryFigure
+                    label="Account position"
+                    minor={balance.net_balance}
+                    currency={currency}
+                    caption="Cash in hand and the opening balance together"
+                    quiet
+                  />
+                </div>
               ) : null}
             </div>
 
@@ -225,27 +275,25 @@ export default async function PersonPage({
                 lives in lib/direction.ts and nowhere else. */}
             <Figure
               label="Credited to you"
-              minor={balance.total_debit}
+              minor={regular.debit}
               currency={currency}
-              tone={balance.total_debit > 0 ? 'payable' : 'neutral'}
+              tone={regular.debit > 0 ? 'payable' : 'neutral'}
             />
             <Figure
               label="Debited to them"
-              minor={balance.total_credit}
+              minor={regular.credit}
               currency={currency}
-              tone={balance.total_credit > 0 ? 'receivable' : 'neutral'}
+              tone={regular.credit > 0 ? 'receivable' : 'neutral'}
             />
             <Figure
               label="Settled"
-              minor={balance.total_settled}
+              minor={regular.settled}
               currency={currency}
               tone="neutral"
             />
             <Figure
               label={tone === 'payable' ? 'You will pay' : 'You will receive'}
-              minor={
-                tone === 'payable' ? balance.outstanding_payable : balance.outstanding_receivable
-              }
+              minor={tone === 'payable' ? regular.payable : regular.receivable}
               currency={currency}
               tone={tone === 'payable' ? 'payable' : tone === 'settled' ? 'neutral' : 'receivable'}
             />
@@ -260,6 +308,8 @@ export default async function PersonPage({
         person={person}
         opening={opening}
         history={openingHistory}
+        activity={openingActivity}
+        position={openingPosition}
         currency={currency}
         baseCurrency={baseCurrency}
         openingMinor={balance.opening_minor}
@@ -361,6 +411,47 @@ export default async function PersonPage({
 }
 
 /* -------------------------------------------------------------------------- */
+
+/**
+ * A figure that sits under the headline without competing with it.
+ *
+ * Used for the opening balance and the account position — two numbers the
+ * reader needs beside cash in hand, and neither of which may be mistaken for
+ * it. Smaller, labelled, and never animated: only the headline moves.
+ */
+function SecondaryFigure({
+  label,
+  minor,
+  currency,
+  caption,
+  quiet = false,
+}: {
+  label: string;
+  minor: number;
+  currency: string;
+  caption: string;
+  quiet?: boolean;
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[0.6875rem] font-semibold uppercase tracking-wide text-ink-faint">
+        {label}
+      </p>
+      <p
+        className={cn(
+          'tnum mt-0.5 text-[1.0625rem] font-semibold',
+          quiet && 'text-ink-muted',
+          !quiet && minor > 0 && 'text-receivable',
+          !quiet && minor < 0 && 'text-payable',
+          !quiet && minor === 0 && 'text-ink-faint',
+        )}
+      >
+        {formatMoney(Math.abs(minor), currency)}
+      </p>
+      <p className="text-[0.75rem] text-ink-faint">{caption}</p>
+    </div>
+  );
+}
 
 function Figure({
   label,

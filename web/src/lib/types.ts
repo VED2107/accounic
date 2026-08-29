@@ -113,6 +113,69 @@ export interface PersonBalance {
   /** The opening balance as a signed figure: positive when they owe the user. */
   opening_minor: number;
   last_activity_at: string | null;
+
+  /**
+   * The two halves of net_balance (db/migrations/0022).
+   *
+   *     cash_in_hand_minor + opening_net_minor === net_balance
+   *
+   * always, and the database asserts it. `cash_in_hand_minor` is the regular
+   * trading position and never contains the opening balance; `opening_net_minor`
+   * is what is left of the opening book. They are shown as two figures and never
+   * added together on screen.
+   */
+  cash_in_hand_minor: number;
+  cash_in_hand_base: number | null;
+  opening_net_minor: number;
+  opening_net_base: number | null;
+
+  regular_credit_minor: number;
+  regular_debit_minor: number;
+  regular_receivable: number;
+  regular_payable: number;
+  regular_settled_total: number;
+
+  opening_credit_minor: number;
+  opening_debit_minor: number;
+  opening_receivable: number;
+  opening_payable: number;
+  opening_settled_total: number;
+  /** Rows in the opening book. Zero means the account has no opening balance. */
+  opening_entry_count: number;
+}
+
+/**
+ * One of the two positions an account holds (db/migrations/0022).
+ *
+ * `person_page()` states both outright — the cash-in-hand position under
+ * `regular`, the opening book's under `opening_position` — so that no client
+ * subtracts one from the other and no two clients can disagree about which is
+ * which.
+ */
+export interface PositionSplit {
+  currency: string;
+  base_currency: string;
+  /** Signed: positive when they owe the user. */
+  position: number;
+  position_base: number | null;
+  receivable: number;
+  payable: number;
+  settled: number;
+  credit: number;
+  debit: number;
+  entry_count?: number;
+}
+
+/** One workspace-level total, in the workspace currency (db/migrations/0022). */
+export interface WorkspacePosition {
+  base_currency: string;
+  position: number;
+  receivable: number;
+  payable: number;
+  settled: number;
+  today: number;
+  today_count: number;
+  people_count: number;
 }
 
 /** public.owner_summary — dashboard headline numbers. */
@@ -145,6 +208,18 @@ export interface TimelineEntry {
   related_transaction_id: string | null;
   created_at: string;
   is_opening: boolean;
+  /**
+   * Which part of the opening book this row is: 'balance' for what the account
+   * opened with, 'adjustment' for a credit or debit recorded against it. Null
+   * on a settlement and on every ordinary transaction (db/migrations/0022).
+   */
+  opening_role?: 'balance' | 'adjustment' | null;
+  /**
+   * True when the row belongs to the opening book at all — including a
+   * settlement made against the opening balance, which is not itself flagged.
+   * The regular timeline holds no row for which this is true.
+   */
+  opening_scope?: boolean;
   entered_amount_minor: number | null;
   entered_currency: string | null;
   exchange_rate_e9: number | null;
@@ -237,9 +312,22 @@ export interface PersonOpening {
   status: SettlementStatus;
 }
 
-/** One superseded opening balance, kept because replacing one retracts it. */
+/**
+ * One superseded opening balance, kept because replacing one retracts it.
+ *
+ * Since db/migrations/0022 it carries `transaction_id` as well as `id`, so it
+ * has the same shape as `PersonOpening` and one model can parse both. That was
+ * not cosmetic: the Flutter client parsed both with one model whose
+ * `transaction_id` was non-nullable, and the first time a user edited an
+ * opening balance — the moment this list stops being empty — the person screen
+ * stopped loading entirely.
+ */
 export interface OpeningHistoryEntry {
   id: string;
+  /** The same row's id, under the key `PersonOpening` uses (0022). */
+  transaction_id?: string;
+  /** Positive when they owed the user (0022). */
+  signed_minor?: number;
   amount_minor: number;
   entry_type: TxnType;
   entry_date: string;
@@ -329,6 +417,16 @@ export interface PersonPage {
   opening: PersonOpening | null;
   /** Opening balances that were replaced. They affect no balance. */
   opening_history: OpeningHistoryEntry[];
+  /**
+   * Credits, debits and settlements recorded against the opening balance
+   * (db/migrations/0022). Deliberately absent from `timeline`: they are not
+   * regular transactions and must never be shown among them.
+   */
+  opening_activity: TimelineEntry[];
+  /** The regular trading position — cash in hand. Never contains the opening balance. */
+  regular: PositionSplit;
+  /** The opening book's position, on its own. Never added into `regular` on screen. */
+  opening_position: PositionSplit;
   /** Regular activity only: credits, debits, settlements and transfer legs. */
   timeline: TimelineEntry[];
   timeline_total: number;
@@ -437,6 +535,16 @@ export interface Dashboard {
   base_currency: string;
   summary: OwnerSummary;
   today: { credit: number; debit: number; settled: number; count: number };
+  /**
+   * The consolidated regular position, converted to the workspace currency
+   * (db/migrations/0022). Never contains an opening balance.
+   */
+  cash_in_hand: WorkspacePosition;
+  /**
+   * The opening book's position, calculated independently and shown beside
+   * `cash_in_hand` — never inside it. The two add up to `summary.net_position`.
+   */
+  opening: WorkspacePosition;
   /** Only currencies that carry entries. Empty on a workspace with none. */
   totals_by_currency: CurrencyTotals[];
   today_by_currency: CurrencyToday[];

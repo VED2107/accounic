@@ -42,6 +42,25 @@ String friendlyDate(String value) {
 String fullDate(String value) =>
     DateFormat('d MMMM yyyy').format(parseDbDate(value));
 
+/// `28 Aug 2026` — the form a statement prints, unambiguous in any locale and
+/// never relative. Twin of `statementDate()` in `web/src/lib/dates.ts`.
+String statementDate(String value) {
+  if (value.isEmpty) return '';
+  return DateFormat('d MMM yyyy').format(parseDbDate(value));
+}
+
+/// `08:42 PM` — the time of day a row was recorded, from its timestamp.
+///
+/// Empty when the value carries no usable time, which is what a bare calendar
+/// date is. A statement prints the time beside the date because two entries on
+/// one day are otherwise indistinguishable on paper.
+String timeOfDay(String isoTimestamp) {
+  if (isoTimestamp.length <= 10) return '';
+  final parsed = DateTime.tryParse(isoTimestamp);
+  if (parsed == null) return '';
+  return DateFormat('hh:mm a').format(parsed.toLocal());
+}
+
 String relativeTime(String isoTimestamp) {
   final then = DateTime.parse(isoTimestamp).toLocal();
   final seconds = DateTime.now().difference(then).inSeconds;
