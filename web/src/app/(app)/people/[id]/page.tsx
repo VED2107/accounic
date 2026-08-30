@@ -4,7 +4,7 @@ import type { Metadata } from 'next';
 import { getMe } from '@/lib/supabase/server';
 import { getPersonPage } from '@/lib/queries';
 import { Avatar, Badge, Card, Panel, cn, segmentClass, SEGMENT_GROUP } from '@/components/ui/primitives';
-import { Money } from '@/components/money';
+import { CurrencyBreakdown, Money } from '@/components/money';
 import { CountUp } from '@/components/motion/count-up';
 import { Sparkline } from '@/components/charts/sparkline';
 import { Reveal } from '@/components/motion/reveal';
@@ -115,6 +115,23 @@ export default async function PersonPage({
   };
   const hasOpening = (openingPosition.entry_count ?? 0) > 0 || balance.opening_minor !== 0;
   const tone = balanceTone(regular.position);
+
+  // Per-currency breakdown (db/migrations/0024). Worth showing only when this
+  // account has traded in more than one currency, or in a single currency that
+  // is not its ledger denomination — otherwise the headline already IS the
+  // original figure.
+  const regularCurrencyRows = (data.regular_by_currency ?? []).filter(
+    (row) => row.credit !== 0 || row.debit !== 0 || row.settled !== 0,
+  );
+  const openingCurrencyRows = (data.opening_by_currency ?? []).filter(
+    (row) => row.credit !== 0 || row.debit !== 0 || row.settled !== 0,
+  );
+  const showRegularByCurrency =
+    regularCurrencyRows.length > 1 ||
+    (regularCurrencyRows.length === 1 && regularCurrencyRows[0]!.currency !== currency);
+  const showOpeningByCurrency =
+    openingCurrencyRows.length > 1 ||
+    (openingCurrencyRows.length === 1 && openingCurrencyRows[0]!.currency !== currency);
   const hasMore = (pageIndex + 1) * PAGE_SIZE < total;
   const series = personBalanceSeries(timeline, balance);
   const firstName = person.name.split(' ')[0];
@@ -306,6 +323,29 @@ export default async function PersonPage({
       </Reveal>
 
       {/* ------------------------------------------------------------------ */}
+      {/* Cash in hand by the currency each amount was entered in (0024)      */}
+      {/* ------------------------------------------------------------------ */}
+      {showRegularByCurrency ? (
+        <Reveal delay={55}>
+          <Card className="mt-4 overflow-hidden">
+            <div className="border-b border-line px-5 py-3.5">
+              <h2 className="font-display text-[0.9375rem] font-semibold tracking-tight text-ink">
+                Cash in hand by currency
+              </h2>
+              <p className="mt-0.5 text-[0.75rem] text-ink-faint">
+                The original amounts entered for this account, kept in their own currency.
+              </p>
+            </div>
+            <CurrencyBreakdown
+              rows={regularCurrencyRows}
+              baseCurrency={currency}
+              kind="cash"
+            />
+          </Card>
+        </Reveal>
+      ) : null}
+
+      {/* ------------------------------------------------------------------ */}
       {/* Opening balance — its own section, never a row in the history       */}
       {/* ------------------------------------------------------------------ */}
       <OpeningBalanceCard
@@ -318,6 +358,26 @@ export default async function PersonPage({
         baseCurrency={baseCurrency}
         openingMinor={balance.opening_minor}
       />
+
+      {showOpeningByCurrency ? (
+        <Reveal delay={55}>
+          <Card className="mt-4 overflow-hidden">
+            <div className="border-b border-line px-5 py-3.5">
+              <h2 className="font-display text-[0.9375rem] font-semibold tracking-tight text-ink">
+                Opening balance by currency
+              </h2>
+              <p className="mt-0.5 text-[0.75rem] text-ink-faint">
+                What this account was carried in with, per currency, less whatever has settled.
+              </p>
+            </div>
+            <CurrencyBreakdown
+              rows={openingCurrencyRows}
+              baseCurrency={currency}
+              kind="opening"
+            />
+          </Card>
+        </Reveal>
+      ) : null}
 
       {/* ------------------------------------------------------------------ */}
       {/* Regular transactions / details / notes                              */}

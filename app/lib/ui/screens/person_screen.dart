@@ -102,6 +102,25 @@ class PersonScreen extends ConsumerWidget {
         child: _PositionCard(page: page, currency: currency),
       ),
 
+      // Cash in hand broken out by the currency each amount was entered in
+      // (db/migrations/0024). Worth showing only when this account has traded
+      // in more than one currency, or in one that is not its ledger
+      // denomination — otherwise the headline above already IS the original.
+      if (_showByCurrency(page.regularByCurrency, page.currency)) ...[
+        const SizedBox(height: AppSpacing.md),
+        Reveal(
+          delay: const Duration(milliseconds: 50),
+          child: CurrencyBreakdownCard(
+            title: 'Cash in hand by currency',
+            description:
+                'The original amounts entered for this account, kept in their own currency.',
+            rows: page.regularByCurrency,
+            baseCurrency: page.currency,
+            opening: false,
+          ),
+        ),
+      ],
+
       if (page.person.notes != null) ...[
         const SizedBox(height: AppSpacing.md),
         Reveal(
@@ -141,6 +160,21 @@ class PersonScreen extends ConsumerWidget {
         delay: const Duration(milliseconds: 90),
         child: OpeningBalanceCard(page: page),
       ),
+
+      if (_showByCurrency(page.openingByCurrency, page.currency)) ...[
+        const SizedBox(height: AppSpacing.md),
+        Reveal(
+          delay: const Duration(milliseconds: 100),
+          child: CurrencyBreakdownCard(
+            title: 'Opening balance by currency',
+            description:
+                'What this account was carried in with, per currency, less whatever has settled.',
+            rows: page.openingByCurrency,
+            baseCurrency: page.currency,
+            opening: true,
+          ),
+        ),
+      ],
 
       const SizedBox(height: AppSpacing.xl),
 
@@ -261,6 +295,14 @@ class _Identity extends StatelessWidget {
 }
 
 /// Where we stand, what to do about it, and the four figures it is made of.
+/// Whether a per-currency breakdown is worth drawing: more than one currency
+/// with data, or a single one that is not the account's ledger currency.
+bool _showByCurrency(List<CurrencyHalfBreakdown> rows, String ledgerCurrency) {
+  final withData = rows.where((r) => r.hasData).toList();
+  if (withData.length > 1) return true;
+  return withData.length == 1 && withData.first.currency != ledgerCurrency;
+}
+
 class _PositionCard extends StatelessWidget {
   const _PositionCard({required this.page, required this.currency});
 

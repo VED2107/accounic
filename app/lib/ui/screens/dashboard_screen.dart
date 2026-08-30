@@ -610,6 +610,19 @@ class _CashInHandCard extends StatelessWidget {
     final hasOpening =
         opening != null && (opening!.positionMinor != 0 || opening!.peopleCount > 0);
 
+    // The per-currency breakdown behind each half (db/migrations/0024). Present
+    // once the database has run 0024; before it, the card falls back to the
+    // base-currency-only blocks.
+    final cashRows = CurrencyHalfBreakdown.order(
+      [for (final row in byCurrency) if (row.cash != null) row.cash!],
+      baseCurrency,
+    );
+    final openingRows = CurrencyHalfBreakdown.order(
+      [for (final row in byCurrency) if (row.opening != null) row.opening!],
+      baseCurrency,
+    );
+    final hasBreakdown = cashRows.isNotEmpty;
+
     return SectionCard(
       title: 'Cash in hand',
       child: Column(
@@ -624,31 +637,133 @@ class _CashInHandCard extends StatelessWidget {
             ),
             child: Text(
               hasOpening
-                  ? 'The regular trading position across every account, converted to '
-                      '$baseCurrency. The opening balances are counted separately below '
-                      'and are not part of this figure.'
-                  : 'The regular trading position across every account, converted to '
-                      '$baseCurrency.',
+                  ? 'The regular trading position across every account, in the currency '
+                      'each amount was entered in. The opening balances are counted '
+                      'separately below and are not part of this figure.'
+                  : 'The regular trading position across every account, in the currency '
+                      'each amount was entered in.',
               style: TextStyle(fontSize: 12.5, height: 1.4, color: palette.inkFaint),
             ),
           ),
-          _WorkspacePositionBlock(
-            label: 'CASH IN HAND',
-            position: cash,
-            currency: baseCurrency,
-            originals: _originals(byCurrency, baseCurrency, opening: false),
-          ),
-          if (hasOpening) ...[
-            Divider(height: 1, color: palette.line),
+          if (hasBreakdown) ...[
+            for (final row in cashRows) ...[
+              Divider(height: 1, color: palette.line),
+              CurrencyHalfBlock(row: row, baseCurrency: baseCurrency, opening: false),
+            ],
+            _TotalLine(position: cash, currency: baseCurrency),
+            if (hasOpening) ...[
+              Divider(height: 1, color: palette.lineStrong),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.md,
+                  AppSpacing.lg,
+                  0,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'OPENING BALANCE',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.7,
+                        color: palette.inkFaint,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'What the accounts were carried in with, less whatever has been '
+                      'settled against it. Independently calculated, never part of cash '
+                      'in hand.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.4,
+                        color: palette.inkFaint,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              for (final row in openingRows) ...[
+                Divider(height: 1, color: palette.line),
+                CurrencyHalfBlock(row: row, baseCurrency: baseCurrency, opening: true),
+              ],
+              _TotalLine(position: opening!, currency: baseCurrency),
+            ],
+          ] else ...[
             _WorkspacePositionBlock(
-              label: 'OPENING BALANCE',
-              position: opening!,
+              label: 'CASH IN HAND',
+              position: cash,
               currency: baseCurrency,
-              originals: _originals(byCurrency, baseCurrency, opening: true),
-              caption: 'What the accounts were carried in with, less whatever has '
-                  'been settled against it. Independently calculated.',
+              originals: _originals(byCurrency, baseCurrency, opening: false),
             ),
+            if (hasOpening) ...[
+              Divider(height: 1, color: palette.line),
+              _WorkspacePositionBlock(
+                label: 'OPENING BALANCE',
+                position: opening!,
+                currency: baseCurrency,
+                originals: _originals(byCurrency, baseCurrency, opening: true),
+                caption: 'What the accounts were carried in with, less whatever has '
+                    'been settled against it. Independently calculated.',
+              ),
+            ],
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// The consolidated figure for one half, in the workspace currency — shown once
+/// beneath the per-currency blocks as the reference total. The only converted
+/// number in the card; nothing settles against it.
+class _TotalLine extends StatelessWidget {
+  const _TotalLine({required this.position, required this.currency});
+
+  final WorkspacePosition position;
+  final String currency;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.money;
+    final net = position.positionMinor;
+    final tone = net > 0
+        ? palette.receivable
+        : net < 0
+            ? palette.payable
+            : palette.inkMuted;
+
+    return Container(
+      color: context.colors.surface,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.sm + 1,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'TOTAL IN $currency',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.6,
+                color: palette.inkFaint,
+              ),
+            ),
+          ),
+          Text(
+            '≈ ${formatMoney(net.abs(), currency: currency)}',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: tone,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
         ],
       ),
     );

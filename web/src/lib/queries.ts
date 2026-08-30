@@ -92,7 +92,15 @@ export async function getPersonPage(
     if (error.code === 'P0002' || error.code === '22P02') return null;
     throw error;
   }
-  return data as PersonPage;
+  // The per-currency breakdowns arrived in migration 0024. Defaulting them
+  // keeps a client pointed at an older database rendering the single-currency
+  // page it always did.
+  const page = data as PersonPage;
+  return {
+    ...page,
+    regular_by_currency: page.regular_by_currency ?? [],
+    opening_by_currency: page.opening_by_currency ?? [],
+  };
 }
 
 export async function search(query: string): Promise<SearchResults> {

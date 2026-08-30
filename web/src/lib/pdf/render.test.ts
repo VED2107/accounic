@@ -188,6 +188,8 @@ function statementPage(entries: TimelineEntry[]): PersonPage {
     },
     timeline: entries,
     timeline_total: entries.length,
+    regular_by_currency: [],
+    opening_by_currency: [],
     open_transactions: [],
   };
 }

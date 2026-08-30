@@ -1,5 +1,7 @@
 import { balanceTone, formatApprox, formatMoney } from '@/lib/money';
 import { cn } from '@/components/ui/primitives';
+import { orderCurrencyRows } from '@/lib/currency-breakdown';
+import type { CurrencyHalfBreakdown } from '@/lib/types';
 
 /**
  * Money rendering (context.md §8, §18).
@@ -183,6 +185,139 @@ export function SplitBar({
     >
       <span className="bg-receivable" style={{ width: `${share}%` }} />
       <span className="flex-1 bg-payable" />
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Per-currency breakdown (db/migrations/0024)                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Cash in hand / the opening balance, shown in the currency the money was
+ * actually entered in — aggregated across every account, one block per
+ * currency (db/migrations/0024).
+ *
+ * The rule this component exists to hold: the large figure is always the
+ * ORIGINAL entered amount in its own currency. The workspace-currency
+ * equivalent is a small "≈" line beneath it and nothing settles against it.
+ * Nothing here reconverts an INR total back into a foreign currency.
+ */
+export function CurrencyBreakdown({
+  rows,
+  baseCurrency,
+  kind,
+  className,
+}: {
+  rows: CurrencyHalfBreakdown[];
+  baseCurrency: string;
+  /** 'cash' labels the net figure "Net"; 'opening' labels it "Remaining". */
+  kind: 'cash' | 'opening';
+  className?: string;
+}) {
+  const ordered = orderCurrencyRows(rows, baseCurrency);
+  if (ordered.length === 0) return null;
+
+  return (
+    <div className={cn('divide-y divide-line', className)}>
+      {ordered.map((row) => (
+        <CurrencyBlock key={`${kind}-${row.currency}`} row={row} baseCurrency={baseCurrency} kind={kind} />
+      ))}
+    </div>
+  );
+}
+
+function CurrencyBlock({
+  row,
+  baseCurrency,
+  kind,
+}: {
+  row: CurrencyHalfBreakdown;
+  baseCurrency: string;
+  kind: 'cash' | 'opening';
+}) {
+  const tone = balanceTone(row.net);
+  const showApprox = row.currency !== baseCurrency;
+
+  return (
+    <div className="px-4 py-4 sm:px-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <div className="min-w-0">
+          <p className="text-[0.6875rem] font-semibold uppercase tracking-wide text-ink-faint">
+            {row.currency}
+          </p>
+          <p
+            className={cn(
+              'tnum mt-1 text-[1.375rem] font-semibold leading-none',
+              tone === 'receivable' && 'text-receivable',
+              tone === 'payable' && 'text-payable',
+              tone === 'settled' && 'text-ink-muted',
+            )}
+          >
+            {formatMoney(Math.abs(row.net), row.currency)}
+          </p>
+          {showApprox ? (
+            <p className="tnum mt-1 text-[0.75rem] text-ink-faint">
+              {row.net_base_minor === null
+                ? `no ${row.currency} → ${baseCurrency} rate yet`
+                : `≈ ${formatApprox(Math.abs(row.net_base_minor), baseCurrency)}`}
+            </p>
+          ) : null}
+        </div>
+        {typeof row.people_count === 'number' && row.people_count > 0 ? (
+          <p className="text-[0.6875rem] text-ink-faint">
+            {row.entry_count} {row.entry_count === 1 ? 'entry' : 'entries'} ·{' '}
+            {row.people_count} {row.people_count === 1 ? 'account' : 'accounts'}
+          </p>
+        ) : (
+          <p className="text-[0.6875rem] text-ink-faint">
+            {row.entry_count} {row.entry_count === 1 ? 'entry' : 'entries'}
+          </p>
+        )}
+      </div>
+
+      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
+        <BreakdownFigure label="Receivable" minor={row.receivable} currency={row.currency} tone="receivable" />
+        <BreakdownFigure label="Payable" minor={row.payable} currency={row.currency} tone="payable" />
+        <BreakdownFigure label="Settled" minor={row.settled} currency={row.currency} />
+        {row.today !== 0 ? (
+          <BreakdownFigure label="Today" minor={row.today} currency={row.currency} />
+        ) : (
+          <BreakdownFigure
+            label={kind === 'opening' ? 'Remaining' : 'Net'}
+            minor={Math.abs(row.net)}
+            currency={row.currency}
+          />
+        )}
+      </dl>
+    </div>
+  );
+}
+
+function BreakdownFigure({
+  label,
+  minor,
+  currency,
+  tone,
+}: {
+  label: string;
+  minor: number;
+  currency: string;
+  tone?: 'receivable' | 'payable';
+}) {
+  return (
+    <div className="min-w-0">
+      <dt className="truncate text-[0.6875rem] text-ink-faint">{label}</dt>
+      <dd
+        className={cn(
+          'tnum truncate text-[0.875rem] font-medium',
+          tone === 'receivable' && 'text-receivable',
+          tone === 'payable' && 'text-payable',
+          !tone && 'text-ink-muted',
+        )}
+      >
+        {formatMoney(minor, currency)}
+      </dd>
     </div>
   );
 }

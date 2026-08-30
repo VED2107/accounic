@@ -427,6 +427,14 @@ export interface PersonPage {
   regular: PositionSplit;
   /** The opening book's position, on its own. Never added into `regular` on screen. */
   opening_position: PositionSplit;
+  /**
+   * Cash in hand for this person, broken out by the currency each row was
+   * entered in (db/migrations/0024). One row per currency this person has
+   * traded in. Empty on a database that has not run 0024.
+   */
+  regular_by_currency: CurrencyHalfBreakdown[];
+  /** The same, for this person's opening book. */
+  opening_by_currency: CurrencyHalfBreakdown[];
   /** Regular activity only: credits, debits, settlements and transfer legs. */
   timeline: TimelineEntry[];
   timeline_total: number;
@@ -522,6 +530,47 @@ export interface CurrencyTotals {
   net_base_minor: number | null;
   entry_count: number;
   people_count: number;
+  /**
+   * The cash-in-hand half and the opening half of this currency, each stated
+   * IN THIS CURRENCY from the amounts people actually entered — never an INR
+   * figure reconverted (db/migrations/0024). Present once a database has run
+   * 0024; absent before it, exactly as `cash_net_position` was.
+   */
+  cash?: CurrencyHalfBreakdown;
+  opening?: CurrencyHalfBreakdown;
+}
+
+/**
+ * One half (cash in hand OR opening) of one currency, in that currency
+ * (db/migrations/0024).
+ *
+ * Built from `entered_amount_minor` + `entered_currency` + direction + the
+ * stored settlement allocation. `net_base_minor` is the ONLY converted figure
+ * and is reference only — never the primary display.
+ */
+export interface CurrencyHalfBreakdown {
+  currency: string;
+  base_currency: string;
+  /** Sum of what they gave you, in this currency. */
+  credit: number;
+  /** Sum of what you gave them, in this currency. */
+  debit: number;
+  /** How much of the above has been settled, scaled from the stored allocation. */
+  settled: number;
+  /** credit − settled-in, floored at zero. */
+  receivable: number;
+  /** debit − settled-out, floored at zero. */
+  payable: number;
+  /** receivable − payable, in this currency. Signed. */
+  net: number;
+  /** `net` converted to the workspace currency at today's rate. Reference only; null when no rate. */
+  net_base_minor: number | null;
+  /** Everything entered today in this currency and half. */
+  today: number;
+  today_count: number;
+  entry_count: number;
+  /** Distinct accounts contributing. Omitted on the person page, where it is always one. */
+  people_count?: number;
 }
 
 /** Today's movement in one currency (0015). */

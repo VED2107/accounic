@@ -7,6 +7,7 @@ import '../../core/icons.dart';
 import '../../core/layout.dart';
 import '../../core/money.dart';
 import '../../core/theme.dart';
+import '../../data/models.dart';
 import '../motion.dart';
 
 /// The Accounic design system, Flutter side (context.md §18, §27, §28).
@@ -868,6 +869,191 @@ class Segmented<T> extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// One currency's half of a position — cash in hand OR the opening balance —
+/// shown in the currency the money was actually entered in (db/migrations/0024).
+///
+/// The rule this widget holds: the large figure is ALWAYS the original entered
+/// amount in its own currency. The workspace-currency equivalent is a small
+/// "≈" line beneath it and nothing settles against it. Nothing here reconverts
+/// a base-currency total back into a foreign currency.
+class CurrencyHalfBlock extends StatelessWidget {
+  const CurrencyHalfBlock({
+    super.key,
+    required this.row,
+    required this.baseCurrency,
+    required this.opening,
+  });
+
+  final CurrencyHalfBreakdown row;
+  final String baseCurrency;
+
+  /// Labels the net figure "Remaining" for the opening half, "Net" for cash.
+  final bool opening;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.money;
+    final net = row.net;
+    final tone = net > 0
+        ? palette.receivable
+        : net < 0
+            ? palette.payable
+            : palette.inkMuted;
+
+    Widget figure(String name, int minor, Color color) => Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11.5, color: palette.inkFaint),
+              ),
+              const SizedBox(height: 1),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: MoneyText(
+                  minor,
+                  currency: row.currency,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+
+    final count = StringBuffer('${row.entryCount} ')
+      ..write(row.entryCount == 1 ? 'entry' : 'entries');
+    if ((row.peopleCount ?? 0) > 0) {
+      count
+        ..write(' · ${row.peopleCount} ')
+        ..write(row.peopleCount == 1 ? 'account' : 'accounts');
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  row.currency,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.7,
+                    color: palette.inkFaint,
+                  ),
+                ),
+              ),
+              Text(
+                count.toString(),
+                style: TextStyle(fontSize: 11, color: palette.inkFaint),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: MoneyText(
+              net.abs(),
+              currency: row.currency,
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                color: tone,
+              ),
+            ),
+          ),
+          if (row.showsBaseEquivalent) ...[
+            const SizedBox(height: 2),
+            Text(
+              '≈ ${formatMoney(row.netBaseMinor!.abs(), currency: baseCurrency)}',
+              style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
+            ),
+          ] else if (row.currency != baseCurrency && row.netBaseMinor == null) ...[
+            const SizedBox(height: 2),
+            Text(
+              'no ${row.currency} → $baseCurrency rate yet',
+              style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              figure('Receivable', row.receivable, palette.receivable),
+              figure('Payable', row.payable, palette.payable),
+              figure('Settled', row.settled, palette.inkMuted),
+              if (row.today != 0)
+                figure('Today', row.today, palette.inkMuted)
+              else
+                figure(opening ? 'Remaining' : 'Net', net.abs(), palette.inkMuted),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A card of [CurrencyHalfBlock]s — the per-currency view of one half of an
+/// account's position, for the person screen (db/migrations/0024). Rendered
+/// only when [rows] has something to show.
+class CurrencyBreakdownCard extends StatelessWidget {
+  const CurrencyBreakdownCard({
+    super.key,
+    required this.title,
+    required this.description,
+    required this.rows,
+    required this.baseCurrency,
+    required this.opening,
+  });
+
+  final String title;
+  final String description;
+  final List<CurrencyHalfBreakdown> rows;
+  final String baseCurrency;
+  final bool opening;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.money;
+    final ordered = CurrencyHalfBreakdown.order(rows, baseCurrency);
+    if (ordered.isEmpty) return const SizedBox.shrink();
+
+    return SectionCard(
+      title: title,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+            child: Text(
+              description,
+              style: TextStyle(fontSize: 12.5, height: 1.4, color: palette.inkFaint),
+            ),
+          ),
+          for (final row in ordered) ...[
+            Divider(height: 1, color: palette.line),
+            CurrencyHalfBlock(row: row, baseCurrency: baseCurrency, opening: opening),
+          ],
+        ],
       ),
     );
   }

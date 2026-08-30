@@ -8,7 +8,7 @@ import {
   buttonClass,
   cn,
 } from '@/components/ui/primitives';
-import { Money, NetBadge, SplitBar } from '@/components/money';
+import { CurrencyBreakdown, Money, NetBadge, SplitBar } from '@/components/money';
 import { ActivityChart } from '@/components/charts/activity-chart';
 import { Sparkline, TrendChip } from '@/components/charts/sparkline';
 import { ActivityRow } from '@/components/ledger/activity-row';
@@ -30,6 +30,7 @@ import { friendlyDate, greeting } from '@/lib/dates';
 import { balanceTone, formatApprox, formatMoney } from '@/lib/money';
 import { trendsFromBuckets, type Trend } from '@/lib/series';
 import type {
+  CurrencyHalfBreakdown,
   CurrencyTotals,
   Dashboard,
   DashboardPeopleRow,
@@ -65,6 +66,18 @@ export default async function DashboardPage() {
   const hasOpening =
     Boolean(openingTotal) &&
     (openingTotal.position !== 0 || openingTotal.people_count > 0);
+  // The per-currency breakdown behind each half (db/migrations/0024). Present
+  // once the database has run 0024; before it, these are empty and the card
+  // falls back to the base-currency-only blocks below.
+  const cashRows = byCurrency
+    .map((row) => row.cash)
+    .filter((row): row is CurrencyHalfBreakdown => Boolean(row));
+  const openingRows = byCurrency
+    .map((row) => row.opening)
+    .filter((row): row is CurrencyHalfBreakdown => Boolean(row));
+  const hasCurrencyBreakdown = cashRows.some(
+    (row) => row.credit !== 0 || row.debit !== 0 || row.settled !== 0,
+  );
   // The RPC returns a generous slice; six rows is what keeps this column the
   // same height as the one beside it, and "recent" stops meaning much past that.
   const activity = data.recent_activity.slice(0, 6);
@@ -265,27 +278,50 @@ export default async function DashboardPage() {
               title="Cash in hand"
               description={
                 hasOpening
-                  ? `The regular trading position across every account, converted to ${currency}. The opening balances are counted separately below and are not part of this figure.`
-                  : `The regular trading position across every account, converted to ${currency}.`
+                  ? `The regular trading position across every account, in the currency each amount was entered in. The opening balances are counted separately below and are not part of this figure.`
+                  : `The regular trading position across every account, in the currency each amount was entered in.`
               }
             />
-            <div className="divide-y divide-line">
-              <WorkspacePositionBlock
-                label="Cash in hand"
-                position={cashInHand}
-                currency={currency}
-                originals={originalsOf(byCurrency, currency, false)}
-              />
-              {hasOpening ? (
+
+            {hasCurrencyBreakdown ? (
+              <>
+                <CurrencyBreakdown rows={cashRows} baseCurrency={currency} kind="cash" />
+                <TotalLine position={cashInHand} currency={currency} />
+                {hasOpening ? (
+                  <>
+                    <div className="border-t border-line-strong px-4 pt-4 sm:px-5">
+                      <p className="text-[0.6875rem] font-semibold uppercase tracking-wide text-ink-faint">
+                        Opening balance
+                      </p>
+                      <p className="mt-1 text-[0.75rem] leading-relaxed text-ink-faint">
+                        What the accounts were carried in with, less whatever has been settled
+                        against it. Independently calculated, never part of cash in hand.
+                      </p>
+                    </div>
+                    <CurrencyBreakdown rows={openingRows} baseCurrency={currency} kind="opening" />
+                    <TotalLine position={openingTotal} currency={currency} />
+                  </>
+                ) : null}
+              </>
+            ) : (
+              <div className="divide-y divide-line">
                 <WorkspacePositionBlock
-                  label="Opening balance"
-                  position={openingTotal}
+                  label="Cash in hand"
+                  position={cashInHand}
                   currency={currency}
-                  originals={originalsOf(byCurrency, currency, true)}
-                  caption="What the accounts were carried in with, less whatever has been settled against it. Independently calculated."
+                  originals={originalsOf(byCurrency, currency, false)}
                 />
-              ) : null}
-            </div>
+                {hasOpening ? (
+                  <WorkspacePositionBlock
+                    label="Opening balance"
+                    position={openingTotal}
+                    currency={currency}
+                    originals={originalsOf(byCurrency, currency, true)}
+                    caption="What the accounts were carried in with, less whatever has been settled against it. Independently calculated."
+                  />
+                ) : null}
+              </div>
+            )}
           </Card>
         </Reveal>
       ) : null}
@@ -652,6 +688,38 @@ function originalsOf(
     parts.push(formatMoney(Math.abs(minor), row.currency));
   }
   return parts.length > 0 ? parts.join('  ·  ') : undefined;
+}
+
+/**
+ * The consolidated figure for one half, in the workspace currency — shown
+ * once, beneath the per-currency blocks, as the reference total. It is the
+ * only converted number in the card and nothing settles against it.
+ */
+function TotalLine({
+  position,
+  currency,
+}: {
+  position: WorkspacePosition;
+  currency: string;
+}) {
+  const tone = balanceTone(position.position);
+  return (
+    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 bg-sunken/50 px-4 py-3 sm:px-5">
+      <span className="text-[0.6875rem] font-medium uppercase tracking-wide text-ink-faint">
+        Total in {currency}
+      </span>
+      <span
+        className={cn(
+          'tnum text-[0.9375rem] font-semibold',
+          tone === 'receivable' && 'text-receivable',
+          tone === 'payable' && 'text-payable',
+          tone === 'settled' && 'text-ink-muted',
+        )}
+      >
+        ≈ {formatMoney(Math.abs(position.position), currency)}
+      </span>
+    </div>
+  );
 }
 
 function WorkspacePositionBlock({

@@ -3,8 +3,8 @@
 Status of the Accounic build against `context.md`. This is the file to read first when
 picking the work back up.
 
-**Last updated:** 2026-08-29 (twelfth session)
-**Current release:** [v1.7.2](https://github.com/VED2107/accounic/releases/latest)
+**Last updated:** 2026-08-30 (thirteenth session)
+**Current release:** [v1.8.0](https://github.com/VED2107/accounic/releases/latest)
 **Overall:** Phases 1–4 complete and verified against the live database. Phase 5
 (performance) measured and the client half tuned — see `docs/performance.md`. Phase 6
 (hardening) partly done.
@@ -19,6 +19,7 @@ Everything found since v1.0.0 was found on a **phone**, and none of it was catch
 
 | Release | Fixed |
 |---|---|
+| 1.8.0 | the dashboard leads with the currency each amount was entered in — cash in hand and the opening balance each broken out per currency (original totals, receivable/payable/settled/today), the base-currency figure demoted to a reference line; the same breakdown on the person screen; `totals_by_currency[i].cash` / `.opening` added to `dashboard()`, `regular_by_currency` / `opening_by_currency` to `person_page()` |
 | 1.0.1 | auth errors that named the wrong cause |
 | 1.0.2 | the missing INTERNET permission; Administration unusable at phone width |
 | 1.0.3 | Delete hidden rather than explained; the person form going two-up on a phone |
@@ -53,10 +54,12 @@ Each now has a widget test pinning it — see README §4.
 
 ## 2. Database — `db/` (complete)
 
-Twenty-two migrations, applied in order to the live Supabase project.
+Twenty-four migrations, applied in order to the live Supabase project.
 
 | File | Contents |
 |---|---|
+| `0024_dashboard_currency_breakdown.sql` | `dashboard().totals_by_currency[i]` gains `cash` and `opening` objects — per entry currency, per half, the original entered totals with receivable / payable / settled / today; `person_page()` gains `regular_by_currency` / `opening_by_currency` via `person_currency_breakdown()`. Additive: every prior key is byte-identical, settlement is scaled from the stored allocation (never a live rate), and the migration re-asserts the scoping against the engine |
+| `0023_settlement_scope.sql` | a spilled settlement stays inside its own book — a settlement that names an opening row can no longer leak onto a regular transaction (and stops being non-deterministic when an opening balance is edited) |
 | `0001_foundation.sql` | extensions, enums, `profiles`, `app_admins`, `is_admin()` / `is_active_user()` / `current_owner()`, auth-user provisioning trigger |
 | `0002_ledger.sql` | `people`, `transactions`, `settlements`, all CHECK constraints, composite-FK ownership, settlement validation trigger, over-settlement guards (both directions) |
 | `0003_engine.sql` | **the accounting engine** — `person_balances`, `owner_summary`, `activity_feed` views; `transaction_settlement_status()` FIFO allocator; `dashboard()`; `search_all()` |
@@ -125,13 +128,14 @@ All run against the user's live Supabase project, not mocks.
 
 | Check | Result |
 |---|---|
-| `node db/tools/run-sql.mjs test` | 10 suites pass — 299 assertions, including 57 for transfers (`db/tests/10`) and 29 for the opening balance (`db/tests/09`) |
+| `node db/tools/run-sql.mjs test` | 12 suites pass — 328 assertions, including 29 for the per-currency dashboard breakdown (`db/tests/12`) and 55 for cash in hand (`db/tests/11`) |
+| `node db/tools/snapshot.mjs before / after / diff` | clean across `0024` — every net balance byte-for-byte unchanged |
 | `node db/tools/smoke-api.mjs` | 33/33 pass over real HTTP with the anon key |
 | `cd web && npx tsc --noEmit` | clean |
-| `cd web && npm test` | 110 pass |
+| `cd web && npm test` | 127 pass |
 | `cd web && npx next build` | succeeds, 11 routes |
 | `cd app && flutter analyze` | no issues |
-| `cd app && flutter test` | 220 pass |
+| `cd app && flutter test` | 245 pass |
 | `flutter build windows --release` | `accounic.exe` built |
 | `flutter build apk --release` | `app-release.apk` built, 24.3 MB |
 | Installer | silent-installed and the installed binary launched |

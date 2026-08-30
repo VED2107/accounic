@@ -967,6 +967,8 @@ class PersonPage {
     this.opening,
     this.openingHistory = const [],
     this.openingActivity = const [],
+    this.regularByCurrency = const [],
+    this.openingByCurrency = const [],
     PositionSplit? regular,
     PositionSplit? openingPosition,
   })  : _regular = regular,
@@ -1008,6 +1010,8 @@ class PersonPage {
         opening: opening,
         openingHistory: openingHistory,
         openingActivity: openingActivity,
+        regularByCurrency: regularByCurrency,
+        openingByCurrency: openingByCurrency,
         regular: _regular,
         openingPosition: _openingPosition,
       );
@@ -1025,6 +1029,15 @@ class PersonPage {
   final List<TimelineEntry> timeline;
   final int timelineTotal;
   final List<OpenTransaction> openTransactions;
+
+  /// This account's cash in hand broken out by the currency each row was
+  /// entered in (db/migrations/0024). Empty on a database that has not run
+  /// 0024, and worth showing only when the account has traded in more than one
+  /// currency, or in one that is not its ledger denomination.
+  final List<CurrencyHalfBreakdown> regularByCurrency;
+
+  /// The same, for this account's opening book.
+  final List<CurrencyHalfBreakdown> openingByCurrency;
 
   /// The account's own currency: what every figure on the screen is in. This is
   /// the person's LEDGER currency — what their history was actually recorded in.
@@ -1053,6 +1066,14 @@ class PersonPage {
         openingActivity: [
           for (final entry in (json['opening_activity'] as List? ?? []))
             TimelineEntry.fromJson(Map<String, dynamic>.from(entry as Map)),
+        ],
+        regularByCurrency: [
+          for (final entry in (json['regular_by_currency'] as List? ?? []))
+            CurrencyHalfBreakdown.fromJson(Map<String, dynamic>.from(entry as Map)),
+        ],
+        openingByCurrency: [
+          for (final entry in (json['opening_by_currency'] as List? ?? []))
+            CurrencyHalfBreakdown.fromJson(Map<String, dynamic>.from(entry as Map)),
         ],
         regular: json['regular'] == null
             ? null
@@ -1253,6 +1274,8 @@ class CurrencyTotals {
     this.netBaseMinor,
     this.cashNetPosition = 0,
     this.openingNetPosition = 0,
+    this.cash,
+    this.opening,
   });
 
   /// The currency the entries were actually made in — not the denomination of
@@ -1283,6 +1306,13 @@ class CurrencyTotals {
   final int cashNetPosition;
   final int openingNetPosition;
 
+  /// The cash-in-hand half and the opening half of this currency, each stated
+  /// IN THIS CURRENCY from the amounts people actually entered — never an INR
+  /// figure reconverted (db/migrations/0024). Null before a database has run
+  /// 0024, exactly as [cashNetPosition] was.
+  final CurrencyHalfBreakdown? cash;
+  final CurrencyHalfBreakdown? opening;
+
   /// Whether the equivalent says anything the primary figure does not.
   bool get showsBaseEquivalent => netBaseMinor != null && baseCurrency != currency;
 
@@ -1300,7 +1330,101 @@ class CurrencyTotals {
         openingNetPosition: _int(json['opening_net_position']),
         entryCount: _int(json['entry_count']),
         peopleCount: _int(json['people_count']),
+        cash: json['cash'] == null
+            ? null
+            : CurrencyHalfBreakdown.fromJson(
+                Map<String, dynamic>.from(json['cash'] as Map)),
+        opening: json['opening'] == null
+            ? null
+            : CurrencyHalfBreakdown.fromJson(
+                Map<String, dynamic>.from(json['opening'] as Map)),
       );
+}
+
+/// One half (cash in hand OR opening) of one currency, in that currency
+/// (db/migrations/0024).
+///
+/// Built from `entered_amount_minor` + `entered_currency` + direction + the
+/// stored settlement allocation. [netBaseMinor] is the ONLY converted figure
+/// and is reference only — never the primary display.
+class CurrencyHalfBreakdown {
+  const CurrencyHalfBreakdown({
+    required this.currency,
+    required this.baseCurrency,
+    required this.credit,
+    required this.debit,
+    required this.settled,
+    required this.receivable,
+    required this.payable,
+    required this.net,
+    this.netBaseMinor,
+    this.today = 0,
+    this.todayCount = 0,
+    this.entryCount = 0,
+    this.peopleCount,
+  });
+
+  final String currency;
+  final String baseCurrency;
+  final int credit;
+  final int debit;
+  final int settled;
+  final int receivable;
+  final int payable;
+
+  /// receivable − payable, in [currency]. Signed.
+  final int net;
+
+  /// [net] converted to the workspace currency at today's rate. Reference only;
+  /// null when no rate is cached.
+  final int? netBaseMinor;
+
+  final int today;
+  final int todayCount;
+  final int entryCount;
+
+  /// Distinct accounts contributing. Null on the person page, where it is one.
+  final int? peopleCount;
+
+  /// This currency carries data when any of its three totals is non-zero.
+  bool get hasData => credit != 0 || debit != 0 || settled != 0;
+
+  /// Whether the workspace-currency equivalent says anything new.
+  bool get showsBaseEquivalent => netBaseMinor != null && baseCurrency != currency;
+
+  factory CurrencyHalfBreakdown.fromJson(Map<String, dynamic> json) =>
+      CurrencyHalfBreakdown(
+        currency: (json['currency'] as String?) ?? kFallbackCurrency,
+        baseCurrency: (json['base_currency'] as String?) ?? kFallbackCurrency,
+        credit: _int(json['credit']),
+        debit: _int(json['debit']),
+        settled: _int(json['settled']),
+        receivable: _int(json['receivable']),
+        payable: _int(json['payable']),
+        net: _int(json['net']),
+        netBaseMinor:
+            json['net_base_minor'] == null ? null : _int(json['net_base_minor']),
+        today: _int(json['today']),
+        todayCount: _int(json['today_count']),
+        entryCount: _int(json['entry_count']),
+        peopleCount:
+            json['people_count'] == null ? null : _int(json['people_count']),
+      );
+
+  /// Base currency first, then alphabetical; currencies with no data dropped.
+  static List<CurrencyHalfBreakdown> order(
+    Iterable<CurrencyHalfBreakdown> rows,
+    String baseCurrency,
+  ) {
+    final list = rows.where((r) => r.hasData).toList()
+      ..sort((a, b) {
+        if (a.currency == b.currency) return 0;
+        if (a.currency == baseCurrency) return -1;
+        if (b.currency == baseCurrency) return 1;
+        return a.currency.compareTo(b.currency);
+      });
+    return list;
+  }
 }
 
 /// Today's movement in one entry currency (db/migrations/0017).

@@ -119,7 +119,7 @@ Apply the migrations in order — they are numbered and must run in sequence:
 cd db/tools && npm install && cd ../..
 node db/tools/run-sql.mjs migrate       # 0001 … 0012
 node db/tools/run-sql.mjs seed          # optional demo data
-node db/tools/run-sql.mjs test          # 128 assertions, rolled back
+node db/tools/run-sql.mjs test          # 12 suites, 328 assertions, rolled back
 ```
 
 The runner reads `DATABASE_URL` from the environment or from `web/.env.local`.
@@ -202,6 +202,7 @@ widget at a real size:
 | `motion_cost_test.dart` | a controller per list row coming back — see [`docs/performance.md`](./docs/performance.md) |
 | `person_form_keyboard_test.dart` | the person form becoming unusable with the keyboard up: actions under the keyboard, no way to dismiss it, Next going nowhere, targets under 44pt |
 | `currencies_test.dart` | the Dart currency list drifting from `shared/currencies.json`, and conversion disagreeing with the web and the database |
+| `dashboard_currency_breakdown_test.dart` | the dashboard reconverting a base-currency total back into a foreign currency instead of showing the original entered amount; the `cash` / `opening` per-currency objects failing to parse; the rows losing their INR-first order |
 
 ---
 
