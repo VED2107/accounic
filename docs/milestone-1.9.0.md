@@ -63,17 +63,27 @@ own verification.
 
 | Phase | State |
 |---|---|
-| 0 — audit | done |
-| 1 — CI | in progress |
+| 0 — audit | **done** |
+| 1 — CI | **done** — three workflows; the SQL one verified locally end to end against an embedded Postgres 18 (shim + 27 migrations + 14 suites). Not yet seen running on GitHub: that needs a push |
 | 2 — telemetry | not started |
-| 3 — Flutter-first | not started |
-| 4 — general PDF export | not started |
-| 5 — CSV + JSON export | not started |
-| 6 — export RPC | not started |
+| 3 — Flutter-first | partly — the export sheet is built to these rules (chips, 44pt targets, real progress, honest endings). Dashboard, person screen and transaction entry not yet reworked |
+| 4 — general PDF export | **done** — both clients, one document, `docs/performance.md`-clean |
+| 5 — CSV + JSON export | **done** — mirrored writers, 21 web + 26 Dart tests |
+| 6 — export RPC | **done** — `export_workspace()` / `export_entries()`, 39 assertions incl. isolation |
 | 7 — restore rehearsal | not started |
-| 8 — 20k benchmark | not started |
-| 9 — rate limiting | not started |
+| 8 — 20k benchmark | **done** — and the 98-second dashboard it found is fixed (0027) |
+| 9 — rate limiting | **done** — trigger-based, 13 assertions, both clients show the refusal |
 | 10 — file splits | not started |
-| 11 — shared definitions | mostly pre-existing; CI check added in Phase 1 |
-| 12 — exchange-rate resilience | not started |
-| 13 — verification | not started |
+| 11 — shared definitions | mostly pre-existing; `sync-currencies --check` now runs in CI |
+| 12 — exchange-rate resilience | **done** — rate sanity guards + provider-payload rules, 14 web + 13 Dart tests |
+| 13 — verification | partial — every phase above was verified as it landed; the milestone-wide pass and the PROGRESS update are outstanding |
+
+## What is left, in order
+
+1. **Push the branch** so CI actually runs (Phase 1's last mile).
+2. Phase 2 — telemetry, web and Flutter.
+3. Phase 3 — the Flutter dashboard, person screen and entry flows.
+4. Phase 10 — split `person_screen.dart`, `dashboard_screen.dart`, `actions.ts`.
+5. Phase 7 — restore rehearsal (no `pg_dump` in this environment; the drill is a
+   rebuild from migrations plus a data reload, verified against `person_balances`).
+6. Phase 13 — the full pass, then `docs/PROGRESS.md`.
