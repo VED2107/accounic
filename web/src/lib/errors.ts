@@ -17,6 +17,9 @@ const SAFE_SQLSTATES = new Set([
   '23505', // unique_violation
   'P0002', // no_data_found        — "Person not found."
   '42501', // insufficient_privilege
+  // Our own rate limit (db/migrations/0026). Its message already says what
+  // happened, what to do, and that nothing was saved, so it passes through.
+  'AC429',
 ]);
 
 const FALLBACK_BY_SQLSTATE: Record<string, string> = {
@@ -27,6 +30,7 @@ const FALLBACK_BY_SQLSTATE: Record<string, string> = {
   '23514': 'That change is not valid.',
   '40001': 'Someone else changed this at the same time. Please try again.',
   '57014': 'That took too long. Please try again.',
+  AC429: 'Too many changes in a short time. Wait a moment and try again — nothing has been saved.',
 };
 
 /** Messages raised by our own RPCs read as sentences; DB noise does not. */
