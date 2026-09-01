@@ -30,6 +30,11 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
+      # @emnapi/core and @emnapi/runtime are named as devDependencies for one
+      # reason: sharp declares them as optional platform deps for its wasm
+      # fallback, npm on Windows never writes them to the lockfile, and npm on
+      # Linux treats their absence as a mismatch — so `npm ci` refused every
+      # install here until they were pinned. Nothing new ships in the bundle.
       - name: Install
         run: npm ci
 

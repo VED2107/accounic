@@ -24,7 +24,6 @@
     "zod": "^4.1.11"
   },
   "devDependencies": {
-    "_comment_emnapi": "sharp declares these as optional platform deps for its wasm fallback. npm on Windows never writes them to the lockfile and npm on Linux insists on them, so `npm ci` in CI refused every install. Named here so the lock describes them on every platform.",
     "@emnapi/core": "^1.11.3",
     "@emnapi/runtime": "^1.11.3",
     "@tailwindcss/postcss": "^4.1.13",
