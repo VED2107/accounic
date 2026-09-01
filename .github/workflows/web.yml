@@ -21,9 +21,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node 24, matching the machine the lockfile is written on. npm 10 and
+      # npm 11 disagree about which optional platform packages belong in a
+      # lockfile, and `npm ci` treats that disagreement as a fatal mismatch.
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           cache: npm
           cache-dependency-path: web/package-lock.json
 
