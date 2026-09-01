@@ -61,29 +61,45 @@ own verification.
 
 ## Status
 
+Shipped as **v1.9.0** — PR #1 merged to `main`, tag `v1.9.0` pushed, migrations
+0025–0028 applied to the live project (`snapshot.mjs diff`: every net balance
+unchanged), and the release workflow building the installer and the APK.
+
 | Phase | State |
 |---|---|
 | 0 — audit | **done** |
-| 1 — CI | **done** — three workflows; the SQL one verified locally end to end against an embedded Postgres 18 (shim + 27 migrations + 14 suites). Not yet seen running on GitHub: that needs a push |
-| 2 — telemetry | not started |
-| 3 — Flutter-first | partly — the export sheet is built to these rules (chips, 44pt targets, real progress, honest endings). Dashboard, person screen and transaction entry not yet reworked |
-| 4 — general PDF export | **done** — both clients, one document, `docs/performance.md`-clean |
+| 1 — CI | **done** — three workflows, all three green on GitHub. The SQL one builds a throwaway Postgres from `db/ci/00_supabase_shim.sql` + 28 migrations and runs all 15 suites |
+| 2 — telemetry | **done** — `client_errors` in the owner's own project, three layers of redaction, wired to both Flutter error hooks, the web render boundary, `window.onerror` and `unhandledrejection` |
+| 3 — Flutter-first | **partly** — the export sheet is built to these rules (chips, 44pt targets, live counts before generating, real page progress, cancel treated as not-an-error). Dashboard, person screen and transaction entry are **not** reworked |
+| 4 — general PDF export | **done** — both clients, one document |
 | 5 — CSV + JSON export | **done** — mirrored writers, 21 web + 26 Dart tests |
-| 6 — export RPC | **done** — `export_workspace()` / `export_entries()`, 39 assertions incl. isolation |
-| 7 — restore rehearsal | not started |
+| 6 — export RPC | **done** — `export_workspace()` / `export_entries()`, 39 assertions including isolation |
+| 7 — restore rehearsal | **not done** — no `pg_dump` in this environment |
 | 8 — 20k benchmark | **done** — and the 98-second dashboard it found is fixed (0027) |
 | 9 — rate limiting | **done** — trigger-based, 13 assertions, both clients show the refusal |
-| 10 — file splits | not started |
-| 11 — shared definitions | mostly pre-existing; `sync-currencies --check` now runs in CI |
+| 10 — file splits | **not done** |
+| 11 — shared definitions | mostly pre-existing; `sync-currencies --check` runs in CI now |
 | 12 — exchange-rate resilience | **done** — rate sanity guards + provider-payload rules, 14 web + 13 Dart tests |
-| 13 — verification | partial — every phase above was verified as it landed; the milestone-wide pass and the PROGRESS update are outstanding |
+| 13 — verification | **done for what shipped** — 15 SQL suites, 196 web tests, 315 Dart tests, analyze and build clean, CI green, and `docs/PROGRESS.md` updated. It is not a pass over phases 3, 7 and 10, which did not happen |
 
-## What is left, in order
+## What is left
 
-1. **Push the branch** so CI actually runs (Phase 1's last mile).
-2. Phase 2 — telemetry, web and Flutter.
-3. Phase 3 — the Flutter dashboard, person screen and entry flows.
-4. Phase 10 — split `person_screen.dart`, `dashboard_screen.dart`, `actions.ts`.
-5. Phase 7 — restore rehearsal (no `pg_dump` in this environment; the drill is a
-   rebuild from migrations plus a data reload, verified against `person_balances`).
-6. Phase 13 — the full pass, then `docs/PROGRESS.md`.
+Three phases of the brief, untouched and not claimed anywhere as done:
+
+1. **Phase 3** — the Flutter dashboard, person screen and transaction-entry rework.
+   The export sheet shows the shape it should take; the rest of the screens have not
+   been through it.
+2. **Phase 10** — `person_screen.dart` (1,686 lines), `dashboard_screen.dart` (1,359)
+   and `actions.ts` (1,015) are still one file each. Worth doing **before** Phase 3,
+   so that work lands in the new structure.
+3. **Phase 7** — the restore rehearsal. There is no `pg_dump` in this environment, so
+   the drill has to be a rebuild from migrations plus a data reload, reconciled
+   against `person_balances`. The procedure is not written either.
+
+Smaller things the milestone found and left:
+
+* `dashboard()` is 1.2 s at 20,000 entries — the two `today` blocks sum the whole feed
+  to answer a question about one day (`docs/performance.md` §6).
+* `export_workspace()` inherits that cost, at ~2 s.
+* The web PDF drops non-Latin glyphs when fontkit's shaper throws; it falls back
+  rather than failing the export, but the name is lost from that cell.
