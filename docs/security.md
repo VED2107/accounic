@@ -141,12 +141,30 @@ logged server-side only.
 
 Honest about what is **not** covered:
 
-- **No rate limiting in the app.** Supabase's platform limits apply to auth; there is
-  no application-level throttle on RPCs. For a handful of trusted users this is
-  acceptable; a public deployment would need one.
+- ~~**No rate limiting in the app.**~~ **Closed in 1.9.0** — `db/migrations/0026`
+  counts every INSERT into the four ledger tables against a per-owner, fixed-window
+  bucket, as a trigger rather than a change to any accounting function: 120 entries a
+  minute, 2,000 writes an hour, limits held in a table. Reads and corrections (voids,
+  edits) are deliberately never limited — refusing a user's fix would be a worse
+  failure than the one being prevented. Refusals raise SQLSTATE `AC429` and both
+  clients show the sentence rather than a fallback. Counters are written only by a
+  SECURITY DEFINER function: a caller who could reset their own would have a
+  decorative limit.
 - **No audit log table.** Records are audit-*friendly* — `created_by`, timestamps, and
   void-instead-of-delete mean history is reconstructable — but there is no separate
   immutable audit trail of who changed what.
+- **Crash reports are data too, and are treated as such.** `db/migrations/0028` records
+  sanitised client failures in `client_errors`, in the owner's own project rather than
+  a third party's index. Three defences keep money out of them: the clients strip
+  anything money-shaped, any email address, any 7+ digit run, any UUID and anything
+  token-shaped; `context` is a fixed key whitelist; and `report_client_error()` redacts
+  and whitelists again on arrival. The table has no INSERT grant to anyone, no UPDATE
+  path at all, and a SELECT policy limited to the caller's own rows.
+- **Exports are bounded by RLS, not by a filter.** `export_workspace()` and
+  `export_entries()` are SECURITY INVOKER and start at `assert_caller()`, so naming
+  another workspace's person id returns an empty export rather than a leak
+  (`db/tests/13_export.sql` keeps a second workspace alive throughout, purely to prove
+  it stays invisible).
 - **No MFA.** Not offered by the spec's auth scope.
 - **Admin deletion is real.** `adminDeleteUser` cascades and destroys that user's
   entire ledger. It is confirmed in the UI and refuses self-deletion, but it is not
@@ -159,9 +177,13 @@ Honest about what is **not** covered:
 ## 8. Re-running the checks
 
 ```bash
-node db/tools/run-sql.mjs test    # 38 authorisation assertions, in-transaction, rolled back
+node db/tools/run-sql.mjs test    # 15 suites, in-transaction, rolled back — including
+                                  # 13_export (isolation), 14_rate_limits, 15_client_errors
 node db/tools/smoke-api.mjs       # the same boundary over real HTTP with the anon key
 ```
+
+CI runs the first of those on every push, against a throwaway Postgres built from the
+migrations — `.github/workflows/sql.yml`.
 
 Both are safe against a live database: the SQL suite rolls back, and the smoke test
 cleans up after itself.

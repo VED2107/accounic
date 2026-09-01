@@ -4,7 +4,7 @@ Status of the Accounic build against `context.md`. This is the file to read firs
 picking the work back up.
 
 **Last updated:** 2026-09-01 (fourteenth session — milestone 1.9.0)
-**Current release:** [v1.8.0](https://github.com/VED2107/accounic/releases/latest)
+**Current release:** [v1.9.0](https://github.com/VED2107/accounic/releases/latest)
 **Overall:** Phases 1–4 complete and verified against the live database. Phase 5
 (performance) measured and the client half tuned — see `docs/performance.md`. Phase 6
 (hardening) partly done.
@@ -79,10 +79,14 @@ Each now has a widget test pinning it — see README §4.
 
 ## 2. Database — `db/` (complete)
 
-Twenty-four migrations, applied in order to the live Supabase project.
+Twenty-eight migrations, applied in order to the live Supabase project.
 
 | File | Contents |
 |---|---|
+| `0028_client_errors.sql` | production error telemetry — `client_errors` (no amount, note, name or credential can land in it), `report_client_error()` as the only door, `redact_for_telemetry()`, `my_error_summary()`. Its own rate-limit bucket |
+| `0027_dashboard_scale.sql` | the 98-second dashboard. The FIFO allocator was joined LATERAL against every row; it is asked once per person now. `dashboard()` 98,235 ms → 1,201 ms, `person_page()` 2,104 → 126 ms, and not one figure moved — see `docs/performance.md` §6 |
+| `0026_rate_limits.sql` | write rate limiting as BEFORE INSERT triggers, so no accounting function was rewritten. `rate_limits` (editable, no migration needed), `rate_limit_counters`, `enforce_rate_limit()`, `prune_rate_limit_counters()`. Reads and corrections are never limited |
+| `0025_export_workspace.sql` | data portability — `export_workspace()` (header, balances, currencies, counts) and `export_entries()` (the ledger, paged and deterministic), sharing one filter contract via `export_filters()`. SECURITY INVOKER, so RLS decides what a file can contain |
 | `0024_dashboard_currency_breakdown.sql` | `dashboard().totals_by_currency[i]` gains `cash` and `opening` objects — per entry currency, per half, the original entered totals with receivable / payable / settled / today; `person_page()` gains `regular_by_currency` / `opening_by_currency` via `person_currency_breakdown()`. Additive: every prior key is byte-identical, settlement is scaled from the stored allocation (never a live rate), and the migration re-asserts the scoping against the engine |
 | `0023_settlement_scope.sql` | a spilled settlement stays inside its own book — a settlement that names an opening row can no longer leak onto a regular transaction (and stops being non-deterministic when an opening balance is edited) |
 | `0001_foundation.sql` | extensions, enums, `profiles`, `app_admins`, `is_admin()` / `is_active_user()` / `current_owner()`, auth-user provisioning trigger |

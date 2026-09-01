@@ -2,9 +2,13 @@
 
 A small, fast, personal accounting system. Three clients, one backend, one database.
 
-Current release: **[v1.7.2](https://github.com/VED2107/accounic/releases/latest)** —
+Current release: **[v1.9.0](https://github.com/VED2107/accounic/releases/latest)** —
 Windows installer, Windows portable zip, and an Android APK. The app checks GitHub
 Releases on launch and tells you when a newer one exists.
+
+Every push runs three workflows — web (typecheck · tests · production build), Flutter
+(analyze · tests · debug APK) and SQL (every migration and every suite against a
+throwaway Postgres). A green CI means all three passed.
 
 Answers four questions and little else (`context.md` §35):
 

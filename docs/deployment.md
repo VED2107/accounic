@@ -2,8 +2,10 @@
 
 How each of the four pieces gets from this repository to something a person can use.
 
-Nothing here is automated. There is no CI, and releases are cut by hand from a clean
-`main`.
+Since 1.9.0 the checks and the release build both run in CI — `.github/workflows/`,
+and §3a below. What follows is still the truth about *what* has to happen and still
+works by hand, which is what to fall back on when a runner is not available. Releases
+are cut from a clean `main`.
 
 ---
 
@@ -69,7 +71,8 @@ host's dashboard — not in a committed file — and deploy `web/`.
 cd web && npm run typecheck && npm test && npm run build
 ```
 
-The build must be clean before deploying; there is no CI to catch it afterwards.
+The build must be clean before deploying. CI checks this on every push
+(`.github/workflows/web.yml`), but a local run is still the faster way to find out.
 
 ---
 
