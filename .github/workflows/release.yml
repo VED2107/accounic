@@ -130,7 +130,12 @@ jobs:
 
   windows:
     name: installer and portable zip
-    runs-on: windows-latest
+    # windows-2022, not windows-latest. The newer image ships a Visual Studio
+    # that Flutter 3.29 does not recognise, so its toolchain detection falls
+    # back to "Visual Studio 16 2019" and CMake then fails with "could not find
+    # any instance of Visual Studio". Pinning the image is the honest fix;
+    # moving the SDK forward is a separate decision.
+    runs-on: windows-2022
     needs: version
     defaults:
       run:
