@@ -65,9 +65,25 @@ async function runFile(client, path) {
 
 const [, , command = 'migrate', ...rest] = process.argv;
 
+const url = connectionString();
+
+// Supabase is TLS-only; a throwaway Postgres in CI has no certificate at all.
+// Decide from the URL rather than from an environment flag, so the same command
+// works in both places without being told which one it is.
+function sslFor(target) {
+  if (/[?&]sslmode=disable/.test(target)) return false;
+  try {
+    const host = new URL(target).hostname;
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return false;
+  } catch {
+    /* not a parseable URL — fall through to the secure default */
+  }
+  return { rejectUnauthorized: false };
+}
+
 const client = new pg.Client({
-  connectionString: connectionString(),
-  ssl: { rejectUnauthorized: false },
+  connectionString: url,
+  ssl: sslFor(url),
   // Supabase's pooler can be slow to hand out a session for DDL-heavy batches.
   statement_timeout: 120_000,
 });
