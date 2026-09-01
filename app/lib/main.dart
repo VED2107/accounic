@@ -6,7 +6,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:package_info_plus/package_info_plus.dart';
+
 import 'core/config.dart';
+import 'core/telemetry.dart';
 import 'core/theme.dart';
 import 'ui/app_router.dart';
 import 'ui/splash/splash_gate.dart';
@@ -21,8 +24,14 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Nothing fails quietly. A framework error used to reach the console only if
-  // the app happened to be run attached; both hooks now log with the stack, and
+  // the app happened to be run attached; both hooks log with the stack, and
   // every async screen renders an ErrorNote rather than nothing (§26).
+  //
+  // A console nobody can read is not much use on a phone, though, which is what
+  // Telemetry.installGlobalHandlers() below adds: the same two hooks also send
+  // a sanitised report to the user's own database (core/telemetry.dart). It is
+  // installed here, before Supabase, so a failure during startup is reported
+  // too — it is simply dropped until install() has a client to send with.
   final previousOnError = FlutterError.onError;
   FlutterError.onError = (details) {
     previousOnError?.call(details);
@@ -33,6 +42,7 @@ Future<void> main() async {
     debugPrintStack(stackTrace: stack);
     return true;
   };
+  Telemetry.installGlobalHandlers();
 
   if (!AppConfig.isConfigured) {
     runApp(const _MisconfiguredApp());
@@ -58,6 +68,17 @@ Future<void> main() async {
       autoRefreshToken: true,
     ),
   );
+
+  // Now there is somewhere to send reports. The version comes from the
+  // platform's own package info, so a report names the build it came from.
+  String? version;
+  try {
+    final info = await PackageInfo.fromPlatform();
+    version = '${info.version}+${info.buildNumber}';
+  } catch (_) {
+    // Not fatal: a report without a version is still a report.
+  }
+  Telemetry.install(Supabase.instance.client, appVersion: version);
 
   runApp(const ProviderScope(child: AccounicApp()));
 }

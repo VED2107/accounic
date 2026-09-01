@@ -195,6 +195,10 @@ declare
   v_owner uuid := gen_random_uuid();
   i int;
 begin
+  -- The block above left the session as `authenticated`; creating a user and
+  -- tightening a limit are the harness's own work, not the caller's.
+  execute 'reset role';
+
   insert into auth.users (instance_id, id, aud, role, email, encrypted_password,
                           email_confirmed_at, created_at, updated_at)
   values ('00000000-0000-0000-0000-000000000000', v_owner, 'authenticated', 'authenticated',

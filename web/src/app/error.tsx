@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { Button } from '@/components/ui/primitives';
+import { reportError } from '@/lib/telemetry';
 
 /**
  * Last-resort boundary (context.md §26; upgrade §10).
@@ -20,6 +21,14 @@ export default function GlobalError({
 }) {
   useEffect(() => {
     console.error(error);
+    // A console in a browser nobody is watching is not a report (Phase 2).
+    void reportError({
+      errorType: error.name || 'Error',
+      message: error.message,
+      route: typeof window === 'undefined' ? null : window.location.pathname,
+      operation: 'render',
+      context: { action: error.digest ?? 'no-digest' },
+    });
   }, [error]);
 
   return (
