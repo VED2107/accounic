@@ -121,3 +121,81 @@ cd app && flutter test test/motion_cost_test.dart
 For anything paint-related, run the real binary with
 `flutter run --profile -d windows` and open DevTools — but check the widget count
 first. Every jank bug this project has had was a build-phase cost, not a raster one.
+
+---
+
+## 6. The engine at 20,000 entries (milestone 1.9.0, Phase 8)
+
+Section 1 measured a seeded workspace of a few dozen entries and said outright
+what was missing: the numbers at realistic scale, where `person_balances`'
+lateral joins and the FIFO loop in `transaction_settlement_status()` were the
+two things most likely to bend first.
+
+They bent. `db/bench/seed_bench.sql` builds a workspace of **50 accounts across
+5 currencies, 20,230 transactions over three years, 4,925 settlements, 30
+opening rows and 100 transfers**, and the dashboard took **98 seconds**.
+
+| Query | Demo size | 20k, before | 20k, after |
+|---|---|---|---|
+| `dashboard()` | 9.8 ms | **98,235 ms** | **1,201 ms** |
+| `person_page()` | 5.2 ms | 2,104 ms | 126 ms |
+| `person_balances` (50 people) | 3.3 ms | 149 ms | 216 ms |
+| `activity_page()` | 7.6 ms | 62 ms | 77 ms |
+| `owner_summary` | 3.2 ms | 274 ms | 380 ms |
+| `search_all()` | 1.6 ms | 12 ms | 14 ms |
+| `transaction_settlement_status()` (one person) | — | 5 ms | 7 ms |
+| `export_workspace()` | — | — | 2,019 ms |
+
+(Median of five runs, server time — planning plus execution — under RLS, on an
+embedded Postgres 18 on a laptop. Supabase's hardware is faster; the ratios are
+the point, not the absolute numbers.)
+
+### One cause, in two places
+
+Migration 0024's per-currency breakdown joined the allocator laterally against
+every row:
+
+```sql
+left join lateral public.transaction_settlement_status(a.person_id) st
+       on st.transaction_id = a.id
+```
+
+So it ran **once per entry**, and each run walked that person's entire ledger to
+allocate it FIFO. 20,000 entries × ~400 rows each is the 98 seconds. The same
+join, per row, was in `person_currency_breakdown()`, which is what made
+`person_page()` two seconds.
+
+`db/migrations/0027_dashboard_scale.sql` moves the call: the allocator is asked
+**once per person**, into a CTE the rows join against. 50 calls instead of
+20,000. Nothing else in either function changed — the definitions in that
+migration were taken from the live catalogue and edited in exactly those two
+places — and `db/tests/12_dashboard_currency_breakdown.sql`, which asserts the
+figures byte for byte, passes unchanged.
+
+**82× on the dashboard, 17× on the person page, and no number moved.**
+
+### What is still slow, and what it would take
+
+* **`dashboard()` at 1.2 s** is now dominated by the two `today` blocks, which
+  sum `amount_base_minor` over the whole feed to answer a question about one
+  day. An index-friendly rewrite (filter by date before the union, rather than
+  after) is the obvious next move, and it was left alone here because 1.2 s at
+  20,000 entries is not what anyone will notice next.
+* **`export_workspace()` at 2.0 s** includes `dashboard()`'s per-currency
+  totals by construction; it will fall by roughly the same amount whenever the
+  above is done.
+* **`owner_summary` and `person_balances` grew slightly** (274→380 ms,
+  149→216 ms) because the bench workspace is 50 people rather than 6. Both are
+  linear in people, not in entries, which is the shape you want.
+
+### Running it again
+
+```bash
+node db/tools/run-sql.mjs file db/ci/00_supabase_shim.sql   # throwaway DB only
+node db/tools/run-sql.mjs migrate
+node db/tools/run-sql.mjs file db/bench/seed_bench.sql
+BENCH_EMAIL=bench@example.test node db/tools/bench.mjs 5
+```
+
+**Never against the live project.** The fixture writes 25,000 rows and signs its
+workspace `bench@example.test`; `DATABASE_URL` decides where that lands.

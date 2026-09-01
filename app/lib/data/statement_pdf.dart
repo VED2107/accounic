@@ -39,10 +39,10 @@ class PersonStatement {
     required String ownerName,
     DateTime? generatedAt,
   }) async {
-    // The typeface FIRST, because `_format` below asks it whether a currency
+    // The typeface FIRST, because `pdfFormat` below asks it whether a currency
     // symbol can be drawn. Resolving the rows before the font is loaded would
     // silently answer "no" and print every figure without its symbol.
-    final theme = await _theme();
+    final theme = await pdfTheme();
 
     final now = generatedAt ?? DateTime.now();
     final currency = page.currency;
@@ -55,14 +55,14 @@ class PersonStatement {
       closingMinor: regular.positionMinor,
       currency: currency,
       baseCurrency: base,
-      format: _format,
+      format: pdfFormat,
     );
     final openingRows = buildStatementRows(
       page.openingActivity,
       closingMinor: opening.positionMinor,
       currency: currency,
       baseCurrency: base,
-      format: _format,
+      format: pdfFormat,
     );
 
     final doc = pw.Document(
@@ -129,7 +129,11 @@ class PersonStatement {
   /// `web/src/lib/pdf/typeface.ts`, which embeds these exact files.
   static pw.ThemeData? _cachedTheme;
 
-  static Future<pw.ThemeData> _theme() async {
+  /// The embedded Poppins theme, loaded once.
+  ///
+  /// Public so the workspace export draws with the same face rather than
+  /// loading a second copy of it — see `export_pdf.dart`.
+  static Future<pw.ThemeData> pdfTheme() async {
     final cached = _cachedTheme;
     if (cached != null) return cached;
 
@@ -197,7 +201,10 @@ class PersonStatement {
   /// The statement's own money formatter, handed to the pure row rules in
   /// `core/statement.dart` so that they stay testable without a PDF and this
   /// file stays the only place that knows anything about glyphs.
-  static final StatementFormatter _format = StatementFormatter(
+  /// The PDF's formatter: `core/money.dart`, with the one adjustment the page
+  /// medium forces — a symbol the embedded face cannot draw is dropped in
+  /// favour of the ISO code. Shared with the workspace export.
+  static final StatementFormatter pdfFormat = StatementFormatter(
     money: (minor, {currency, compactDecimals = true}) =>
         _money(minor, currency ?? kFallbackCurrency, compactDecimals: compactDecimals),
     approx: (minor, {currency}) => _hasGlyphs
@@ -427,7 +434,7 @@ class PersonStatement {
 
     final lines = opening == null
         ? null
-        : openingLines(opening, position, currency, base, format: _format);
+        : openingLines(opening, position, currency, base, format: pdfFormat);
 
     return [
       _sectionHeading('Opening balance'),

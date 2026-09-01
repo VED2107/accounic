@@ -114,6 +114,50 @@ class StatementDownloader {
     return _writeToDownloads(bytes, name);
   }
 
+  /// Puts any already-built export where the user can reach it.
+  ///
+  /// The same two behaviours as [save] — a native dialog on desktop, the
+  /// external files directory on Android — for a file this class did not build
+  /// itself. The workspace export (PDF, CSV, JSON) comes through here, so there
+  /// is one save path in the app rather than one per format.
+  Future<StatementSaveResult> saveBytes({
+    required Uint8List bytes,
+    required String filename,
+    required String typeLabel,
+    required String extension,
+    required String mimeType,
+  }) async {
+    if (bytes.isEmpty) {
+      return StatementSaveFailed('The $typeLabel came back empty and was not saved.');
+    }
+
+    if (_hasSaveDialog) {
+      final FileSaveLocation? location;
+      try {
+        location = await getSaveLocation(
+          suggestedName: filename,
+          acceptedTypeGroups: [
+            XTypeGroup(
+              label: typeLabel,
+              extensions: [extension],
+              mimeTypes: [mimeType],
+            ),
+          ],
+        );
+      } catch (_) {
+        return _writeToDownloads(bytes, filename);
+      }
+
+      if (location == null) return const StatementSaveCancelled();
+      final path = location.path.toLowerCase().endsWith('.$extension')
+          ? location.path
+          : '${location.path}.$extension';
+      return _write(bytes, path, chosen: true);
+    }
+
+    return _writeToDownloads(bytes, filename);
+  }
+
   Future<StatementSaveResult> _writeToDownloads(Uint8List bytes, String name) async {
     Directory? directory;
     try {

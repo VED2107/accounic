@@ -6,6 +6,13 @@
  * under a real user's RLS context — and reports the median and p95 of N runs.
  *
  *   node db/tools/bench.mjs [runs]
+ *
+ * Which workspace it measures is decided by BENCH_EMAIL, defaulting to the
+ * seeded demo one. The 20k fixture in db/bench/seed_bench.sql signs its
+ * workspace as bench@example.test:
+ *
+ *   node db/tools/run-sql.mjs file db/bench/seed_bench.sql
+ *   BENCH_EMAIL=bench@example.test node db/tools/bench.mjs 30
  */
 
 import { readFileSync } from 'node:fs';
@@ -25,17 +32,44 @@ function connectionString() {
   return match[1].trim();
 }
 
-const client = new pg.Client({
-  connectionString: connectionString(),
-  ssl: { rejectUnauthorized: false },
-});
+// Supabase is TLS-only; a throwaway Postgres has no certificate. Decided from
+// the URL, exactly as run-sql.mjs decides it.
+const url = connectionString();
+function sslFor(target) {
+  if (/[?&]sslmode=disable/.test(target)) return false;
+  try {
+    const host = new URL(target).hostname;
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return false;
+  } catch {
+    /* not a parseable URL — fall through to the secure default */
+  }
+  return { rejectUnauthorized: false };
+}
+
+const client = new pg.Client({ connectionString: url, ssl: sslFor(url) });
 await client.connect();
 
+const benchEmail = process.env.BENCH_EMAIL ?? 'demo@example.com';
 const { rows: users } = await client.query(
-  `select id from auth.users where email = 'demo@example.com'`,
+  `select id from auth.users where email = $1`,
+  [benchEmail],
 );
-if (users.length === 0) throw new Error('Seed data not loaded — run: node db/tools/run-sql.mjs seed');
+if (users.length === 0) {
+  throw new Error(
+    `No workspace for ${benchEmail}. Seed one: node db/tools/run-sql.mjs seed, ` +
+      'or node db/tools/run-sql.mjs file db/bench/seed_bench.sql',
+  );
+}
 const ownerId = users[0].id;
+
+const { rows: sizeRows } = await client.query(
+  `select
+     (select count(*) from public.people       where owner_id = $1) as people,
+     (select count(*) from public.transactions where owner_id = $1) as transactions,
+     (select count(*) from public.settlements  where owner_id = $1) as settlements`,
+  [ownerId],
+);
+const size = sizeRows[0];
 
 const { rows: people } = await client.query(
   `select id from public.people where owner_id = $1 order by created_at limit 1`,
@@ -76,12 +110,30 @@ const cases = [
   { name: 'activity_page()    paginated feed', sql: 'select public.activity_page(40, 0, null, null, null)' },
   { name: "search_all()       global search", sql: `select public.search_all('rah', 8)` },
   { name: 'owner_summary      headline totals', sql: 'select * from public.owner_summary' },
+  {
+    name: 'settlement_status  FIFO allocator, one person',
+    sql: 'select * from public.transaction_settlement_status($1)',
+    params: [personId],
+  },
+  {
+    name: 'export_workspace() header: people, balances, currencies',
+    sql: 'select public.export_workspace()',
+  },
+  {
+    name: 'export_entries()   one page of 1,000',
+    sql: 'select public.export_entries(null, null, null, null, null, $1, false, 1000, 0)',
+    params: ['all'],
+  },
 ];
 
 const quantile = (sorted, q) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))];
 
 console.log(`\nServer time in ms (planning + execution), ${runs} runs each, under RLS.`);
-console.log('Seeded demo workspace: 6 people, 10 transactions, 4 settlements.\n');
+console.log(
+  `Workspace ${benchEmail}: ${size.people} people, ${size.transactions} transactions, ` +
+    `${size.settlements} settlements.
+`,
+);
 console.log('query'.padEnd(46) + 'median'.padStart(10) + 'p95'.padStart(10) + 'max'.padStart(10));
 console.log('-'.repeat(76));
 

@@ -1,0 +1,76 @@
+# Flutter verification. Pinned to the exact SDK the app is developed and
+# released against (app/pubspec.lock says Dart >=3.7.0; Flutter 3.29.3 ships
+# Dart 3.7.2) so CI cannot pass on a toolchain no release was ever built with.
+name: flutter
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: flutter-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: 3.29.3
+
+jobs:
+  verify:
+    name: analyze · test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Dependencies
+        run: flutter pub get
+
+      # No `dart format --set-exit-if-changed` gate: the tree predates dartfmt
+      # and 81 of 82 files would be rewritten by it. That is a formatting
+      # decision to take deliberately in its own commit, not a CI failure to
+      # discover on the next push.
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+  android:
+    name: android debug build
+    runs-on: ubuntu-latest
+    needs: verify
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Dependencies
+        run: flutter pub get
+
+      # Debug only, and deliberately so: the release APK is signed with the
+      # debug keystore (docs/PROGRESS.md §7.3) and that strategy is unchanged
+      # here. This job proves the Android build graph is intact, nothing more.
+      - name: Build debug APK
+        run: flutter build apk --debug --dart-define=SUPABASE_URL=https://ci.invalid.supabase.co --dart-define=SUPABASE_ANON_KEY=ci-placeholder-anon-key

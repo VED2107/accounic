@@ -11,6 +11,7 @@ import '../../core/money.dart';
 import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../data/statement_download.dart';
+import '../sheets/export_sheet.dart';
 import '../../providers.dart';
 import '../motion.dart';
 import '../sheets/person_sheet.dart';
@@ -182,6 +183,11 @@ class PersonScreen extends ConsumerWidget {
       Row(
         children: [
           const Expanded(child: SectionHeader('Regular transactions')),
+          // Two exports, deliberately distinct: the statement is this account
+          // as a document, the export is this account as data, in whichever of
+          // the three formats the user actually needs.
+          ExportButton(person: page.person),
+          const SizedBox(width: AppSpacing.sm),
           StatementButton(page: page),
         ],
       ),
@@ -1683,4 +1689,57 @@ class _PersonSkeleton extends StatelessWidget {
     return (minor: baseMinor, currency: base);
   }
   return null;
+}
+
+/// Export this account as data — a PDF report, a spreadsheet or a backup.
+///
+/// Sits beside the statement rather than replacing it: a statement is the
+/// document you send someone, an export is the data you keep. Opening it from
+/// here pre-selects this account, which is what someone standing on a person's
+/// screen almost always wants.
+class ExportButton extends ConsumerWidget {
+  const ExportButton({super.key, required this.person});
+
+  final Person person;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final palette = context.money;
+
+    return Hoverable(
+      builder: (context, hovered) => Pressable(
+        onTap: () => showExportSheet(context, ref, person: person),
+        child: Semantics(
+          button: true,
+          label: 'Export ${person.name}',
+          child: AnimatedContainer(
+            duration: Motion.fast,
+            height: 34,
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: hovered ? palette.raised : Colors.transparent,
+              borderRadius: AppRadius.fieldAll,
+              border: Border.all(color: hovered ? palette.lineStrong : palette.line),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(AppIcons.note, size: AppIconSize.xs, color: palette.inkMuted),
+                const SizedBox(width: AppSpacing.sm),
+                Text(
+                  'Export',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: palette.inkMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

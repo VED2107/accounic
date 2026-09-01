@@ -9,7 +9,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// show the database's own words. The RPCs raise human sentences, so those pass
 /// through; anything else becomes a safe fallback.
 
-const _safeSqlStates = {'23514', '23503', '23505', 'P0002', '42501'};
+// AC429 is our own write rate limit (db/migrations/0026): its message already
+// says what happened and that nothing was saved, so it passes through whole.
+const _safeSqlStates = {'23514', '23503', '23505', 'P0002', '42501', 'AC429'};
 
 const _fallbackBySqlState = {
   '23505': 'That record already exists.',
@@ -19,6 +21,8 @@ const _fallbackBySqlState = {
   '23514': 'That change is not valid.',
   '40001': 'Someone else changed this at the same time. Please try again.',
   '57014': 'That took too long. Please try again.',
+  'AC429':
+      'Too many changes in a short time. Wait a moment and try again — nothing has been saved.',
 };
 
 bool _looksLikeOurMessage(String message) {

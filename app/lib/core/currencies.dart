@@ -115,6 +115,39 @@ int rateToE9(num rate) => (rate * kRateScale).round();
 
 double rateFromE9(int rateE9) => rateE9 / kRateScale;
 
+/// The band a rate has to fall in to be arithmetic rather than nonsense.
+///
+/// The lower bound is one unit of rateE9: anything smaller has already rounded
+/// to zero, and a zero rate does not convert an amount, it erases it. The upper
+/// bound is one unit of a currency being worth a million of another — far
+/// outside any real pair.
+const int kMinRateE9 = 1;
+const int kMaxRateE9 = 1000000 * kRateScale;
+
+/// True when a rate can be used — and, just as importantly, inverted.
+///
+/// A provider that answers with 0, a negative number, NaN or an absurd figure
+/// is a provider that is broken, not one offering a bad deal. The only safe
+/// response is to treat the pair as unavailable and say so: a zero rate
+/// converts every amount to nothing, and inverting one divides by zero
+/// (context.md §7).
+bool isUsableRateE9(int? rateE9) =>
+    rateE9 != null && rateE9 >= kMinRateE9 && rateE9 <= kMaxRateE9;
+
+/// A provider's decimal rate as rateE9, or null when it is unusable.
+int? usableRateToE9(num? rate) {
+  if (rate == null || rate.isNaN || rate.isInfinite) return null;
+  final e9 = rateToE9(rate);
+  return isUsableRateE9(e9) ? e9 : null;
+}
+
+/// The reciprocal of a stored rate, or null when it cannot be taken safely.
+int? invertRateE9(int rateE9) {
+  if (!isUsableRateE9(rateE9)) return null;
+  final inverted = (kRateScale * kRateScale / rateE9).round();
+  return isUsableRateE9(inverted) ? inverted : null;
+}
+
 /// Convert an integer minor amount between currencies.
 ///
 /// Mirrors public.convert_amount_minor() exactly — including the

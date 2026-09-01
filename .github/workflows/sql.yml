@@ -1,0 +1,63 @@
+# Database verification against a throwaway Postgres — never the live project.
+#
+# The migrations are written for Supabase, so the container is given the three
+# things Supabase supplies and plain Postgres does not (db/ci/00_supabase_shim.sql),
+# and then the real migrations and the real test suite run unchanged. A green
+# run means: every migration applies in order from nothing, every RPC compiles,
+# and all 12 suites of accounting and isolation assertions hold.
+name: sql
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: sql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  migrate-and-test:
+    name: migrations · engine · RLS
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: accounic_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/accounic_ci?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: db/tools/package-lock.json
+
+      - name: Install runner dependencies
+        working-directory: db/tools
+        run: npm ci
+
+      - name: Supabase shim (roles, auth.users, auth.uid)
+        run: node db/tools/run-sql.mjs file db/ci/00_supabase_shim.sql
+
+      - name: Apply every migration in order
+        run: node db/tools/run-sql.mjs migrate
+
+      - name: Accounting engine, currency and RLS suites
+        run: node db/tools/run-sql.mjs test
+
+      - name: Currency definitions are in step across all four runtimes
+        run: node db/tools/sync-currencies.mjs --check

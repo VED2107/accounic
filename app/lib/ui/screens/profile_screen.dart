@@ -14,6 +14,7 @@ import '../motion.dart';
 import '../sheets/sheet_scaffold.dart';
 import '../widgets/app_page.dart';
 import '../widgets/common.dart';
+import '../sheets/export_sheet.dart';
 import '../widgets/forms.dart';
 
 /// Profile (context.md §4). Deliberately small: identity, currency, password.
@@ -304,6 +305,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             'how they are displayed.',
                       ),
                     ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xxl),
+
+            Reveal(
+              delay: const Duration(milliseconds: 150),
+              child: SettingsGroup(
+                title: 'Your data',
+                children: [
+                  SettingsRow(
+                    icon: AppIcons.download,
+                    title: 'Export',
+                    subtitle: 'Your books as a PDF report, a spreadsheet, or a backup',
+                    onTap: () => showExportSheet(context, ref),
                   ),
                 ],
               ),
