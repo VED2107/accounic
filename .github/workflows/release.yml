@@ -182,7 +182,7 @@ jobs:
           if (-not $iscc) { throw "ISCC.exe not found. Looked in: $($candidates -join '; ')" }
           Write-Host "Using $iscc"
 
-          & $iscc app\windows\installerccounic.iss `
+          & $iscc app\windows\installer\accounic.iss `
               /DAppVersion=${{ needs.version.outputs.version }}
 
       - name: Portable zip
