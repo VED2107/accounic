@@ -74,6 +74,40 @@ class ExportFilters {
     return parts.isEmpty ? 'Everything' : parts.join(' · ');
   }
 
+  /// Value equality, because a Riverpod family keys on it: two identical filter
+  /// sets must be one request, not two.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ExportFilters &&
+          other.from == from &&
+          other.to == to &&
+          other.personId == personId &&
+          other.currency == currency &&
+          other.scope == scope &&
+          other.includeVoid == includeVoid &&
+          _sameKinds(other.kinds, kinds);
+
+  @override
+  int get hashCode => Object.hash(
+    from,
+    to,
+    personId,
+    currency,
+    scope,
+    includeVoid,
+    kinds == null ? null : Object.hashAll(kinds!),
+  );
+
+  static bool _sameKinds(List<String>? a, List<String>? b) {
+    if (a == null || b == null) return a == b;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
   ExportFilters copyWith({
     String? from,
     String? to,
@@ -176,6 +210,7 @@ class ExportHeader {
     required this.filters,
     required this.workspace,
     required this.summary,
+    required this.totalsByCurrency,
     required this.currencies,
     required this.people,
     required this.counts,
@@ -194,6 +229,9 @@ class ExportHeader {
     summary: json['summary'] == null
         ? const {}
         : Map<String, dynamic>.from(json['summary'] as Map),
+    totalsByCurrency: ((json['totals_by_currency'] as List?) ?? const [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList(),
     currencies: ((json['currencies'] as List?) ?? const [])
         .map((e) => ExportCurrency.fromJson(Map<String, dynamic>.from(e as Map)))
         .toList(),
@@ -215,6 +253,11 @@ class ExportHeader {
 
   /// The `owner_summary` row, exactly as the engine states it.
   final Map<String, dynamic> summary;
+
+  /// The workspace position per entry currency, as `dashboard()` states it.
+  /// Deliberately NOT narrowed by the export's filters — it is the position,
+  /// not a total of the slice — and every writer labels it as such.
+  final List<Map<String, dynamic>> totalsByCurrency;
   final List<ExportCurrency> currencies;
 
   /// Each person with their `person_balances` and `person_opening` rows.
@@ -235,6 +278,7 @@ class ExportHeader {
     'filters': filters.toJson(),
     'workspace': workspace,
     'summary': summary,
+    'totals_by_currency': totalsByCurrency,
     'currencies': currencies.map((c) => c.toJson()).toList(),
     'people': people,
     'counts': counts.toJson(),

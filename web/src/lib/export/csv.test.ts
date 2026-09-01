@@ -72,6 +72,7 @@ function header(overrides: Partial<ExportHeader> = {}): ExportHeader {
       member_since: '2026-01-01T00:00:00Z',
     },
     summary: { net_position: 48000 },
+    totals_by_currency: [],
     currencies: [{ code: 'INR', name: 'Indian Rupee', symbol: '₹', decimals: 2 }],
     people: [],
     counts: {

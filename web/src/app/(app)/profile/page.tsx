@@ -6,6 +6,7 @@ import { ThemeChooser } from '@/components/shell/theme-toggle';
 import { ProfileForm } from './profile-form';
 import { PasswordForm } from './password-form';
 import { SignOutButton } from './sign-out-button';
+import { ExportPanel } from './export-panel';
 import { initials } from '@/lib/names';
 import { fullDate } from '@/lib/dates';
 
@@ -77,6 +78,22 @@ export default async function ProfilePage() {
               </div>
               <div className="px-5 py-4">
                 <ThemeChooser />
+              </div>
+            </Card>
+          </Reveal>
+
+          <Reveal delay={130}>
+            <Card className="overflow-hidden">
+              <div className="border-b border-line px-5 py-3.5">
+                <h2 className="font-display text-[0.9375rem] font-semibold tracking-tight text-ink">
+                  Your data
+                </h2>
+                <p className="mt-0.5 text-[0.8125rem] text-ink-muted">
+                  Take your books with you — a report, a spreadsheet, or a backup.
+                </p>
+              </div>
+              <div className="px-5 py-4">
+                <ExportPanel />
               </div>
             </Card>
           </Reveal>

@@ -129,6 +129,12 @@ begin
     -- an export that disagreed with the dashboard would be worse than none.
     'summary', (select to_jsonb(s) from public.owner_summary s where s.owner_id = v_owner),
 
+    -- And the same position kept per entry currency, taken from dashboard()
+    -- rather than re-derived, for the same reason. This is the WORKSPACE
+    -- position: it is deliberately not narrowed by the export's filters, and
+    -- every writer labels it as such.
+    'totals_by_currency', coalesce(public.dashboard(1, 1) -> 'totals_by_currency', '[]'::jsonb),
+
     -- Only the currencies that carry entries, with their minor-unit exponent,
     -- so a reader of the file can interpret every integer in it without
     -- knowing anything about Accounic.

@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'data/auth_repository.dart';
+import 'data/export_models.dart';
+import 'data/export_repository.dart';
 import 'data/ledger_repository.dart';
 import 'data/models.dart';
 import 'data/rates_repository.dart';
@@ -32,6 +34,20 @@ final ledgerRepositoryProvider = Provider<LedgerRepository>(
 final ratesRepositoryProvider = Provider<RatesRepository>(
   (ref) => RatesRepository(ref.watch(supabaseClientProvider)),
 );
+
+final exportRepositoryProvider = Provider<ExportRepository>(
+  (ref) => ExportRepository(ref.watch(supabaseClientProvider)),
+);
+
+/// What an export WOULD contain, before one is generated.
+///
+/// The export sheet watches this as the filters change, so the user can answer
+/// "what am I exporting?" from the counts rather than from the file they get
+/// afterwards. It fetches only the header, never the entries.
+final exportPreviewProvider =
+    FutureProvider.autoDispose.family<ExportHeader, ExportFilters>((ref, filters) {
+  return ref.watch(exportRepositoryProvider).header(filters);
+});
 
 /// Auth changes drive routing. Seeded with the current session so the first
 /// frame after a cold start already knows whether we are signed in.

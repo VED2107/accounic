@@ -75,6 +75,12 @@ export interface ExportHeader {
   filters: ExportFilters;
   workspace: ExportWorkspace | null;
   summary: Record<string, unknown> | null;
+  /**
+   * The workspace position per entry currency, as `dashboard()` states it.
+   * Deliberately NOT narrowed by the export's filters — it is the position,
+   * not a total of the slice — and every writer labels it as such.
+   */
+  totals_by_currency: Record<string, unknown>[];
   currencies: ExportCurrency[];
   people: ExportPerson[];
   counts: ExportCounts;

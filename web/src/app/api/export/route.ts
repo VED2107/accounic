@@ -4,6 +4,7 @@ import { getMe } from '@/lib/supabase/server';
 import { loadExport, type ExportRequest } from '@/lib/export/load';
 import { csvWithBom, entriesToCsv } from '@/lib/export/csv';
 import { buildExportDocument, exportDocumentToJson, exportFilename } from '@/lib/export/json';
+import { renderWorkspacePdf } from '@/lib/pdf/workspace';
 
 /**
  * Downloading an export (milestone 1.9.0, Phase 5).
@@ -44,7 +45,9 @@ export async function GET(request: NextRequest) {
   }
 
   const params = request.nextUrl.searchParams;
-  const format = params.get('format') === 'json' ? 'json' : 'csv';
+  const requested = params.get('format');
+  const format: 'csv' | 'json' | 'pdf' =
+    requested === 'json' || requested === 'pdf' ? requested : 'csv';
 
   let bundle;
   try {
@@ -61,18 +64,27 @@ export async function GET(request: NextRequest) {
     : null;
 
   const filename = exportFilename(format, { scope: person });
+
+  // The PDF is bytes; the other two are text. Everything else about the
+  // response — the filename, the no-store, the counts — is the same.
   const body =
-    format === 'json'
-      ? exportDocumentToJson(buildExportDocument(bundle))
-      : csvWithBom(entriesToCsv(bundle.entries));
+    format === 'pdf'
+      ? Buffer.from(await renderWorkspacePdf(bundle))
+      : format === 'json'
+        ? exportDocumentToJson(buildExportDocument(bundle))
+        : csvWithBom(entriesToCsv(bundle.entries));
+
+  const contentType =
+    format === 'pdf'
+      ? 'application/pdf'
+      : format === 'json'
+        ? 'application/json; charset=utf-8'
+        : 'text/csv; charset=utf-8';
 
   return new NextResponse(body, {
     status: 200,
     headers: {
-      'Content-Type':
-        format === 'json'
-          ? 'application/json; charset=utf-8'
-          : 'text/csv; charset=utf-8',
+      'Content-Type': contentType,
       'Content-Disposition': `attachment; filename="${filename}"`,
       // The file is the user's own books. It must not sit in a shared cache.
       'Cache-Control': 'no-store, private',

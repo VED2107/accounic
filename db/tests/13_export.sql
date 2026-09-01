@@ -149,6 +149,10 @@ begin
   perform pg_temp.assert('the header carries the engine summary, not a recomputation',
     (v_head -> 'summary' ->> 'owner_id') = v_owner::text);
 
+  perform pg_temp.assert('and the position per entry currency, taken from dashboard()',
+    (select count(*) from jsonb_array_elements(v_head -> 'totals_by_currency') t
+     where t ->> 'currency' in ('INR', 'AED')) = 2);
+
   perform pg_temp.assert_eq('two people are exported',
     jsonb_array_length(v_head -> 'people'), 2);
 
