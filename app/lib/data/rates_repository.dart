@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/currencies.dart';
+import 'rate_source.dart';
 
 /// Exchange rates (upgrade §6, §7).
 ///
@@ -37,9 +38,6 @@ class RatesRepository {
 
   final SupabaseClient _client;
 
-  static const _primary = 'https://open.er-api.com/v6/latest';
-  static const _fallback = 'https://api.frankfurter.dev/v1/latest';
-
   /// How long a cached rate is current before a refresh is attempted.
   static const _freshFor = Duration(hours: 12);
 
@@ -68,14 +66,15 @@ class RatesRepository {
     }
 
     final table = await _fetch(source);
-    if (table != null && table.rates[target] != null) {
+    final live = table == null ? null : usableRateToE9(table.rates[target]);
+    if (table != null && live != null) {
       // Cache the whole table, not just the pair asked for: the payload is
       // already here, and the next currency the user picks is then free.
       await _store(source, table);
       final quote = RateQuote(
         from: source,
         to: target,
-        rateE9: rateToE9(table.rates[target]!),
+        rateE9: live,
         asOf: table.asOf,
         source: table.source,
         fetchedAt: DateTime.now(),
@@ -85,9 +84,9 @@ class RatesRepository {
       return quote;
     }
 
-    // Offline, or the source does not publish this pair. Whatever is cached
-    // beats refusing to show the user a number — it is simply labelled as
-    // cached, and as stale when it is.
+    // Offline, the source does not publish this pair, or it published a figure
+    // that is not a rate. Whatever is cached beats refusing to show the user a
+    // number — it is simply labelled as cached, and as stale when it is.
     if (cached != null) {
       _memory[key] = cached;
       return cached;
@@ -128,15 +127,17 @@ class RatesRepository {
       final row = direct ?? inverse;
       if (row == null) return null;
 
+      // A stored zero, a negative, or a figure too large to invert is not a
+      // rate — it is a bad row. Using it would quietly change the money, so it
+      // is refused and the caller takes the "no rate" path, which is honest.
       final stored = (row['rate_e9'] as num).toInt();
-      final rateE9 = direct != null
-          ? stored
-          : (kRateScale * kRateScale / stored).round();
+      final rateE9 = direct != null ? stored : invertRateE9(stored);
+      if (!isUsableRateE9(rateE9)) return null;
 
       return RateQuote(
         from: from,
         to: to,
-        rateE9: rateE9,
+        rateE9: rateE9!,
         asOf: (row['as_of'] as String?) ?? '',
         source: (row['source'] as String?) ?? 'cache',
         fetchedAt: DateTime.tryParse((row['fetched_at'] as String?) ?? '') ?? DateTime.now(),
@@ -149,7 +150,7 @@ class RatesRepository {
     }
   }
 
-  Future<void> _store(String base, _RateTable table) async {
+  Future<void> _store(String base, RateTable table) async {
     try {
       await _client.rpc('upsert_exchange_rates', params: {
         'p_base': base,
@@ -163,28 +164,14 @@ class RatesRepository {
     }
   }
 
-  Future<_RateTable?> _fetch(String base) async {
-    final primary = await _getJson('$_primary/$base');
-    if (primary != null &&
-        primary['result'] == 'success' &&
-        primary['rates'] is Map) {
-      return _RateTable(
-        rates: _numbers(primary['rates'] as Map),
-        asOf: _isoDay(primary['time_last_update_utc'] as String?),
-        source: 'open.er-api.com',
-      );
-    }
+  /// Null when both sources fail — including when one answers with something
+  /// that is not a rate table at all. The shape rules live in
+  /// `rate_source.dart`, where they are tested without a socket.
+  Future<RateTable?> _fetch(String base) async {
+    final primary = parsePrimaryRates(await _getJson('$kPrimaryRateUrl/$base'));
+    if (primary != null) return primary;
 
-    final fallback = await _getJson('$_fallback?base=$base');
-    if (fallback != null && fallback['rates'] is Map) {
-      return _RateTable(
-        rates: _numbers(fallback['rates'] as Map),
-        asOf: (fallback['date'] as String?) ?? _isoDay(null),
-        source: 'frankfurter.dev (ECB)',
-      );
-    }
-
-    return null;
+    return parseFallbackRates(await _getJson('$kFallbackRateUrl?base=$base'));
   }
 
   Future<Map<String, dynamic>?> _getJson(String url) async {
@@ -206,23 +193,6 @@ class RatesRepository {
     }
   }
 
-  static Map<String, num> _numbers(Map raw) => {
-        for (final entry in raw.entries)
-          if (entry.value is num) entry.key.toString(): entry.value as num,
-      };
-
-  static String _isoDay(String? source) {
-    final parsed = source == null ? null : DateTime.tryParse(source);
-    return (parsed ?? DateTime.now()).toUtc().toIso8601String().substring(0, 10);
-  }
-}
-
-class _RateTable {
-  const _RateTable({required this.rates, required this.asOf, required this.source});
-
-  final Map<String, num> rates;
-  final String asOf;
-  final String source;
 }
 
 /// One rate, with enough provenance for the UI to be honest about it.

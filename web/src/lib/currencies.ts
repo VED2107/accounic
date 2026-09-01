@@ -160,6 +160,50 @@ export function rateFromE9(rateE9: number): number {
 }
 
 /**
+ * The band a rate has to fall in to be arithmetic rather than nonsense.
+ *
+ * The lower bound is one unit of `rate_e9`: anything smaller has already
+ * rounded to zero, and a zero rate does not convert an amount, it erases it.
+ * The upper bound is one unit of a currency being worth a million of another —
+ * far outside any real pair, and comfortably inside the safe-integer range once
+ * multiplied by an amount.
+ */
+export const MIN_RATE_E9 = 1;
+export const MAX_RATE_E9 = 1_000_000 * RATE_SCALE;
+
+/**
+ * True when `rate_e9` can be used — and, just as importantly, inverted.
+ *
+ * A provider that answers with 0, a negative number, NaN or an absurd figure is
+ * a provider that is broken, not a provider that is offering a bad deal. The
+ * only safe response is to treat the pair as unavailable and say so, because
+ * every alternative silently changes the money: a zero rate converts every
+ * amount to nothing, and inverting one divides by zero (context.md §7).
+ */
+export function isUsableRateE9(rateE9: unknown): rateE9 is number {
+  return (
+    typeof rateE9 === 'number' &&
+    Number.isFinite(rateE9) &&
+    rateE9 >= MIN_RATE_E9 &&
+    rateE9 <= MAX_RATE_E9
+  );
+}
+
+/** A provider's decimal rate as `rate_e9`, or null when it is unusable. */
+export function usableRateToE9(rate: unknown): number | null {
+  if (typeof rate !== 'number' || !Number.isFinite(rate)) return null;
+  const e9 = rateToE9(rate);
+  return isUsableRateE9(e9) ? e9 : null;
+}
+
+/** The reciprocal of a stored rate, or null when it cannot be taken safely. */
+export function invertRateE9(rateE9: number): number | null {
+  if (!isUsableRateE9(rateE9)) return null;
+  const inverted = Math.round((RATE_SCALE * RATE_SCALE) / rateE9);
+  return isUsableRateE9(inverted) ? inverted : null;
+}
+
+/**
  * Parse a rate a user typed — "95.4276", " 1,234.5 " — into `rate_e9`.
  *
  * Read the same way the rate sentence states it: one unit of the original

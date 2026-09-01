@@ -1,7 +1,21 @@
 import 'server-only';
 
 import { createClient } from '@/lib/supabase/server';
-import { isSupportedCurrency, normaliseCode, RATE_SCALE } from '@/lib/currencies';
+import {
+  invertRateE9,
+  isSupportedCurrency,
+  isUsableRateE9,
+  normaliseCode,
+  RATE_SCALE,
+  usableRateToE9,
+} from '@/lib/currencies';
+import {
+  FALLBACK_URL,
+  parseFallback,
+  parsePrimary,
+  PRIMARY_URL,
+  type RateTable,
+} from '@/lib/rate-source';
 
 /**
  * Exchange rates (upgrade §6, §7).
@@ -27,9 +41,6 @@ import { isSupportedCurrency, normaliseCode, RATE_SCALE } from '@/lib/currencies
  *   * A missing rate never blocks a save. It blocks *conversion*, and the user
  *     is told to enter the amount in the account's currency instead.
  */
-
-const PRIMARY = 'https://open.er-api.com/v6/latest';
-const FALLBACK = 'https://api.frankfurter.dev/v1/latest';
 
 /** How long a cached rate is considered current before a refresh is attempted. */
 const FRESH_FOR_MS = 12 * 60 * 60 * 1000;
@@ -76,37 +87,19 @@ async function fetchJson(url: string): Promise<unknown | null> {
   }
 }
 
-/** Pull a full rate table for one base currency. Null when both sources fail. */
-export async function fetchRateTable(
-  base: string,
-): Promise<{ rates: Record<string, number>; asOf: string; source: string } | null> {
+/**
+ * Pull a full rate table for one base currency. Null when both sources fail —
+ * including when they answer with something that is not a rate table at all.
+ * The shape rules live in `rate-source.ts`, where they can be tested.
+ */
+export async function fetchRateTable(base: string): Promise<RateTable | null> {
   const code = normaliseCode(base);
   if (!isSupportedCurrency(code)) return null;
 
-  const primary = (await fetchJson(`${PRIMARY}/${code}`)) as
-    | { result?: string; rates?: Record<string, number>; time_last_update_utc?: string }
-    | null;
+  const primary = parsePrimary(await fetchJson(`${PRIMARY_URL}/${code}`));
+  if (primary) return primary;
 
-  if (primary?.result === 'success' && primary.rates) {
-    const asOf = primary.time_last_update_utc
-      ? new Date(primary.time_last_update_utc).toISOString().slice(0, 10)
-      : new Date().toISOString().slice(0, 10);
-    return { rates: primary.rates, asOf, source: 'open.er-api.com' };
-  }
-
-  const fallback = (await fetchJson(`${FALLBACK}?base=${code}`)) as
-    | { rates?: Record<string, number>; date?: string }
-    | null;
-
-  if (fallback?.rates) {
-    return {
-      rates: fallback.rates,
-      asOf: fallback.date ?? new Date().toISOString().slice(0, 10),
-      source: 'frankfurter.dev (ECB)',
-    };
-  }
-
-  return null;
+  return parseFallback(await fetchJson(`${FALLBACK_URL}?base=${code}`));
 }
 
 async function cachedRow(base: string, quote: string): Promise<RateRow | null> {
@@ -126,11 +119,21 @@ async function cachedRow(base: string, quote: string): Promise<RateRow | null> {
   );
 }
 
-function rowToRate(row: RateRow, from: string, to: string, cached: boolean): Rate {
+/**
+ * A cached row as a usable rate, or null when the row cannot be trusted.
+ *
+ * A stored zero, a negative, or a figure so large that inverting it overflows
+ * is not a rate — it is a bad row, and using it would quietly change the money.
+ * Refusing it here puts the caller on the same path as "no rate at all", which
+ * the UI already handles honestly.
+ */
+function rowToRate(row: RateRow, from: string, to: string, cached: boolean): Rate | null {
   const direct = row.base === from && row.quote === to;
-  const rateE9 = direct
-    ? row.rate_e9
-    : Math.round((RATE_SCALE * RATE_SCALE) / row.rate_e9);
+  const stored = Number(row.rate_e9);
+  if (!isUsableRateE9(stored)) return null;
+
+  const rateE9 = direct ? stored : invertRateE9(stored);
+  if (rateE9 === null) return null;
 
   const age = Date.now() - new Date(row.fetched_at).getTime();
   return {
@@ -145,10 +148,7 @@ function rowToRate(row: RateRow, from: string, to: string, cached: boolean): Rat
 }
 
 /** Store a fetched table against the caller's workspace. */
-async function cacheTable(
-  base: string,
-  table: { rates: Record<string, number>; asOf: string; source: string },
-): Promise<void> {
+async function cacheTable(base: string, table: RateTable): Promise<void> {
   const supabase = await createClient();
   await supabase.rpc('upsert_exchange_rates', {
     p_base: base,
@@ -186,18 +186,20 @@ export async function getRate(from: string, to: string): Promise<Rate | null> {
   if (!isSupportedCurrency(source) || !isSupportedCurrency(target)) return null;
 
   const existing = await cachedRow(source, target);
+  const cached = existing ? rowToRate(existing, source, target, true) : null;
   const fresh =
     existing && Date.now() - new Date(existing.fetched_at).getTime() < FRESH_FOR_MS;
 
-  if (existing && fresh) return rowToRate(existing, source, target, true);
+  if (cached && fresh) return cached;
 
   const table = await fetchRateTable(source);
-  if (table && typeof table.rates[target] === 'number') {
+  const live = table ? usableRateToE9(table.rates[target]) : null;
+  if (table && live !== null) {
     await cacheTable(source, table);
     return {
       from: source,
       to: target,
-      rateE9: Math.round(table.rates[target]! * RATE_SCALE),
+      rateE9: live,
       asOf: table.asOf,
       source: table.source,
       cached: false,
@@ -205,10 +207,10 @@ export async function getRate(from: string, to: string): Promise<Rate | null> {
     };
   }
 
-  // Offline, or the source does not publish this pair. Whatever is cached is
-  // better than refusing to show the user a number.
-  if (existing) return rowToRate(existing, source, target, true);
-  return null;
+  // Offline, the source does not publish this pair, or it published a figure
+  // that is not a rate. Whatever is cached is better than refusing to show the
+  // user a number — but only if the cache itself is usable.
+  return cached;
 }
 
 /** A short line for the UI: where this number came from and how old it is. */
