@@ -73,6 +73,40 @@ The build must be clean before deploying; there is no CI to catch it afterwards.
 
 ---
 
+## 3a. Cutting a release with CI
+
+`.github/workflows/release.yml` runs the same commands §4 and §5 describe, on a
+runner, and attaches what they produce to a **draft** GitHub Release:
+
+```bash
+# 1. bump app/pubspec.yaml (the number after + is Android's versionCode)
+# 2. tag and push
+git tag v1.9.0 && git push origin v1.9.0
+```
+
+It refuses to build when the tag and `pubspec.yaml` disagree, and when the two
+repository secrets are missing:
+
+| Secret | Value |
+|---|---|
+| `SUPABASE_URL` | `https://<project>.supabase.co` |
+| `SUPABASE_ANON_KEY` | the publishable (anon) key |
+
+Both are the values the binaries already ship; they are secrets here only
+because a workflow file is public.
+
+The release is left as a **draft** on purpose. Both clients' update check reads
+the Releases API and will offer whatever is published, so a person decides when
+that happens — and writes the notes.
+
+**The APK is still debug-signed.** The workflow changes nothing about signing;
+see §5 and `docs/PROGRESS.md` §7.3.
+
+Everything below still works by hand, and is what to fall back on when a runner
+is not available.
+
+---
+
 ## 4. Windows
 
 ```bash
