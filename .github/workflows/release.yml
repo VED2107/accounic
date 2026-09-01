@@ -166,8 +166,23 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: |
           choco install innosetup --no-progress -y
-          & "$env:ProgramFiles(x86)\Inno Setup 6\ISCC.exe" `
-              app\windows\installer\accounic.iss `
+
+          # Found, not assumed. $env:ProgramFiles(x86) does NOT expand the way
+          # it reads: PowerShell takes $env:ProgramFiles and leaves (x86) as
+          # literal text, producing "C:\Program Files(x86)\..." and a "not
+          # recognized" error. ${env:ProgramFiles(x86)} is the correct spelling,
+          # and checking every location Inno Setup lands in survives either
+          # install layout — including the per-user one docs/deployment.md names.
+          $candidates = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+            "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+          )
+          $iscc = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) { throw "ISCC.exe not found. Looked in: $($candidates -join '; ')" }
+          Write-Host "Using $iscc"
+
+          & $iscc app\windows\installerccounic.iss `
               /DAppVersion=${{ needs.version.outputs.version }}
 
       - name: Portable zip
