@@ -3,11 +3,36 @@
 Status of the Accounic build against `context.md`. This is the file to read first when
 picking the work back up.
 
-**Last updated:** 2026-08-30 (thirteenth session)
+**Last updated:** 2026-09-01 (fourteenth session — milestone 1.9.0)
 **Current release:** [v1.8.0](https://github.com/VED2107/accounic/releases/latest)
 **Overall:** Phases 1–4 complete and verified against the live database. Phase 5
 (performance) measured and the client half tuned — see `docs/performance.md`. Phase 6
 (hardening) partly done.
+
+## Milestone 1.9.0 — hardening, CI, export (2026-09-01)
+
+The plan and its running status are in [`docs/milestone-1.9.0.md`](./milestone-1.9.0.md).
+What landed:
+
+| Area | What changed |
+|---|---|
+| **CI** | Three GitHub Actions workflows on push and PR: web (typecheck · vitest · next build), Flutter (analyze · test · debug APK, pinned to 3.29.3), and SQL — a throwaway `postgres:16` running the real migrations and the real suites, made possible by `db/ci/00_supabase_shim.sql` (the roles, `auth.users` and `auth.uid()` that Supabase supplies and plain Postgres does not). **A green CI now means web + Flutter + SQL verification passed.** The release APK's signing strategy is unchanged: the Android job builds debug only |
+| **Export** | `export_workspace()` / `export_entries()` (0025) — SECURITY INVOKER, so RLS decides what a file contains; one filter contract shared by header and pages; deterministic ordering, so two exports can be diffed. Three formats on both clients: a printable PDF report (cover · position per currency · accounts · ledger), a 28-column CSV, and a versioned JSON backup that states `truncated` outright. Flutter gets an export sheet that shows the counts **before** anything is generated; the web gets three links on Profile |
+| **Rate limiting** | 0026 — BEFORE INSERT triggers on the four tables every write lands in, so no accounting function was rewritten to gain it. 120 entries/min, 2,000 writes/hour, limits in a table. Reads and corrections (voids, edits) are deliberately never limited. Refusals raise `AC429` with a sentence ending "nothing has been saved", which both clients show as-is |
+| **Telemetry** | 0028 — sanitised crash reports to the **user's own database**, not a third party. Three defences against leaking money: the clients strip anything money-shaped, any email, any long digit run, any id and anything token-shaped; context is a fixed key whitelist; and the RPC redacts and whitelists again on arrival. Wired to `FlutterError.onError`, `PlatformDispatcher.onError`, the web render boundary, `window.onerror` and `unhandledrejection`. `my_error_summary()` groups a fault's repeats |
+| **Scale** | The 20k measurement that had been outstanding since Phase 5. `dashboard()` took **98 seconds**; the FIFO allocator was joined LATERAL against every row. 0027 asks it once per person instead: **98,235 ms → 1,201 ms**, `person_page()` 2,104 → 126 ms, no figure moved. Full table in [`docs/performance.md`](./performance.md) §6 |
+| **Currency** | Untouched architecturally, as required. One hardening: a provider answering with 0, a negative, NaN or an absurd rate was previously used — a zero rate does not convert an amount, it erases it — and is now refused on both clients, with the provider-payload rules extracted and tested |
+
+Verification for this milestone: 15 SQL suites (~440 assertions), 196 web tests,
+315 Dart tests, `flutter analyze` clean, `next build` clean, and the SQL workflow
+green on GitHub against a throwaway database.
+
+**Not done in this milestone, and deliberately not claimed:** the Flutter
+dashboard / person-screen / transaction-entry rework (beyond the new export
+sheet), the large-file refactor, and the restore rehearsal. They are listed with
+the rest in `docs/milestone-1.9.0.md`.
+
+---
 
 Both clients are finished and verified by looking at them, not only by testing them. The
 web client is browser-verified at desktop and phone widths; the Flutter client renders
