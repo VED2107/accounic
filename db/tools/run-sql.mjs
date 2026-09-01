@@ -117,6 +117,12 @@ try {
   if (error.detail) process.stderr.write(`detail: ${error.detail}\n`);
   if (error.hint) process.stderr.write(`hint: ${error.hint}\n`);
   if (error.position) process.stderr.write(`position: ${error.position}\n`);
+  // The PL/pgSQL call stack. Without it a failing assertion in a 300-line
+  // suite says only what went wrong, never where, which is the difference
+  // between a readable CI failure and a bisect.
+  if (error.where) process.stderr.write(`where:
+${error.where}
+`);
   process.exitCode = 1;
 } finally {
   await client.end();
