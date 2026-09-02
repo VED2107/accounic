@@ -118,7 +118,9 @@ export function PersonPicker({
   if (value) {
     return (
       <div className="space-y-1.5">
-        <span className="block text-[0.8125rem] font-medium text-ink-muted">Who?</span>
+        {/* The FormSection heading above already reads "Who". Kept for
+            screen readers, where there is no heading adjacency to rely on. */}
+        <span className="sr-only">Who?</span>
         <div className="flex items-center gap-3 rounded-field border border-line-strong bg-sunken px-3 py-2.5">
           <Avatar identity={value.name} size="sm">
             {initials(value.name)}
@@ -150,7 +152,9 @@ export function PersonPicker({
 
   return (
     <div className="space-y-1.5">
-      <label htmlFor="person-search" className="block text-[0.8125rem] font-medium text-ink-muted">
+      {/* Same as above: named for assistive tech, not drawn under a heading
+          that already says it. */}
+      <label htmlFor="person-search" className="sr-only">
         Who?
       </label>
       <div className="flex items-center gap-2 rounded-field border border-line-strong bg-sunken px-3 transition-[border-color,background-color] duration-[var(--dur)] focus-within:border-accent focus-within:bg-surface focus-within:ring-2 focus-within:ring-accent/25">
@@ -202,7 +206,7 @@ export function PersonPicker({
                   </span>
                 ) : null}
               </span>
-              <NetBadge netMinor={option.net_balance} currency={option.currency ?? currency} />
+              <NetBadge netMinor={option.net_balance} currency={option.currency ?? currency} base={currency} />
             </button>
           </li>
         ))}

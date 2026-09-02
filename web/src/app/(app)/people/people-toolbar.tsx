@@ -78,7 +78,17 @@ export function PeopleToolbar({
   }, [value, build, push]);
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    /* Two rows, not one.
+
+       Search, a balance filter, a sort and an archive toggle used to sit in a
+       single flat row as four controls of near-identical shape — three of them
+       segmented groups — which read as one long undifferentiated bar. Nothing
+       said which of them changed *what you are looking at* and which changed
+       *the order it is in*, so the whole bar had to be read before any of it
+       could be used. Splitting search onto its own line and naming the two
+       groups costs one line of height and removes the guessing. */
+    <div className="space-y-2.5">
+      <div className="flex flex-wrap items-center gap-2">
       <div
         className={cn(
           'flex min-w-52 flex-1 items-center gap-2 rounded-field border border-line bg-sunken px-3',
@@ -107,40 +117,12 @@ export function PeopleToolbar({
         ) : null}
       </div>
 
-      <div className={SEGMENT_GROUP} role="group" aria-label="Filter by balance">
-        {SIDES.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => push(build({ side: option.value }))}
-            aria-pressed={side === option.value}
-            className={segmentClass(side === option.value)}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
-
-      <div className={SEGMENT_GROUP} role="group" aria-label="Sort">
-        {SORTS.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => push(build({ sort: option.value }))}
-            aria-pressed={sort === option.value}
-            className={segmentClass(sort === option.value)}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
-
       <button
         type="button"
         onClick={() => push(build({ archived: !includeArchived }))}
         aria-pressed={includeArchived}
         className={cn(
-          'h-10 rounded-field border px-3 text-[0.8125rem] font-medium',
+          'tap h-10 shrink-0 rounded-field border px-3 text-[0.8125rem] font-medium',
           'transition-[background-color,border-color,color] duration-[var(--dur)] ease-[var(--ease)]',
           includeArchived
             ? 'border-accent-line bg-accent-soft text-accent'
@@ -149,6 +131,47 @@ export function PeopleToolbar({
       >
         Archived
       </button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="flex items-center gap-2">
+          <span className="stat-label shrink-0" id="people-show-label">
+            Show
+          </span>
+          <div className={SEGMENT_GROUP} role="group" aria-labelledby="people-show-label">
+            {SIDES.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => push(build({ side: option.value }))}
+                aria-pressed={side === option.value}
+                className={segmentClass(side === option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="stat-label shrink-0" id="people-sort-label">
+            Sort
+          </span>
+          <div className={SEGMENT_GROUP} role="group" aria-labelledby="people-sort-label">
+            {SORTS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => push(build({ sort: option.value }))}
+                aria-pressed={sort === option.value}
+                className={segmentClass(sort === option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

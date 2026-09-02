@@ -15,7 +15,9 @@ import type { PersonOpening, PersonPage, TimelineEntry } from '@/lib/types';
  */
 const FORMAT: StatementFormatter = {
   money: (minor, currency, options) => formatMoney(minor, currency, options),
-  approx: (minor, currency) => formatApprox(minor, currency),
+  // `withCode` mirrors pdfApprox: a statement leaves the app, so it names the
+  // currency it converted into even though the screen no longer needs to.
+  approx: (minor, currency) => formatApprox(minor, currency, { withCode: true }),
   rate: (from, to, rateE9, amountMinor) => rateSentence(from, to, rateE9, amountMinor),
 };
 

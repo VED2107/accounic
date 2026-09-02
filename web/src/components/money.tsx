@@ -28,25 +28,36 @@ function resolveTone(tone: MoneyTone, minor: number): Exclude<MoneyTone, 'auto'>
 export function Money({
   minor,
   currency = 'INR',
+  base,
   tone = 'neutral',
   className,
   signed = false,
   compact = true,
-  withCode = true,
+  withCode,
 }: {
   minor: number;
   currency?: string;
+  /**
+   * The workspace's own currency (upgrade §45).
+   *
+   * Given it, an amount in that same currency drops its ISO suffix — `₹2,537.50`
+   * rather than `₹2,537.50 INR` — while every foreign amount keeps one. The
+   * contrast is the point: in a list where most rows are `₹…` and one is
+   * `500 AED`, the foreign row identifies itself and the rest stop repeating
+   * what the workspace already says.
+   */
+  base?: string | null;
   tone?: MoneyTone;
   className?: string;
   signed?: boolean;
   compact?: boolean;
   /**
-   * The ISO code after the figure — `$40 USD`, not `$40` (upgrade §44).
+   * Force the ISO code on or off, overriding `base`.
    *
-   * On by default, and off only where the code is already stated beside the
-   * figure. A symbol alone is ambiguous: `$` is eight of the currencies in this
-   * list and `₹` is two, and a ledger that mixes currencies is exactly where
-   * that ambiguity costs someone money.
+   * A symbol alone is ambiguous: `$` is eight of the currencies in this list and
+   * `₹` is two. So the code stays on by default wherever the workspace currency
+   * is not known, and anything that leaves the app — a statement, an export —
+   * sets it explicitly rather than relying on context it will not have.
    */
   withCode?: boolean;
 }) {
@@ -54,10 +65,17 @@ export function Money({
   const text = formatMoney(tone === 'auto' ? Math.abs(minor) : minor, currency, {
     signed,
     compactDecimals: compact,
-    withCode,
+    ...(withCode === undefined ? { base: base ?? null } : { withCode }),
   });
 
-  return <span className={cn('tnum', TONE_CLASS[resolved], className)}>{text}</span>;
+  // A figure and its currency code are one word to the reader, so the line may
+  // break before the amount but never inside it. Without this the receivable
+  // card rendered "₹2,537.50" on one line and an orphaned "INR" on the next —
+  // technically not ellipsised, which is what .money-* guaranteed, but still a
+  // broken number.
+  return (
+    <span className={cn('tnum whitespace-nowrap', TONE_CLASS[resolved], className)}>{text}</span>
+  );
 }
 
 /**
@@ -68,6 +86,7 @@ export function MoneyStat({
   label,
   minor,
   currency = 'INR',
+  base,
   tone = 'neutral',
   sublabel,
   className,
@@ -75,6 +94,8 @@ export function MoneyStat({
   label: string;
   minor: number;
   currency?: string;
+  /** The workspace currency, so a figure already in it drops the repeated code. */
+  base?: string | null;
   tone?: MoneyTone;
   sublabel?: string;
   className?: string;
@@ -83,7 +104,7 @@ export function MoneyStat({
     <div className={cn('min-w-0', className)}>
       <p className="stat-label">{label}</p>
       <p className="money-lg mt-1.5">
-        <Money minor={minor} currency={currency} tone={tone} />
+        <Money minor={minor} currency={currency} base={base} tone={tone} />
       </p>
       {sublabel ? <p className="stat-note mt-1">{sublabel}</p> : null}
     </div>
@@ -101,10 +122,13 @@ export function NetBadge({
   currency = 'INR',
   approxMinor,
   approxCurrency,
+  base,
   className,
 }: {
   netMinor: number;
   currency?: string;
+  /** The workspace currency, so a row kept in it drops the repeated code. */
+  base?: string | null;
   /**
    * The same position in the workspace's own currency, when this row is kept in
    * a different one. A dirham balance in a rupee workspace is two facts, and a
@@ -124,19 +148,27 @@ export function NetBadge({
 
   return (
     <span className={cn('flex shrink-0 flex-col items-end gap-0.5 leading-tight', className)}>
-      <span
-        className={cn(
-          'money',
-          tone === 'receivable' && 'text-receivable',
-          tone === 'payable' && 'text-payable',
-          tone === 'settled' && 'text-ink-muted',
-        )}
-      >
-        {tone === 'settled' ? 'Settled' : formatMoney(Math.abs(netMinor), currency)}
-      </span>
+      {/* A settled row has no figure, and the word standing in for one used to
+          be set in `.money` — so a directory of people showed a bold ink word
+          in the same slot, at the same weight, as the real amounts beside it,
+          and the eye kept stopping on it. The word is metadata: it drops to
+          metadata weight and lets the pill below carry the state. */}
+      {tone === 'settled' ? (
+        <span className="text-[0.8125rem] text-ink-faint">No balance</span>
+      ) : (
+        <span
+          className={cn(
+            'money whitespace-nowrap',
+            tone === 'receivable' && 'text-receivable',
+            tone === 'payable' && 'text-payable',
+          )}
+        >
+          {formatMoney(Math.abs(netMinor), currency, { base: base ?? null })}
+        </span>
+      )}
 
       {showApprox ? (
-        <span className="tnum text-[0.75rem] text-ink-faint">
+        <span className="tnum whitespace-nowrap text-[0.75rem] text-ink-faint">
           {formatApprox(Math.abs(approxMinor), approxCurrency)}
         </span>
       ) : null}
@@ -254,13 +286,19 @@ function CurrencyBlock({
               tone === 'settled' && 'text-ink-muted',
             )}
           >
-            {formatMoney(Math.abs(row.net), row.currency)}
+            {/* The block is already headed by its ISO code, so the figure under
+                that heading does not repeat it — "AED / 251.34", not
+                "AED / 251.34 AED", and in the workspace currency "INR / ₹0"
+                rather than the three-times-over "INR / ₹0 INR". */}
+            {formatMoney(Math.abs(row.net), row.currency, { withCode: false })}
           </p>
           {showApprox ? (
             <p className="tnum mt-1 text-[0.75rem] text-ink-faint">
+              {/* formatApprox already carries the ≈; prepending another one
+                  printed "≈ ≈ ₹6,515.99" on the dashboard. */}
               {row.net_base_minor === null
                 ? `no ${row.currency} → ${baseCurrency} rate yet`
-                : `≈ ${formatApprox(Math.abs(row.net_base_minor), baseCurrency)}`}
+                : formatApprox(Math.abs(row.net_base_minor), baseCurrency)}
             </p>
           ) : null}
         </div>
@@ -316,7 +354,9 @@ function BreakdownFigure({
           !tone && 'text-ink-muted',
         )}
       >
-        {formatMoney(minor, currency)}
+        {/* Same rule as the block heading above: the currency is stated once,
+            for the whole block, and these four figures inherit it. */}
+        {formatMoney(minor, currency, { withCode: false })}
       </dd>
     </div>
   );

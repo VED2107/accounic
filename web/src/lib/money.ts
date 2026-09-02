@@ -159,6 +159,24 @@ export interface FormatOptions {
   signed?: boolean;
   /** Append the ISO code, e.g. "AED 41.60 AED". Off by default; see MoneyExact. */
   withCode?: boolean;
+  /**
+   * The workspace's own currency, when the caller knows it (upgrade §45).
+   *
+   * An amount already written in the workspace currency does not need its code
+   * repeated: in an INR workspace `₹2,537.50 INR` says "rupees" twice, once in
+   * the glyph and once in the suffix, and that redundancy is printed on every
+   * row of every screen. Passing `base` drops the suffix for that one currency
+   * and keeps it for every other, so `500 AED` in the same list still names
+   * itself and the contrast between the two is what tells the reader which
+   * figures are foreign.
+   *
+   * The suffix is dropped for presentation only. Exports — CSV, JSON and the
+   * PDF statement — never pass `base`, because a document that leaves the app
+   * has no workspace around it to supply the missing context.
+   *
+   * An explicit `withCode` still wins, in both directions.
+   */
+  base?: string | null;
 }
 
 /** Minor units → display string, e.g. 1050050 → "₹10,500.50". */
@@ -171,11 +189,15 @@ export function formatMinor(
     compactDecimals = true,
     withSymbol = true,
     signed = false,
-    withCode = false,
+    base = null,
   } = options;
   assertSafeMinor(minor);
 
   const code = currency.toUpperCase();
+  // `base` only ever *removes* a suffix the caller asked for; it never adds one
+  // the caller did not. An explicit withCode wins over both.
+  const withCode =
+    options.withCode ?? (base ? code !== normaliseCode(base) : false);
   const units = minorPerMajor(code);
   const maxDecimals = decimalsFor(code);
   const abs = Math.abs(minor);
@@ -229,13 +251,33 @@ export function formatMoney(
 ): string {
   const { approx = false, ...rest } = options;
   const code = normaliseCode(currency) || 'INR';
-  const body = formatMinor(minor, code, { withCode: true, ...rest });
+  // The code rides along by default — this presenter exists so a mixed-currency
+  // ledger names every figure. `base` is the one thing that can take it off,
+  // and only for the workspace's own currency.
+  const withCode = rest.withCode ?? (rest.base ? code !== normaliseCode(rest.base) : true);
+  const body = formatMinor(minor, code, { ...rest, withCode });
   return approx ? `≈ ${body}` : body;
 }
 
-/** `≈ ₹3,817.11 INR` — the base-currency equivalent of an original amount. */
-export function formatApprox(minor: number, currency: string | null | undefined): string {
-  return formatMoney(minor, currency, { approx: true, compactDecimals: false });
+/**
+ * `≈ ₹3,817.11` — the base-currency equivalent of an original amount.
+ *
+ * A conversion is always *into* the workspace currency, so the currency being
+ * converted to is the one currency the reader never has to be told. The `≈`
+ * carries the meaning; the code would only repeat the glyph. Pass `withCode`
+ * to force it back for a document that will be read outside the app.
+ */
+export function formatApprox(
+  minor: number,
+  currency: string | null | undefined,
+  options: { withCode?: boolean } = {},
+): string {
+  const code = normaliseCode(currency) || 'INR';
+  return formatMoney(minor, code, {
+    approx: true,
+    compactDecimals: false,
+    withCode: options.withCode ?? false,
+  });
 }
 
 /**

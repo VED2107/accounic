@@ -756,7 +756,7 @@ class _TotalLine extends StatelessWidget {
             ),
           ),
           Text(
-            '≈ ${formatMoney(net.abs(), currency: currency)}',
+            formatApprox(net.abs(), currency: currency),
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w700,
@@ -817,6 +817,7 @@ class _WorkspacePositionBlock extends StatelessWidget {
                 child: MoneyText(
                   minor,
                   currency: currency,
+                  base: currency,
                   tone: MoneyTone.neutral,
                   style: TextStyle(
                     fontSize: 14,
@@ -855,6 +856,7 @@ class _WorkspacePositionBlock extends StatelessWidget {
             child: MoneyText(
               net.abs(),
               currency: currency,
+              base: currency,
               tone: MoneyTone.neutral,
               style: TextStyle(
                 fontSize: 26,
@@ -992,7 +994,7 @@ class _TodayFigure extends StatelessWidget {
         Icon(icon, size: AppIconSize.xs, color: color),
         const SizedBox(width: AppSpacing.xs + 2),
         Text(
-          formatMoney(minor, currency: currency),
+          formatMoney(minor, currency: currency, base: currency),
           style: TextStyle(
             fontSize: 12.5,
             fontWeight: FontWeight.w600,
@@ -1071,6 +1073,7 @@ class PersonRow extends StatelessWidget {
                     NetBadge(
                       netMinor: person.netBalance,
                       currency: person.currency,
+                      base: currency,
                       approxMinor: person.netBalanceBase,
                       approxCurrency: person.baseCurrency,
                     ),
@@ -1184,9 +1187,17 @@ class ActivityRow extends StatelessWidget {
                           const SizedBox(height: 2),
                           Row(
                             children: [
-                              // The kind of entry carries its own colour, so
-                              // credit and debit are told apart before the row
-                              // is read. Never colour alone: the word is there.
+                              // The type is set in neutral ink, not in the
+                              // direction's colour. Three things were saying
+                              // "which way" on every row — the tinted icon
+                              // tile, this word, and the amount — and one of
+                              // them said it confusingly: this ledger's `debit`
+                              // is the receivable side, so a green word "Debit"
+                              // reads as a contradiction to anyone who has not
+                              // been told the convention (core/direction.dart).
+                              // The tile and the amount carry direction; the
+                              // word only names the entry. Matches the same
+                              // change in web/src/components/ledger/activity-row.tsx.
                               Flexible(
                                 child: Text(
                                   item.label,
@@ -1195,7 +1206,7 @@ class ActivityRow extends StatelessWidget {
                                   style: TextStyle(
                                     fontSize: 12.5,
                                     fontWeight: FontWeight.w600,
-                                    color: foreground,
+                                    color: palette.inkMuted,
                                   ),
                                 ),
                               ),
@@ -1255,6 +1266,7 @@ class ActivityRow extends StatelessWidget {
                         MoneyText(
                           item.entryAmountMinor,
                           currency: item.entryCurrency,
+                          base: currency,
                           tone: item.isSettlement
                               ? MoneyTone.neutral
                               : item.isReceivable

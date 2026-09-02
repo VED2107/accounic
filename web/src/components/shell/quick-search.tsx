@@ -166,6 +166,7 @@ export function QuickSearch({
                           <NetBadge
                             netMinor={person.net_balance}
                             currency={person.currency ?? currency}
+                            base={currency}
                           />
                         </button>
                       </li>
@@ -207,7 +208,7 @@ export function QuickSearch({
                                 isReceivable(txn.type) ? 'text-receivable' : 'text-payable'
                               }`}
                             >
-                              {formatMoney(txn.amount_minor, currency)}
+                              {formatMoney(txn.amount_minor, currency, { base: currency })}
                             </span>
                           </button>
                         </li>

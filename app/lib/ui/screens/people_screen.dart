@@ -525,7 +525,16 @@ class _PersonTile extends StatelessWidget {
                               ],
                             ],
                           ),
-                          const SizedBox(height: 3),
+                          if (_metaWhen(person) != null) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              _metaWhen(person)!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 12.5, color: palette.inkMuted),
+                            ),
+                          ],
+                          const SizedBox(height: 2),
                           Row(
                             children: [
                               // The account's own currency, when it is not the
@@ -556,7 +565,7 @@ class _PersonTile extends StatelessWidget {
                               ],
                               Flexible(
                                 child: Text(
-                                  _meta(person),
+                                  _metaDetail(person),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
@@ -573,6 +582,7 @@ class _PersonTile extends StatelessWidget {
                     NetBadge(
                       netMinor: person.netBalance,
                       currency: person.currency,
+                      base: currency,
                       approxMinor: person.netBalanceBase,
                       approxCurrency: person.baseCurrency,
                     ),
@@ -699,14 +709,23 @@ class _Totals extends StatelessWidget {
   }
 }
 
-String _meta(PersonBalance person) {
-  if (person.lastActivityAt != null) {
-    final when = friendlyDate(person.lastActivityAt!);
-    return person.phone == null ? when : '${person.phone} · $when';
-  }
-  return person.phone ??
-      (person.transactionCount == 0
-          ? 'No transactions yet'
-          : '${person.transactionCount} '
-              '${person.transactionCount == 1 ? 'transaction' : 'transactions'}');
+/// When the account last moved — the line a directory is scanned by.
+///
+/// Split from [_metaDetail] because the row used to show the last activity date
+/// OR the transaction count, whichever happened to be available, so an active
+/// account never said how much history was behind it and a dormant one never
+/// said when it went quiet. They answer different questions. Matches the same
+/// change in web/src/app/(app)/people/page.tsx.
+String? _metaWhen(PersonBalance person) {
+  if (person.lastActivityAt == null) return null;
+  return 'Last activity ${friendlyDate(person.lastActivityAt!)}';
+}
+
+/// How much history, and how to reach them. One step quieter again.
+String _metaDetail(PersonBalance person) {
+  final count = person.transactionCount == 0
+      ? 'No transactions yet'
+      : '${person.transactionCount} '
+          '${person.transactionCount == 1 ? 'transaction' : 'transactions'}';
+  return person.phone == null ? count : '$count · ${person.phone}';
 }

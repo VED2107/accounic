@@ -89,17 +89,17 @@ class _ActivityChartState extends State<ActivityChart> {
             _Legend(
               color: palette.receivable,
               label: 'You received',
-              value: formatMoney(credit, currency: widget.currency),
+              value: formatMoney(credit, currency: widget.currency, base: widget.currency),
             ),
             _Legend(
               color: palette.payable,
               label: 'You gave',
-              value: formatMoney(debit, currency: widget.currency),
+              value: formatMoney(debit, currency: widget.currency, base: widget.currency),
             ),
             _Legend(
               color: palette.inkFaint,
               label: 'Settled',
-              value: formatMoney(settled, currency: widget.currency),
+              value: formatMoney(settled, currency: widget.currency, base: widget.currency),
             ),
           ],
         ),
@@ -138,15 +138,15 @@ class _ActivityChartState extends State<ActivityChart> {
                           children: [
                             _Readout(
                               color: palette.receivable,
-                              value: formatMoney(shown.credit, currency: widget.currency),
+                              value: formatMoney(shown.credit, currency: widget.currency, base: widget.currency),
                             ),
                             _Readout(
                               color: palette.payable,
-                              value: formatMoney(shown.debit, currency: widget.currency),
+                              value: formatMoney(shown.debit, currency: widget.currency, base: widget.currency),
                             ),
                             _Readout(
                               color: palette.inkFaint,
-                              value: formatMoney(shown.settled, currency: widget.currency),
+                              value: formatMoney(shown.settled, currency: widget.currency, base: widget.currency),
                             ),
                           ],
                         ),

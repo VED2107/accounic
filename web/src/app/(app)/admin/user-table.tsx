@@ -17,6 +17,7 @@ import {
   SuccessNote,
   cn,
 } from '@/components/ui/primitives';
+import { Menu } from '@/components/ui/menu';
 import { useToast } from '@/components/ui/toast';
 import { staggerStyle } from '@/components/motion/reveal';
 import { SubmitRow } from '@/components/ledger/transaction-sheet';
@@ -164,39 +165,57 @@ export function UserTable({
                   </p>
                 </div>
 
-                <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-                  <Button size="sm" variant="secondary" onClick={() => setResetting(user)}>
-                    Reset password
-                  </Button>
-                  {user.id !== currentUserId ? (
-                    <>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => setConfirming({ user, kind: 'admin' })}
-                      >
-                        {user.is_admin ? 'Revoke admin' : 'Make admin'}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => setConfirming({ user, kind: 'toggle' })}
-                      >
-                        {user.is_active ? 'Disable' : 'Enable'}
-                      </Button>
-                      {/* Deletion is the only irreversible action on this page,
-                          so it is the only control that carries the payable red. */}
-                      <span aria-hidden className="mx-1 h-5 w-px bg-line" />
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-payable hover:bg-payable-soft hover:text-payable"
-                        onClick={() => setConfirming({ user, kind: 'delete' })}
-                      >
-                        Delete
-                      </Button>
-                    </>
-                  ) : null}
+                {/* Four buttons per row, repeated down the list, made the
+                    directory read as a control panel: the controls outweighed
+                    the accounts they belonged to, and the destructive one sat
+                    permanently a single click away. They move into a menu,
+                    which changes where the actions live and nothing about who
+                    may run them — every guard below is the same guard, and the
+                    server actions behind them are untouched. */}
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Menu
+                    label={user.name || user.email}
+                    items={[
+                      {
+                        label: 'Reset password',
+                        description: 'Set a new password and hand it over.',
+                        onSelect: () => setResetting(user),
+                      },
+                      {
+                        label: user.is_admin ? 'Revoke admin' : 'Make admin',
+                        description:
+                          user.id === currentUserId
+                            ? 'You cannot change your own admin role.'
+                            : undefined,
+                        disabled: user.id === currentUserId,
+                        onSelect: () => setConfirming({ user, kind: 'admin' }),
+                      },
+                      {
+                        label: user.is_active ? 'Disable account' : 'Enable account',
+                        description:
+                          user.id === currentUserId
+                            ? 'You cannot disable your own account.'
+                            : user.is_active
+                              ? 'They keep their data and cannot sign in.'
+                              : undefined,
+                        disabled: user.id === currentUserId,
+                        onSelect: () => setConfirming({ user, kind: 'toggle' }),
+                      },
+                      {
+                        // Still the only irreversible action here, so it is
+                        // still the only one that carries the payable red — and
+                        // it still goes through the same confirmation.
+                        label: 'Delete account',
+                        description:
+                          user.id === currentUserId
+                            ? 'You cannot delete your own account.'
+                            : 'Permanent, along with every record in it.',
+                        destructive: true,
+                        disabled: user.id === currentUserId,
+                        onSelect: () => setConfirming({ user, kind: 'delete' }),
+                      },
+                    ]}
+                  />
                 </div>
               </li>
             ))}

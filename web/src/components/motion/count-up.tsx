@@ -39,7 +39,7 @@ export function CountUp({
 
     if (!node || from === minor) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      node.textContent = formatMoney(minor, currency);
+      node.textContent = formatMoney(minor, currency, { base: currency });
       return;
     }
 
@@ -55,10 +55,10 @@ export function CountUp({
         ease: 'power2.out',
         overwrite: 'auto',
         onUpdate: () => {
-          node.textContent = formatMoney(Math.round(value.current), currency);
+          node.textContent = formatMoney(Math.round(value.current), currency, { base: currency });
         },
         onComplete: () => {
-          node.textContent = formatMoney(minor, currency);
+          node.textContent = formatMoney(minor, currency, { base: currency });
         },
       });
       kill = () => tween.kill();
@@ -72,7 +72,7 @@ export function CountUp({
 
   return (
     <span ref={ref} className={cn('tnum', className)}>
-      {formatMoney(minor, currency)}
+      {formatMoney(minor, currency, { base: currency })}
     </span>
   );
 }

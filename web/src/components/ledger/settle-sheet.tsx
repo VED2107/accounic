@@ -198,7 +198,7 @@ export function SettleSheet({
                         active={direction === 'in'}
                         tone="receivable"
                         title="I received"
-                        amount={formatMoney(balance.outstanding_receivable, currency)}
+                        amount={formatMoney(balance.outstanding_receivable, currency, { base: currency })}
                         onClick={() => {
                           setDirection('in');
                           setTransactionId('');
@@ -209,7 +209,7 @@ export function SettleSheet({
                         active={direction === 'out'}
                         tone="payable"
                         title="I paid"
-                        amount={formatMoney(balance.outstanding_payable, currency)}
+                        amount={formatMoney(balance.outstanding_payable, currency, { base: currency })}
                         onClick={() => {
                           setDirection('out');
                           setTransactionId('');
@@ -238,7 +238,7 @@ export function SettleSheet({
                       {matching.map((txn) => (
                         <option key={txn.id} value={txn.id}>
                           {friendlyDate(txn.transaction_date)} ·{' '}
-                          {formatMoney(txn.remaining_minor, currency)} left
+                          {formatMoney(txn.remaining_minor, currency, { base: currency })} left
                           {txn.description ? ` · ${txn.description}` : ''}
                         </option>
                       ))}
@@ -251,15 +251,15 @@ export function SettleSheet({
             <FormSection title="Amount" aside={foreign ? `Account keeps ${currency}` : currency}>
               {/* The arithmetic, done for the reader (context.md §9). */}
               <div className="grid grid-cols-3 divide-x divide-line rounded-card border border-line bg-sunken">
-                <Cell label="Outstanding" value={formatMoney(max, currency)} />
+                <Cell label="Outstanding" value={formatMoney(max, currency, { base: currency })} />
                 <Cell
                   label="Settling"
-                  value={formatMoney(settling, currency)}
+                  value={formatMoney(settling, currency, { base: currency })}
                   tone={direction === 'in' ? 'receivable' : 'payable'}
                 />
                 <Cell
                   label="Remaining"
-                  value={formatMoney(remaining, currency)}
+                  value={formatMoney(remaining, currency, { base: currency })}
                   tone={remaining === 0 ? 'settled' : undefined}
                 />
               </div>
@@ -358,7 +358,7 @@ function SettlementSuccess({
         Settlement recorded
       </p>
       <p className="mt-1 text-[0.8125rem] text-ink-muted">
-        {direction === 'in' ? 'Received' : 'Paid'} {formatMoney(amount, currency)}{' '}
+        {direction === 'in' ? 'Received' : 'Paid'} {formatMoney(amount, currency, { base: currency })}{' '}
         {direction === 'in' ? 'from' : 'to'} {name}
       </p>
 
@@ -376,7 +376,7 @@ function SettlementSuccess({
               : 'text-ink',
           )}
         >
-          {remaining > 0 ? formatMoney(remaining, currency) : 'Fully settled'}
+          {remaining > 0 ? formatMoney(remaining, currency, { base: currency }) : 'Fully settled'}
         </p>
       </div>
 

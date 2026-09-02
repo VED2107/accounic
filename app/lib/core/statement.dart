@@ -48,8 +48,16 @@ int netDelta(TimelineEntry entry) {
 /// screen does not, because an embedded typeface may have no glyph for a
 /// currency symbol. Injecting it means these row rules can be tested against
 /// the plain screen formatter and still be the rules the PDF runs.
+/// `≈ ₹3,817.11 INR` — the conversion as a *statement* writes it.
+///
+/// The screen drops this ISO code, because on screen the workspace currency is
+/// stated all around the figure. A statement has no workspace around it — it is
+/// read in an inbox, a folder, a printout — so the code stays here, explicitly.
+String statementApprox(int minor, {String? currency}) =>
+    formatApprox(minor, currency: currency, withCode: true);
+
 class StatementFormatter {
-  const StatementFormatter({this.money = formatMoney, this.approx = formatApprox});
+  const StatementFormatter({this.money = formatMoney, this.approx = statementApprox});
 
   /// `$40.00 USD` — an amount in the currency it was entered in.
   final String Function(int minor, {String? currency, bool compactDecimals}) money;

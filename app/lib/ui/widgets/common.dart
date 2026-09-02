@@ -25,11 +25,12 @@ class MoneyText extends StatelessWidget {
     this.minor, {
     super.key,
     this.currency = 'INR',
+    this.base,
     this.tone = MoneyTone.neutral,
     this.style,
     this.compact = true,
     this.strikethrough = false,
-    this.withCode = true,
+    this.withCode,
   });
 
   final int minor;
@@ -39,13 +40,22 @@ class MoneyText extends StatelessWidget {
   final bool compact;
   final bool strikethrough;
 
-  /// The ISO code after the figure — `$40 USD`, not `$40` (upgrade §44).
+  /// The workspace's own currency (upgrade §45).
   ///
-  /// On by default, and off only where the code is already stated beside the
-  /// figure. A symbol alone is ambiguous: `$` is eight of the currencies in
-  /// this list and `₹` is two, and a ledger that mixes currencies is exactly
-  /// where that ambiguity costs someone money.
-  final bool withCode;
+  /// Given it, an amount in that same currency drops its ISO suffix —
+  /// `₹2,537.50` rather than `₹2,537.50 INR` — while every foreign amount keeps
+  /// one. The contrast is the point: in a list where most rows are `₹…` and one
+  /// is `500 AED`, the foreign row identifies itself and the rest stop
+  /// repeating what the workspace already says.
+  final String? base;
+
+  /// Force the ISO code on or off, overriding [base].
+  ///
+  /// A symbol alone is ambiguous: `$` is eight of the currencies in this list
+  /// and `₹` is two. So the code stays on wherever the workspace currency is
+  /// not known, and anything that leaves the app — a statement, an export —
+  /// sets it explicitly rather than relying on context it will not have.
+  final bool? withCode;
 
   @override
   Widget build(BuildContext context) {
@@ -55,6 +65,7 @@ class MoneyText extends StatelessWidget {
         currency: currency,
         compactDecimals: compact,
         withCode: withCode,
+        base: base,
       ),
       style: (style ?? const TextStyle()).copyWith(
         color: tone.color(context, minor),
@@ -97,6 +108,7 @@ class MoneyStat extends StatelessWidget {
     required this.label,
     required this.minor,
     required this.currency,
+    this.base,
     this.tone = MoneyTone.neutral,
     this.sublabel,
     this.size = 27,
@@ -105,6 +117,9 @@ class MoneyStat extends StatelessWidget {
   final String label;
   final int minor;
   final String currency;
+
+  /// The workspace currency, so a figure already in it drops the repeated code.
+  final String? base;
   final MoneyTone tone;
   final String? sublabel;
   final double size;
@@ -123,6 +138,7 @@ class MoneyStat extends StatelessWidget {
           child: MoneyText(
             minor,
             currency: currency,
+            base: base,
             tone: tone,
             style: context.display(size),
           ),
@@ -143,12 +159,17 @@ class NetBadge extends StatelessWidget {
     super.key,
     required this.netMinor,
     required this.currency,
+    this.base,
     this.approxMinor,
     this.approxCurrency,
   });
 
   final int netMinor;
   final String currency;
+
+  /// The workspace currency, so a row kept in it drops the repeated code and a
+  /// row kept in any other one keeps it.
+  final String? base;
 
   /// The same position in the workspace's own currency, when this row is kept
   /// in a different one. A dirham balance in a rupee workspace is two facts,
@@ -178,17 +199,30 @@ class NetBadge extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        Text(
-          tone == BalanceTone.settled
-              ? 'Settled'
-              : formatMinor(netMinor.abs(), currency: currency),
-          style: context.moneyStyle(MoneySize.row, color: color),
-        ),
+        // A settled row has no figure, and the word standing in for one used to
+        // be set in the row money style — so a directory of people showed a
+        // bold word in the same slot, at the same weight, as the real amounts
+        // beside it, and the eye kept stopping on it. The word is metadata: it
+        // drops to metadata weight and lets the pill below carry the state.
+        if (tone == BalanceTone.settled)
+          Text(
+            'No balance',
+            style: TextStyle(fontSize: 13, color: palette.inkFaint),
+          )
+        else
+          Text(
+            // formatMinor never wrote a code at all, so an AED row in a rupee
+            // workspace read as a bare "251.34" with nothing saying which
+            // currency it was — the opposite of the web's old habit of writing
+            // the code on every row. Both now follow the one rule.
+            formatMoney(netMinor.abs(), currency: currency, base: base),
+            style: context.moneyStyle(MoneySize.row, color: color),
+          ),
         if (showApprox)
           Padding(
             padding: const EdgeInsets.only(top: 1),
             child: Text(
-              '≈ ${formatMinor(approx.abs(), currency: approxCode)}',
+              formatApprox(approx.abs(), currency: approxCode),
               style: context.moneyStyle(MoneySize.small, color: palette.inkFaint),
             ),
           ),
@@ -973,6 +1007,10 @@ class CurrencyHalfBlock extends StatelessWidget {
             child: MoneyText(
               net.abs(),
               currency: row.currency,
+              // The block is already headed by its ISO code, so the figure
+              // under that heading does not repeat it — "AED / 251.34", not
+              // "AED / 251.34 AED".
+              withCode: false,
               style: TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.w700,
@@ -983,7 +1021,7 @@ class CurrencyHalfBlock extends StatelessWidget {
           if (row.showsBaseEquivalent) ...[
             const SizedBox(height: 2),
             Text(
-              '≈ ${formatMoney(row.netBaseMinor!.abs(), currency: baseCurrency)}',
+              formatApprox(row.netBaseMinor!.abs(), currency: baseCurrency),
               style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
             ),
           ] else if (row.currency != baseCurrency && row.netBaseMinor == null) ...[

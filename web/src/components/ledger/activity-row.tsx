@@ -94,18 +94,15 @@ export function ActivityRow({
             when, then the note. Rows used to read as one undifferentiated grey
             string, which is why a feed of them was hard to scan (§15). */}
         <span className="flex min-w-0 items-center gap-1.5 text-[0.75rem]">
-          <span
-            className={cn(
-              'shrink-0 font-medium',
-              isSettlement
-                ? 'text-ink-muted'
-                : receivable
-                  ? 'text-receivable/90'
-                  : 'text-payable/90',
-            )}
-          >
-            {kind}
-          </span>
+          {/* The type is set in neutral ink, not in the direction's colour.
+              Three things were saying "which way" on every row — the tinted
+              icon tile, this word, and the amount — and one of them said it
+              confusingly: this ledger's `debit` is the receivable side, so a
+              green word "Debit" reads as a contradiction to anyone who has not
+              been told the convention (see lib/direction.ts). The tile and the
+              amount carry direction; the word now only names the entry, and the
+              row drops from three colour signals to two. */}
+          <span className="shrink-0 font-medium text-ink-muted">{kind}</span>
           {when ? (
             <>
               <span className="text-ink-subtle">·</span>
@@ -146,7 +143,7 @@ export function ActivityRow({
           currency={entryCurrency}
           tone={isSettlement ? 'neutral' : receivable ? 'receivable' : 'payable'}
           className="money"
-          withCode
+          base={currency}
         />
         {showBase ? (
           <span className="tnum text-[0.75rem] text-ink-faint">

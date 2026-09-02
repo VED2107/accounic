@@ -125,8 +125,30 @@ void main() {
     });
 
     test('writes a converted amount as an approximation, in full', () {
-      expect(formatApprox(1039369, currency: 'INR'), '≈ ₹10,393.69 INR');
-      expect(formatApprox(381710, currency: 'INR'), '≈ ₹3,817.10 INR');
+      // On screen the conversion is always *into* the workspace currency, which
+      // the screen states all around the figure — so the ≈ carries the meaning
+      // and the code would only repeat the ₹ (upgrade §45).
+      expect(formatApprox(1039369, currency: 'INR'), '≈ ₹10,393.69');
+      expect(formatApprox(381710, currency: 'INR'), '≈ ₹3,817.10');
+    });
+
+    test('puts the code back for anything that leaves the app', () {
+      // A statement is read in an inbox or a folder, with no workspace around
+      // it to supply the missing currency.
+      expect(
+        formatApprox(1039369, currency: 'INR', withCode: true),
+        '≈ ₹10,393.69 INR',
+      );
+    });
+
+    test('keeps the code on every currency that is not the workspace one', () {
+      // The whole point of dropping the suffix: the foreign row still names
+      // itself, and the contrast is what marks it as foreign. Matches the same
+      // three assertions in web/src/lib/currency-display.test.ts.
+      expect(formatMoney(253750, currency: 'INR', base: 'INR'), '₹2,537.50');
+      expect(formatMoney(50000, currency: 'AED', base: 'INR'), '500 AED');
+      // No base known → nothing may be assumed, so the code stays.
+      expect(formatMoney(253750, currency: 'INR'), '₹2,537.50 INR');
     });
 
     test('handles the awkward values', () {

@@ -103,3 +103,48 @@ export function personBalanceSeries(
   }
   return series.reverse();
 }
+
+/**
+ * The buckets, padded out to one entry per day across the whole window
+ * (upgrade §46).
+ *
+ * The RPC returns only the days that had activity. The chart draws one flexible
+ * column per bucket, so a month with five active days drew five columns each a
+ * fifth of the card wide — slabs of colour with no time axis behind them, which
+ * is not a chart of anything. A day with no movement is a fact about the month
+ * and has to occupy its own width.
+ *
+ * Dates are handled as plain `YYYY-MM-DD` strings in UTC. A local-time Date
+ * would shift the bucket either side of midnight for anyone east or west of
+ * Greenwich and silently drop or duplicate a day.
+ */
+export function padDailyBuckets(buckets: ActivityBucket[], days = 30): ActivityBucket[] {
+  if (days <= 0) return [];
+
+  const byDay = new Map<string, ActivityBucket>();
+  for (const bucket of buckets) {
+    // The RPC may hand back a full timestamp; the day is all that identifies it.
+    byDay.set(bucket.bucket.slice(0, 10), bucket);
+  }
+
+  // The window ends on the newest day present, so a chart drawn from stale data
+  // still ends where the data does rather than trailing empty days to today.
+  const newest = [...byDay.keys()].sort().at(-1);
+  const end = newest ? new Date(`${newest}T00:00:00Z`) : new Date();
+
+  const out: ActivityBucket[] = [];
+  for (let offset = days - 1; offset >= 0; offset -= 1) {
+    const day = new Date(end);
+    day.setUTCDate(day.getUTCDate() - offset);
+    const key = day.toISOString().slice(0, 10);
+    const found = byDay.get(key);
+    // Normalised to the plain day either way, so everything downstream — the
+    // axis labels, the tooltip, the React key — reads one shape.
+    out.push(
+      found
+        ? { ...found, bucket: key }
+        : { bucket: key, credit: 0, debit: 0, settled: 0, entries: 0 },
+    );
+  }
+  return out;
+}

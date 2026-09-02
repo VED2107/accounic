@@ -32,9 +32,15 @@ export function pdfMoney(
     : formatMoney(minor, currency, { ...options, withSymbol: false });
 }
 
-/** `≈ ₹3,817.11 INR` — the converted figure, marked as a conversion. */
+/**
+ * `≈ ₹3,817.11 INR` — the converted figure, marked as a conversion.
+ *
+ * The screen drops this ISO code, because on screen the workspace currency is
+ * stated all around the figure. A statement has no workspace around it — it is
+ * read in an inbox, a folder, a printout — so the code stays here, explicitly.
+ */
 export function pdfApprox(minor: number, currency: string | null | undefined): string {
-  const withSymbol = formatApprox(minor, currency);
+  const withSymbol = formatApprox(minor, currency, { withCode: true });
   return supportsAll(withSymbol)
     ? withSymbol
     : `≈ ${formatMoney(minor, currency, { withSymbol: false, compactDecimals: false })}`;

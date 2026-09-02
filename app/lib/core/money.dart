@@ -179,28 +179,58 @@ String formatMinor(
 /// `$` is eight currencies in this list and `₹` is two — and because the point
 /// of the hierarchy is that the reader can tell at a glance which of the two
 /// figures they are looking at.
+///
+/// [base] is the one thing that takes the code off (upgrade §45). An amount
+/// already written in the workspace currency does not need its code repeated:
+/// in an INR workspace `₹2,537.50 INR` says "rupees" twice, once in the glyph
+/// and once in the suffix, on every row of every screen. Passing [base] drops
+/// the suffix for that one currency and keeps it for every other, so `500 AED`
+/// in the same list still names itself — and the contrast between the two is
+/// what tells the reader which figures are foreign.
+///
+/// Presentation only. Exports — CSV, JSON and the PDF statement — never pass
+/// [base], because a document that leaves the app has no workspace around it to
+/// supply the missing context. An explicit [withCode] wins over both.
+///
+/// Mirrors the `base` option in web/src/lib/money.ts so a figure cannot be
+/// written one way on the web and another in the app.
 String formatMoney(
   int minor, {
   String? currency,
   bool compactDecimals = true,
   bool signed = false,
-  bool withCode = true,
+  bool? withCode,
+  String? base,
   bool approx = false,
 }) {
   final code = normaliseCode(currency ?? kFallbackCurrency);
+  final resolvedCode = code.isEmpty ? kFallbackCurrency : code;
+  final showCode =
+      withCode ?? (base != null ? resolvedCode != normaliseCode(base) : true);
   final body = formatMinor(
     minor,
-    currency: code.isEmpty ? kFallbackCurrency : code,
+    currency: resolvedCode,
     compactDecimals: compactDecimals,
     signed: signed,
-    withCode: withCode,
+    withCode: showCode,
   );
   return approx ? '≈ $body' : body;
 }
 
-/// `≈ ₹3,817.11 INR` — the base-currency equivalent of an original amount.
-String formatApprox(int minor, {String? currency}) =>
-    formatMoney(minor, currency: currency, approx: true, compactDecimals: false);
+/// `≈ ₹3,817.11` — the base-currency equivalent of an original amount.
+///
+/// A conversion is always *into* the workspace currency, so the currency being
+/// converted to is the one the reader never has to be told: the `≈` carries the
+/// meaning and the code would only repeat the glyph. Pass [withCode] to force
+/// it back for a statement, which is read with no workspace around it.
+String formatApprox(int minor, {String? currency, bool withCode = false}) =>
+    formatMoney(
+      minor,
+      currency: currency,
+      approx: true,
+      compactDecimals: false,
+      withCode: withCode,
+    );
 
 /// The symbol to lead a figure with, falling back to the ISO code for every
 /// currency whose mark cannot — the same rule the formatter uses, so an amount

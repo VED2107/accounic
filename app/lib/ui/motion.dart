@@ -231,7 +231,7 @@ class AnimatedMoney extends StatelessWidget {
     );
 
     if (Motion.of(context)) {
-      return Text(formatMoney(minor, currency: currency), style: resolved);
+      return Text(formatMoney(minor, currency: currency, base: currency), style: resolved);
     }
 
     return TweenAnimationBuilder<double>(
@@ -242,7 +242,7 @@ class AnimatedMoney extends StatelessWidget {
       duration: Motion.major,
       curve: Motion.standard,
       builder: (context, value, _) => Text(
-        formatMoney(value.round(), currency: currency),
+        formatMoney(value.round(), currency: currency, base: currency),
         style: resolved,
       ),
     );

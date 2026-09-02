@@ -527,6 +527,7 @@ class _SecondaryFigure extends StatelessWidget {
                 child: MoneyText(
                   minor.abs(),
                   currency: currency,
+                  base: currency,
                   tone: MoneyTone.neutral,
                   style: TextStyle(
                     fontSize: 17,
@@ -1089,7 +1090,7 @@ class _TimelineTileState extends ConsumerState<TimelineTile> {
               : 'Reverse',
       body: isTransfer
           ? 'Both sides are retracted together. '
-              '${formatMoney(entry.amountMinor, currency: widget.currency)} returns to '
+              '${formatMoney(entry.amountMinor, currency: widget.currency, base: widget.currency)} returns to '
               'this account, and the matching entry on $other is retracted with it. '
               'Nothing is deleted — both entries stay on both timelines, marked '
               'retracted.'
@@ -1097,7 +1098,7 @@ class _TimelineTileState extends ConsumerState<TimelineTile> {
               ? 'The transaction stays in the timeline as history but stops counting '
                   'towards any balance. If it has already been settled, void those '
                   'settlements first.'
-              : '${formatMoney(entry.amountMinor, currency: widget.currency)} goes back to '
+              : '${formatMoney(entry.amountMinor, currency: widget.currency, base: widget.currency)} goes back to '
                   'outstanding. The record stays in the timeline marked as reversed.',
     );
     if (!ok) return;
@@ -1206,7 +1207,7 @@ class _TimelineTileState extends ConsumerState<TimelineTile> {
                                   const StatusChip('Settled', tone: StatusTone.done)
                                 else if (entry.status == SettlementStatus.partial)
                                   StatusChip(
-                                    '${formatMoney(entry.remainingMinor ?? 0, currency: widget.currency)} left',
+                                    '${formatMoney(entry.remainingMinor ?? 0, currency: widget.currency, base: widget.currency)} left',
                                     tone: StatusTone.partial,
                                   ),
                               ],
@@ -1254,6 +1255,7 @@ class _TimelineTileState extends ConsumerState<TimelineTile> {
                           MoneyText(
                             entry.entryAmountMinorOr(widget.currency),
                             currency: entry.entryCurrencyOr(widget.currency),
+                            base: widget.currency,
                             strikethrough: entry.isVoid,
                             tone: entry.isSettlement
                                 ? MoneyTone.neutral
@@ -1348,7 +1350,7 @@ class _RowActions extends ConsumerWidget {
               if (!entry.isTransfer &&
                   !entry.isSettlement &&
                   (entry.remainingMinor ?? 0) > 0)
-                '${formatMoney(entry.remainingMinor!, currency: currency)} still outstanding',
+                '${formatMoney(entry.remainingMinor!, currency: currency, base: currency)} still outstanding',
             ].join('  ·  '),
             style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
           ),
@@ -1555,6 +1557,7 @@ class _Figures extends StatelessWidget {
                   child: MoneyText(
                     minor,
                     currency: currency,
+                    base: currency,
                     tone: moneyTone,
                     style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                   ),

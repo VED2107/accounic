@@ -955,3 +955,75 @@ There is still no AMOUNT override on the first step, on either client, and that
 is deliberate rather than an omission: `create_transfer()` accepts a converted
 amount for the second leg only, so a control there would promise something the
 write path cannot keep.
+
+## 13 The premium UI pass (unreleased)
+
+A composition-and-interaction pass over the existing screens. The token layer was
+audited first and deliberately left alone: `globals.css` and `primitives.tsx` already
+carried the money type scale, the four-step ink ramp with measured contrast, one focus
+treatment, reduced-motion and coarse-pointer tap targets. The gap was one layer above
+them, in how the screens used what they had.
+
+**Fourteen findings came out of running the app and reading the pixels**, not the
+source. Ten are fixed here; the rest are noted below.
+
+### 13.1 Money
+
+* A figure and its currency code are one word: `₹2,537.50` was breaking across two lines
+  in the receivable and settled cards, orphaning the `INR`. `.money-*` had guaranteed no
+  ellipsis, which it delivered, but a wrapped number is still a broken number.
+* `≈ ≈ ₹6,515.99` — `formatApprox` already carried the sign and the call site prepended
+  another.
+* The ISO suffix comes off the workspace currency and stays on every other. See
+  `docs/decisions.md`.
+* Flutter's `NetBadge` wrote no currency code at all, so a foreign row lost its context
+  entirely — the mirror image of the web's habit of writing it everywhere.
+
+### 13.2 Composition
+
+* The dashboard's two-column footer was two rows of two cards, so a short card on the
+  left against a long one on the right stranded roughly 400px of nothing. The columns
+  now flow independently.
+* The thirty-day chart drew one flexible column per *returned* bucket rather than per
+  day; `padDailyBuckets` gives it a real axis, and the plot grew from `h-28` to
+  `h-40/h-48`.
+* People rows showed the last activity date **or** the transaction count, never both.
+  They answer different questions.
+* Three adjacent segmented controls read as one undifferentiated bar; search moved to
+  its own line and the two groups are named "Show" and "Sort".
+* Profile's five cards became hairline sections; the admin row's four buttons became a
+  menu.
+
+### 13.3 The bug that hid the others
+
+The Content-Security-Policy applied `script-src 'self' 'unsafe-inline'` in every
+environment, including development, where Next's Fast Refresh needs `eval`. The client
+bundle never initialised, so **nothing on localhost hydrated** — and because the
+server-rendered HTML was correct, every screenshot looked right while no dialog, menu,
+filter or form actually worked. Development now allows `'unsafe-eval'`; production is
+unchanged.
+
+Two related traps worth recording, both of which produce failures that look like code
+bugs and are not:
+
+* `next build` against a `.next` left by a syntax error fails on an unrelated page
+  (`/profile`, `TypeError: a[d] is not a function`). Delete `.next` before believing it.
+* A running dev server and a `next build` share `.next` and will corrupt each other
+  (`PageNotFoundError: Cannot find module for page`). Stop the dev server first.
+
+`npm run lint` is a deprecated `next lint` that prompts interactively and has no ESLint
+config to run; `npm run typecheck` is the gate.
+
+### 13.4 Verification
+
+Web: typecheck clean, 204 tests, production build clean, Impeccable design detector
+clean. Flutter: `analyze` clean, 317 tests. Database: all 15 SQL suites pass, so no
+accounting, settlement, currency or RLS behaviour moved. Screens were captured from the
+running app at 1440, 834 and 390 in both themes.
+
+### 13.5 Still open
+
+Findings 4, 5 and part of 8 from the audit: the net-position sparkline is still a small
+decorative line rather than a chart that repays reading; the sidebar still carries a
+large dead band between the nav and its call to action; and person detail did not get
+its progressive-disclosure pass. No release was cut.

@@ -51,6 +51,9 @@ class _SearchSheetState extends ConsumerState<_SearchSheet> {
   @override
   Widget build(BuildContext context) {
     final async = ref.watch(searchProvider(_query));
+    // The workspace currency, so a result kept in it drops the repeated code
+    // and a foreign one keeps it — the same rule the People list follows.
+    final currency = ref.watch(currencyProvider);
     final trimmed = _query.trim();
 
     return Padding(
@@ -137,7 +140,8 @@ class _SearchSheetState extends ConsumerState<_SearchSheet> {
                                           style: const TextStyle(fontSize: 12)),
                                   trailing: NetBadge(
                                       netMinor: person.netBalance,
-                                      currency: person.currency),
+                                      currency: person.currency,
+                                      base: currency),
                                 ),
                             ],
                             if (results.transactions.isNotEmpty) ...[

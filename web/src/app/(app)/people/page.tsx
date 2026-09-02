@@ -69,13 +69,18 @@ export default async function PeoplePage({
       />
 
       {all.length > 0 ? (
-        <Card className="mb-4 flex flex-wrap items-center gap-x-8 gap-y-3 px-5 py-4">
+        /* Two figures and a bar, previously boxed in a full-width card that was
+           two-thirds empty on a desktop. The card was doing no grouping work —
+           these totals belong to the page, not to a container of their own — so
+           the border comes off and a hairline separates them from the list.
+           Not every piece of information needs a card. */
+        <div className="mb-5 flex flex-wrap items-center gap-x-8 gap-y-3 border-b border-line pb-4">
           <Total label="Owed to you" amount={totals.receivable} currency={currency} tone="receivable" />
           <Total label="You owe" amount={totals.payable} currency={currency} tone="payable" />
-          <div className="min-w-32 flex-1">
+          <div className="min-w-32 max-w-xs flex-1">
             <SplitBar receivable={totals.receivable} payable={totals.payable} />
           </div>
-        </Card>
+        </div>
       ) : null}
 
       <PeopleToolbar query={query} sort={sort} side={side} includeArchived={includeArchived} />
@@ -144,19 +149,26 @@ function Total({
           tone === 'receivable' ? 'text-receivable' : 'text-payable',
         )}
       >
-        {formatMoney(amount, currency)}
+        {formatMoney(amount, currency, { base: currency })}
       </p>
     </div>
   );
 }
 
 function PersonRow({ person, currency }: { person: PersonBalance; currency: string }) {
-  const meta =
+  // Two facts, not one. The row used to show the last activity date OR the
+  // transaction count — whichever was available — so an active account never
+  // said how much history was behind it and a dormant one never said when it
+  // went quiet. They answer different questions and both fit.
+  const when =
     person.last_activity_at !== null
-      ? friendlyDate(person.last_activity_at)
-      : person.transaction_count === 0
-        ? 'No transactions yet'
-        : `${person.transaction_count} transactions`;
+      ? `Last activity ${friendlyDate(person.last_activity_at)}`
+      : null;
+  const count =
+    person.transaction_count === 0
+      ? 'No transactions yet'
+      : `${person.transaction_count} ${person.transaction_count === 1 ? 'transaction' : 'transactions'}`;
+  const foreign = Boolean(person.currency && person.currency !== currency);
 
   return (
     <Link
@@ -170,18 +182,36 @@ function PersonRow({ person, currency }: { person: PersonBalance; currency: stri
           <span className="truncate text-[0.875rem] font-medium text-ink">{person.name}</span>
           {person.is_archived ? <Badge tone="muted">Archived</Badge> : null}
         </span>
+
+        {/* When it last moved — the line a directory is actually scanned by. */}
+        {when ? (
+          <span className="block truncate text-[0.75rem] text-ink-muted">{when}</span>
+        ) : null}
+
+        {/* How much history, in what currency, and how to reach them. One step
+            quieter again: this is the line you read after you have decided the
+            row is the one you wanted. */}
         <span className="flex min-w-0 items-center gap-1.5 text-[0.75rem] text-ink-faint">
+          <span className="truncate">{count}</span>
           {/* The account's own currency, when it is not the workspace's. A
               multi-currency ledger where a row does not say what it is
-              denominated in is a ledger you have to click to read (§8). The
-              dashboard's balance rows have said this since the currency work;
-              this list is the same list and now says the same thing. */}
-          {person.currency && person.currency !== currency ? (
-            <span className="shrink-0 rounded border border-line-strong bg-sunken px-1 py-px text-[0.6875rem] font-medium text-ink-muted">
-              {person.currency}
-            </span>
+              denominated in is a ledger you have to click to read (§8). Written
+              as the pair it actually is — the row's currency and the one the
+              balance beneath it converts to. */}
+          {foreign ? (
+            <>
+              <span className="text-ink-subtle">·</span>
+              <span className="shrink-0 font-medium text-ink-muted">
+                {person.currency} / {currency}
+              </span>
+            </>
           ) : null}
-          <span className="truncate">{person.phone ? `${person.phone} · ${meta}` : meta}</span>
+          {person.phone ? (
+            <>
+              <span className="text-ink-subtle">·</span>
+              <span className="truncate">{person.phone}</span>
+            </>
+          ) : null}
         </span>
       </span>
 
@@ -190,6 +220,7 @@ function PersonRow({ person, currency }: { person: PersonBalance; currency: stri
       <NetBadge
         netMinor={person.net_balance}
         currency={person.currency ?? currency}
+        base={currency}
         approxMinor={person.net_balance_base}
         approxCurrency={currency}
       />

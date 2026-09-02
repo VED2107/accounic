@@ -62,7 +62,7 @@ export function AmountInput({
     value.trim() !== '' && minor === null
       ? 'Enter a valid amount'
       : overMax
-        ? `That is more than the ${formatMoney(max!, currency)} outstanding`
+        ? `That is more than the ${formatMoney(max!, currency, { base: currency })} outstanding`
         : undefined;
   const invalid = Boolean(localError || error);
 
@@ -126,7 +126,7 @@ export function AmountInput({
             );
           })}
           <span className="tnum ml-auto self-center text-[0.75rem] text-ink-faint">
-            {formatMoney(max, currency)} outstanding
+            {formatMoney(max, currency, { base: currency })} outstanding
           </span>
         </div>
       ) : null}

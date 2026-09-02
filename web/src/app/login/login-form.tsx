@@ -53,7 +53,11 @@ export function LoginForm({ next }: { next?: string }) {
             type="password"
             autoComplete="current-password"
             required
-            placeholder="••••••••••"
+            // Not "••••••••••". A row of bullets in an empty password field is
+            // indistinguishable from a filled one at a glance, so the form
+            // looked half-completed on arrival and the field looked broken the
+            // moment you cleared it. A placeholder describes what to type.
+            placeholder="Your password"
           />
         </Field>
 

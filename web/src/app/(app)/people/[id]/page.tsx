@@ -452,7 +452,7 @@ export default async function PersonPage({
             />
             <Detail
               label="Lifetime volume"
-              value={formatMoney(balance.total_credit + balance.total_debit, currency)}
+              value={formatMoney(balance.total_credit + balance.total_debit, currency, { base: currency })}
             />
             <Detail label="Status" value={person.is_archived ? 'Archived' : 'Active'} />
           </Card>
@@ -519,7 +519,7 @@ function SecondaryFigure({
           !quiet && minor === 0 && 'text-ink-faint',
         )}
       >
-        {formatMoney(Math.abs(minor), currency)}
+        {formatMoney(Math.abs(minor), currency, { base: currency })}
       </p>
       {baseCurrency && baseCurrency !== currency && minor !== 0 ? (
         <p className="tnum text-[0.75rem] text-ink-faint">
@@ -548,7 +548,7 @@ function Figure({
     <div className="border-b border-line px-4 py-3.5 last:border-b-0 sm:border-b-0 sm:px-5">
       <p className="truncate text-[0.75rem] text-ink-muted">{label}</p>
       <p className="mt-1 truncate text-[1rem] font-semibold">
-        <Money minor={minor} currency={currency} tone={tone} />
+        <Money minor={minor} currency={currency} base={currency} tone={tone} />
       </p>
     </div>
   );

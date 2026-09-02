@@ -906,3 +906,76 @@ And one rule applied throughout, from the brief: **colour never carries meaning 
 The state under a balance is now a bordered, tinted pill containing the word — tint,
 border and word all saying the same thing — so it survives a colour-blind reader and a
 bad monitor alike.
+
+## The workspace currency is stated once, not on every figure
+
+`₹2,537.50 INR` says "rupees" twice — once in the glyph, once in the suffix — and it
+said it on every row of every screen. The suffix now comes off for the workspace's own
+currency and stays on for every other:
+
+| | |
+|---|---|
+| workspace currency | `₹2,537.50` |
+| any other currency | `500 AED` |
+| a conversion | `≈ ₹12,962.50` |
+
+The contrast is the point. In a list where most rows read `₹…` and one reads `500 AED`,
+the foreign row identifies itself, and it does so *because* the others stopped
+repeating what the workspace already says. Writing the code on everything made the one
+row that genuinely needed it indistinguishable from the rest.
+
+This lives in one place per client — the `base` option on `formatMoney` in
+`web/src/lib/money.ts` and `app/lib/core/money.dart` — and never as a per-screen
+exception. Anything that leaves the app passes `withCode: true` and keeps the code:
+a statement is read in an inbox or a folder, with no workspace around it to supply the
+missing context.
+
+Fixing this exposed that the two clients had drifted in **opposite** directions. The web
+wrote the ISO code on every figure; Flutter's `NetBadge` used `formatMinor`, which
+writes no code at all, so a dirham balance in a rupee workspace read as a bare `251.34`
+with nothing saying what it was. Neither was the rule. Both now are.
+
+## Colour says direction once per row, not three times
+
+An activity row had three things saying which way the money went: the tinted icon tile,
+the entry type, and the amount. One of them said it confusingly — this ledger's `debit`
+is the receivable side (see the direction rule above), so a green word "Debit" reads as
+a contradiction to anyone who has not been told the convention.
+
+The type is now set in neutral ink. The tile and the amount carry direction; the word
+only names the entry. The row drops from three colour signals to two, and the
+contradiction disappears rather than being explained.
+
+## Not everything is a card
+
+Profile was five short forms in five Cards — border, background, radius, header rule
+each — and read as five separate documents rather than one account screen. The rule was
+already written down for grouped form fields in `primitives.tsx`: *the heading is a
+hairline label, not a card*. Profile is the same shape and now follows it. The People
+page's totals strip lost its card for the same reason: two figures and a bar in a
+full-width container that was two-thirds empty were not being grouped by it.
+
+The admin directory went the other way — four permanently visible buttons per row made
+it a control panel whose controls outweighed the accounts they belonged to, with the
+destructive one always one click away. They moved into a menu (`components/ui/menu.tsx`,
+origin-aware, focus-returning, arrow-key navigable). Where the actions live changed;
+who may run them did not.
+
+## A chart of thirty days needs thirty days
+
+`getActivitySummary` returns only the days that had activity, and the chart gave every
+returned bucket an equal share of the width. A month with five active days therefore
+drew five slabs of colour across the card with no time axis behind them. `padDailyBuckets`
+fills the window so a quiet day occupies its own width, which is the only way the shape
+of a month means anything.
+
+## The CSP blocked hydration in development
+
+`script-src` had no `'unsafe-eval'`, in every environment. Next's dev server ships React
+Fast Refresh, which evaluates modules as strings, so on localhost the entire client
+bundle failed to initialise and **nothing hydrated** — every dialog, menu, filter and
+form was dead while the server-rendered HTML looked perfectly correct. That is the worst
+shape a bug can take: the screenshots were fine and the interactions did not exist.
+
+`'unsafe-eval'` is now added in development only. The production bundle evaluates no
+strings, so the deployed policy is unchanged.

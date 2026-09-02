@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
 import { getMe } from '@/lib/supabase/server';
 import { Avatar, Badge, Card, PageHeader } from '@/components/ui/primitives';
@@ -19,6 +20,38 @@ export const metadata = { title: 'Profile' };
  * question someone actually asks: who am I here, what is my business called,
  * how should this look, how do I change my password, how do I get out.
  */
+/**
+ * One settings group: a hairline, a quiet heading, the control beneath it.
+ *
+ * The rule is the one `FormSection` follows in the design system — a heading is
+ * a label, not a container. The rule belongs to the section rather than to the
+ * gap, so the first group in a column drops its own line without the parent
+ * needing to know which child is first.
+ */
+function SettingsSection({
+  title,
+  description,
+  delay,
+  children,
+}: {
+  title: string;
+  description?: string;
+  delay: number;
+  children: ReactNode;
+}) {
+  return (
+    <Reveal delay={delay} className="block border-t border-line pt-5 first:border-t-0 first:pt-0 [&:not(:first-child)]:mt-6">
+      <h2 className="stat-label">{title}</h2>
+      {description ? (
+        <p className="mt-1.5 max-w-prose text-[0.8125rem] leading-relaxed text-ink-muted">
+          {description}
+        </p>
+      ) : null}
+      <div className="mt-4">{children}</div>
+    </Reveal>
+  );
+}
+
 export default async function ProfilePage() {
   const me = await getMe();
   if (!me) redirect('/login');
@@ -48,85 +81,56 @@ export default async function ProfilePage() {
         </Card>
       </Reveal>
 
-      <div className="grid items-start gap-4 lg:grid-cols-[1.15fr_1fr]">
-        <Reveal delay={80}>
-          <Card className="overflow-hidden">
-            <div className="border-b border-line px-5 py-3.5">
-              <h2 className="font-display text-[0.9375rem] font-semibold tracking-tight text-ink">
-                Your details
-              </h2>
-              <p className="mt-0.5 text-[0.8125rem] text-ink-muted">
-                Your email address is managed by your administrator.
-              </p>
-            </div>
-            <div className="px-5 py-4">
-              <ProfileForm me={me} />
-            </div>
-          </Card>
-        </Reveal>
+      {/* Sections, not six cards.
 
-        <div className="space-y-4">
-          <Reveal delay={110}>
-            <Card className="overflow-hidden">
-              <div className="border-b border-line px-5 py-3.5">
-                <h2 className="font-display text-[0.9375rem] font-semibold tracking-tight text-ink">
-                  Appearance
-                </h2>
-                <p className="mt-0.5 text-[0.8125rem] text-ink-muted">
-                  Accounic is dark by default. This is stored on this device only.
-                </p>
-              </div>
-              <div className="px-5 py-4">
-                <ThemeChooser />
-              </div>
-            </Card>
-          </Reveal>
+          Every group here was a Card — border, background, radius, header rule
+          — so a settings page of five short forms carried five heavy containers
+          and read as five separate documents rather than one account screen.
+          `primitives.tsx` already states the rule for grouped fields: the
+          heading is a hairline label, not a card. Profile is the same shape and
+          now follows it, which is why the page suddenly has a spine. */}
+      <div className="grid items-start gap-x-10 lg:grid-cols-[1.15fr_1fr]">
+        <div>
+          <SettingsSection
+            delay={80}
+            title="Identity"
+            description="Your email address is managed by your administrator."
+          >
+            <ProfileForm me={me} />
+          </SettingsSection>
+        </div>
 
-          <Reveal delay={130}>
-            <Card className="overflow-hidden">
-              <div className="border-b border-line px-5 py-3.5">
-                <h2 className="font-display text-[0.9375rem] font-semibold tracking-tight text-ink">
-                  Your data
-                </h2>
-                <p className="mt-0.5 text-[0.8125rem] text-ink-muted">
-                  Take your books with you — a report, a spreadsheet, or a backup.
-                </p>
-              </div>
-              <div className="px-5 py-4">
-                <ExportPanel />
-              </div>
-            </Card>
-          </Reveal>
+        <div>
+          <SettingsSection
+            delay={110}
+            title="Appearance"
+            description="Accounic is dark by default. This is stored on this device only."
+          >
+            <ThemeChooser />
+          </SettingsSection>
 
-          <Reveal delay={140}>
-            <Card className="overflow-hidden">
-              <div className="border-b border-line px-5 py-3.5">
-                <h2 className="font-display text-[0.9375rem] font-semibold tracking-tight text-ink">
-                  Security
-                </h2>
-                <p className="mt-0.5 text-[0.8125rem] text-ink-muted">
-                  Choose something long. You will stay signed in on this device.
-                </p>
-              </div>
-              <div className="px-5 py-4">
-                <PasswordForm />
-              </div>
-            </Card>
-          </Reveal>
+          <SettingsSection
+            delay={130}
+            title="Your data"
+            description="Take your books with you — a report, a spreadsheet, or a backup."
+          >
+            <ExportPanel />
+          </SettingsSection>
 
-          <Reveal delay={170}>
-            <Card className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
-              <div className="min-w-0">
-                <h2 className="font-display text-[0.9375rem] font-semibold tracking-tight text-ink">
-                  Session
-                </h2>
-                <p className="mt-0.5 text-[0.8125rem] text-ink-muted">
-                  Signed in as {me.email}.
-                </p>
-              </div>
-              <SignOutButton />
-            </Card>
-          </Reveal>
+          <SettingsSection
+            delay={140}
+            title="Security"
+            description="Choose something long. You will stay signed in on this device."
+          >
+            <PasswordForm />
+          </SettingsSection>
+
+          {/* Signing out is destructive enough to be deliberate and ordinary
+              enough not to shout. It gets the last section and a quiet control,
+              not a red panel. */}
+          <SettingsSection delay={170} title="Session" description={`Signed in as ${me.email}.`}>
+            <SignOutButton />
+          </SettingsSection>
         </div>
       </div>
     </div>

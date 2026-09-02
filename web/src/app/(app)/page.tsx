@@ -110,17 +110,17 @@ export default async function DashboardPage() {
             <span className="text-ink-faint">Today</span>
             {today.credit > 0 ? (
               <TodayChip tone="receivable" label="receivable">
-                {formatMoney(today.credit, currency)}
+                {formatMoney(today.credit, currency, { base: currency })}
               </TodayChip>
             ) : null}
             {today.debit > 0 ? (
               <TodayChip tone="payable" label="payable">
-                {formatMoney(today.debit, currency)}
+                {formatMoney(today.debit, currency, { base: currency })}
               </TodayChip>
             ) : null}
             {today.settled > 0 ? (
               <TodayChip tone="neutral" label="settled">
-                {formatMoney(today.settled, currency)}
+                {formatMoney(today.settled, currency, { base: currency })}
               </TodayChip>
             ) : null}
           </div>
@@ -151,6 +151,7 @@ export default async function DashboardPage() {
                 <Money
                   minor={Math.abs(net)}
                   currency={currency}
+                  base={currency}
                   tone={
                     netTone === 'receivable'
                       ? 'receivable'
@@ -203,10 +204,10 @@ export default async function DashboardPage() {
               <SplitBar receivable={summary.total_receivable} payable={summary.total_payable} />
               <p className="mt-2 flex items-center justify-between text-[0.75rem]">
                 <span className="text-receivable">
-                  Receivable {formatMoney(summary.total_receivable, currency)}
+                  Receivable {formatMoney(summary.total_receivable, currency, { base: currency })}
                 </span>
                 <span className="text-payable">
-                  Payable {formatMoney(summary.total_payable, currency)}
+                  Payable {formatMoney(summary.total_payable, currency, { base: currency })}
                 </span>
               </p>
             </div>
@@ -344,9 +345,17 @@ export default async function DashboardPage() {
       ) : null}
 
       {/* ------------------------------------------------------------------ */}
-      {/* Who, and what just happened                                         */}
+      {/* Who, what just happened, what it means, and what to do next         */}
+      {/*                                                                     */}
+      {/* Two columns that flow independently, not two rows of two cards.     */}
+      {/* As two rows, a short card on the left (one outstanding balance)     */}
+      {/* against a long one on the right (six activity rows) stranded ~400px */}
+      {/* of nothing between it and the card below — the dashboard's largest  */}
+      {/* dead zone, and one that grew as the ledger got quieter. Stacking    */}
+      {/* each column lets the left pair close up against itself.             */}
       {/* ------------------------------------------------------------------ */}
       <div className="mt-4 grid items-start gap-4 lg:grid-cols-[1.05fr_1fr]">
+        <div className="grid gap-4">
         <Reveal delay={150}>
           <Card className="overflow-hidden">
             <SectionBar title="Outstanding balances" href="/people" linkLabel="View all" />
@@ -380,38 +389,6 @@ export default async function DashboardPage() {
           </Card>
         </Reveal>
 
-        <Reveal delay={180}>
-          <Card className="overflow-hidden">
-            <SectionBar title="Recent activity" href="/activity" linkLabel="View all" />
-
-            {activity.length === 0 ? (
-              <EmptyState
-                icon={<ActivityIcon />}
-                title="No transactions yet"
-                description="Record one and it will appear here straight away."
-                action={<AddTransactionButton currency={currency} />}
-              />
-            ) : (
-              <ul className="divide-y divide-line">
-                {activity.map((item, index) => (
-                  <li
-                    key={`${item.entry_kind}-${item.id}`}
-                    className="reveal-row"
-                    style={staggerStyle(index)}
-                  >
-                    <ActivityRow item={item} currency={currency} showDate />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
-        </Reveal>
-      </div>
-
-      {/* ------------------------------------------------------------------ */}
-      {/* What it means, and what to do next                                  */}
-      {/* ------------------------------------------------------------------ */}
-      <div className="mt-4 grid items-start gap-4 lg:grid-cols-[1.05fr_1fr]">
         <Reveal delay={200}>
           <Card className="h-full overflow-hidden">
             <div className="flex items-center gap-2 border-b border-line px-5 py-3.5">
@@ -453,7 +430,7 @@ export default async function DashboardPage() {
         </Reveal>
 
         <Reveal delay={220}>
-          <Card className="h-full overflow-hidden">
+          <Card className="overflow-hidden">
             <div className="border-b border-line px-5 py-3.5">
               <h2 className="font-display text-[0.9375rem] font-semibold tracking-tight text-ink">
                 Quick actions
@@ -462,6 +439,37 @@ export default async function DashboardPage() {
             <QuickActions currency={currency} />
           </Card>
         </Reveal>
+        </div>
+
+        <div className="grid gap-4">
+        <Reveal delay={180}>
+          <Card className="overflow-hidden">
+            <SectionBar title="Recent activity" href="/activity" linkLabel="View all" />
+
+            {activity.length === 0 ? (
+              <EmptyState
+                icon={<ActivityIcon />}
+                title="No transactions yet"
+                description="Record one and it will appear here straight away."
+                action={<AddTransactionButton currency={currency} />}
+              />
+            ) : (
+              <ul className="divide-y divide-line">
+                {activity.map((item, index) => (
+                  <li
+                    key={`${item.entry_kind}-${item.id}`}
+                    className="reveal-row"
+                    style={staggerStyle(index)}
+                  >
+                    <ActivityRow item={item} currency={currency} showDate />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        </Reveal>
+
+        </div>
       </div>
     </div>
   );
@@ -493,7 +501,7 @@ function buildInsights(
       insights.push({
         tone: 'receivable',
         title: `${top.name} holds ${share}% of your receivable`,
-        body: `${formatMoney(top.net_balance, currency)} of the ${formatMoney(summary.total_receivable, currency)} owed to you sits with one account. Worth chasing first.`,
+        body: `${formatMoney(top.net_balance, currency, { base: currency })} of the ${formatMoney(summary.total_receivable, currency, { base: currency })} owed to you sits with one account. Worth chasing first.`,
       });
     }
   }
@@ -506,7 +514,7 @@ function buildInsights(
     insights.push({
       tone: up ? 'receivable' : 'neutral',
       title: `Money you lent out is ${up ? 'up' : 'down'} ${Math.abs(Math.round(trends.credit.changePercent))}%`,
-      body: `${formatMoney(trends.credit.total, currency)} of debits in the last 30 days, ${up ? 'more' : 'less'} in the recent half of that window than the earlier half.`,
+      body: `${formatMoney(trends.credit.total, currency, { base: currency })} of debits in the last 30 days, ${up ? 'more' : 'less'} in the recent half of that window than the earlier half.`,
     });
   }
 
@@ -522,7 +530,7 @@ function buildInsights(
       insights.push({
         tone: 'payable',
         title: `Nothing from ${stale.name} in ${days} days`,
-        body: `${formatMoney(stale.net_balance, currency)} has been outstanding since ${friendlyDate(stale.last_activity_at!)}.`,
+        body: `${formatMoney(stale.net_balance, currency, { base: currency })} has been outstanding since ${friendlyDate(stale.last_activity_at!)}.`,
       });
     }
   }
@@ -532,7 +540,7 @@ function buildInsights(
     insights.push({
       tone: 'neutral',
       title: 'Every account is settled',
-      body: `All ${summary.people_count} accounts are square. ${formatMoney(summary.gross_settled, currency)} has been settled in total.`,
+      body: `All ${summary.people_count} accounts are square. ${formatMoney(summary.gross_settled, currency, { base: currency })} has been settled in total.`,
     });
   }
 
@@ -607,7 +615,7 @@ function StatCard({
       <div className="mt-3 flex items-end justify-between gap-4">
         <div className="min-w-0">
           <p className="money-lg">
-            <Money minor={amount} currency={currency} tone={tone} />
+            <Money minor={amount} currency={currency} base={currency} tone={tone} />
           </p>
           <p className="stat-note mt-1">{caption}</p>
           {/* On a phone this card is half a screen wide; the count belongs
@@ -716,7 +724,7 @@ function TotalLine({
           tone === 'settled' && 'text-ink-muted',
         )}
       >
-        ≈ {formatMoney(Math.abs(position.position), currency)}
+        ≈ {formatMoney(Math.abs(position.position), currency, { base: currency })}
       </span>
     </div>
   );
@@ -755,7 +763,7 @@ function WorkspacePositionBlock({
           tone === 'settled' && 'text-ink-muted',
         )}
       >
-        {formatMoney(Math.abs(position.position), currency)}
+        {formatMoney(Math.abs(position.position), currency, { base: currency })}
       </p>
       {originals ? (
         <p className="tnum mt-1 text-[0.75rem] text-ink-muted">from {originals}</p>
@@ -796,7 +804,7 @@ function PositionFigure({
           !tone && 'text-ink-muted',
         )}
       >
-        {formatMoney(minor, currency)}
+        {formatMoney(minor, currency, { base: currency })}
       </dd>
     </div>
   );
@@ -829,6 +837,7 @@ function BalanceRow({ person, currency }: { person: DashboardPeopleRow; currency
       <NetBadge
         netMinor={person.net_balance}
         currency={person.currency ?? currency}
+        base={currency}
         approxMinor={person.net_balance_base}
         approxCurrency={currency}
       />

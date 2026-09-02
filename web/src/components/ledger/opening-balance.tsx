@@ -153,9 +153,9 @@ export function OpeningBalanceCard({
                       {opening.remaining_minor === 0 ? 'Settled' : 'Part settled'}
                     </Badge>
                     <span className="text-ink-faint">
-                      {formatMoney(opening.settled_minor, currency)} settled
+                      {formatMoney(opening.settled_minor, currency, { base: currency })} settled
                       {opening.remaining_minor > 0
-                        ? ` · ${formatMoney(opening.remaining_minor, currency)} left`
+                        ? ` · ${formatMoney(opening.remaining_minor, currency, { base: currency })} left`
                         : ''}
                     </span>
                   </p>
@@ -229,7 +229,7 @@ export function OpeningBalanceCard({
                     position.position === 0 && 'text-ink-faint',
                   )}
                 >
-                  {formatMoney(Math.abs(position.position), currency)}
+                  {formatMoney(Math.abs(position.position), currency, { base: currency })}
                 </span>
               </p>
               <p className="mt-2 text-[0.75rem] leading-relaxed text-ink-faint">
@@ -332,7 +332,7 @@ export function OpeningBalanceCard({
           <>
             <p>
               The current position drops by{' '}
-              {formatMoney(Math.abs(openingMinor), currency)}, because the account no longer
+              {formatMoney(Math.abs(openingMinor), currency, { base: currency })}, because the account no longer
               starts anywhere but zero.
             </p>
             <p className="mt-2 text-ink-faint">
@@ -552,11 +552,11 @@ function OpeningSettleSheet({
         <div className="rounded-card border border-line bg-sunken px-4 py-3">
           <p className="text-[0.75rem] text-ink-muted">Outstanding on the opening balance</p>
           <p className="money tnum mt-1 text-[1.25rem] font-semibold text-ink">
-            {formatMoney(outstanding, currency)}
+            {formatMoney(outstanding, currency, { base: currency })}
           </p>
           {position.settled > 0 ? (
             <p className="mt-1 text-[0.75rem] text-ink-faint">
-              {formatMoney(position.settled, currency)} already settled against the opening
+              {formatMoney(position.settled, currency, { base: currency })} already settled against the opening
               balance
             </p>
           ) : null}

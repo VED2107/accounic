@@ -210,7 +210,7 @@ class _OpeningSettleSheetState extends ConsumerState<_OpeningSettleSheet> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    formatMoney(_outstanding, currency: widget.currency),
+                    formatMoney(_outstanding, currency: widget.currency, base: widget.currency),
                     style: context.moneyStyle(
                       MoneySize.large,
                       color: incoming ? palette.receivable : palette.payable,
@@ -219,7 +219,7 @@ class _OpeningSettleSheetState extends ConsumerState<_OpeningSettleSheet> {
                   if (widget.position.settledMinor > 0) ...[
                     const SizedBox(height: 2),
                     Text(
-                      '${formatMoney(widget.position.settledMinor, currency: widget.currency)} already '
+                      '${formatMoney(widget.position.settledMinor, currency: widget.currency, base: widget.currency)} already '
                       'settled against the opening balance',
                       style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
                     ),

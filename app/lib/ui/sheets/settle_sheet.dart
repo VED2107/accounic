@@ -303,7 +303,7 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
                       selected: !incoming,
                       title: 'I paid',
                       amount:
-                          formatMoney(widget.balance.outstandingPayable, currency: currency),
+                          formatMoney(widget.balance.outstandingPayable, currency: currency, base: currency),
                       color: context.money.payable,
                       background: context.money.payableSoft,
                       onTap: () => setState(() {
@@ -335,7 +335,7 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      formatMoney(_max, currency: currency),
+                      formatMoney(_max, currency: currency, base: currency),
                       style: context.moneyStyle(MoneySize.large, color: accent),
                     ),
                   ],
@@ -370,7 +370,7 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
                           value: txn.id,
                           child: Text(
                             '${friendlyDate(txn.transactionDate)} · '
-                            '${formatMoney(txn.remainingMinor, currency: currency)} left'
+                            '${formatMoney(txn.remainingMinor, currency: currency, base: currency)} left'
                             '${txn.description == null ? '' : ' · ${txn.description}'}',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -625,7 +625,7 @@ class _SettlementSuccess extends StatelessWidget {
               const SizedBox(height: 6),
               Text(
                 '${incoming ? 'Received' : 'Paid'} '
-                '${formatMoney(amount, currency: currency)} '
+                '${formatMoney(amount, currency: currency, base: currency)} '
                 '${incoming ? 'from' : 'to'} $name',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 13, color: palette.inkMuted),
@@ -649,7 +649,7 @@ class _SettlementSuccess extends StatelessWidget {
                     const SizedBox(height: 3),
                     Text(
                       remaining > 0
-                          ? formatMoney(remaining, currency: currency)
+                          ? formatMoney(remaining, currency: currency, base: currency)
                           : 'Fully settled',
                       style: context.display(22).copyWith(
                             color: remaining > 0

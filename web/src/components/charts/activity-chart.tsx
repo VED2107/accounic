@@ -2,6 +2,7 @@
 
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import type { ActivityBucket } from '@/lib/queries';
+import { padDailyBuckets } from '@/lib/series';
 import { formatMoney } from '@/lib/money';
 import { cn } from '@/components/ui/primitives';
 
@@ -33,7 +34,10 @@ export function ActivityChart({
   currency: string;
   className?: string;
 }) {
-  const days = [...buckets].sort((a, b) => (a.bucket < b.bucket ? -1 : 1));
+  // Padded to one column per day. Without this the RPC's "only the days that
+  // moved" shape drew five flex-1 columns across the whole card — slabs of
+  // colour with no time axis behind them (upgrade §46).
+  const days = padDailyBuckets(buckets, 30);
 
   const [active, setActive] = useState<number | null>(null);
   const plotRef = useRef<HTMLDivElement>(null);
@@ -94,9 +98,9 @@ export function ActivityChart({
           touched, which is the test of whether the tooltip is a convenience or
           a load-bearing part of the design. */}
       <div className="mb-4 flex flex-wrap items-baseline gap-x-5 gap-y-1.5">
-        <LegendItem tone="receivable" label="You received" value={formatMoney(totals.credit, currency)} />
-        <LegendItem tone="payable" label="You gave" value={formatMoney(totals.debit, currency)} />
-        <LegendItem tone="neutral" label="Settled" value={formatMoney(totals.settled, currency)} />
+        <LegendItem tone="receivable" label="You received" value={formatMoney(totals.credit, currency, { base: currency })} />
+        <LegendItem tone="payable" label="You gave" value={formatMoney(totals.debit, currency, { base: currency })} />
+        <LegendItem tone="neutral" label="Settled" value={formatMoney(totals.settled, currency, { base: currency })} />
       </div>
 
       <div className="relative">
@@ -113,9 +117,9 @@ export function ActivityChart({
           >
             <p className="text-[0.75rem] font-semibold text-ink">{dayLabel(shown.bucket)}</p>
             <dl className="mt-1.5 space-y-1">
-              <TipRow tone="receivable" label="You received" value={formatMoney(shown.credit, currency)} />
-              <TipRow tone="payable" label="You gave" value={formatMoney(shown.debit, currency)} />
-              <TipRow tone="neutral" label="Settled" value={formatMoney(shown.settled, currency)} />
+              <TipRow tone="receivable" label="You received" value={formatMoney(shown.credit, currency, { base: currency })} />
+              <TipRow tone="payable" label="You gave" value={formatMoney(shown.debit, currency, { base: currency })} />
+              <TipRow tone="neutral" label="Settled" value={formatMoney(shown.settled, currency, { base: currency })} />
             </dl>
           </div>
         ) : null}
@@ -124,7 +128,7 @@ export function ActivityChart({
           ref={plotRef}
           // `touch-action: pan-y` so dragging across the chart reads a day
           // without stealing the page's vertical scroll.
-          className="relative h-28 touch-pan-y"
+          className="relative h-40 touch-pan-y sm:h-48"
           onPointerMove={(event) => pick(event.clientX)}
           onPointerDown={(event) => pick(event.clientX)}
           onPointerLeave={() => setActive(null)}
@@ -185,6 +189,10 @@ function Column({
         active && 'bg-accent-soft',
       )}
     >
+      {/* A quiet day draws nothing of its own. It was briefly given a stub on
+          the baseline to make "nothing happened" visible, but the zero line
+          already runs the full width at exactly that position, so the stub was
+          the same pixels twice. The gap between columns is the axis. */}
       <div className="flex flex-1 items-end justify-center">
         <span
           style={{ height: `${up}%` }}

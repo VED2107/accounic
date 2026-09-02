@@ -196,7 +196,7 @@ export function Timeline({
                             <StatusChip tone="done">Settled</StatusChip>
                           ) : entry.status === 'partial' ? (
                             <StatusChip tone="partial">
-                              {formatMoney(entry.remaining_minor ?? 0, currency)} left
+                              {formatMoney(entry.remaining_minor ?? 0, currency, { base: currency })} left
                             </StatusChip>
                           ) : null}
                         </span>
@@ -231,6 +231,7 @@ export function Timeline({
                         <Money
                           minor={entryMinor}
                           currency={entryCurrency}
+                          base={currency}
                           tone={isSettlement ? 'neutral' : receivable ? 'receivable' : 'payable'}
                           className={cn(
                             'text-[0.875rem] font-semibold',
@@ -358,7 +359,7 @@ export function Timeline({
             <>
               <p>
                 Both sides are retracted together.{' '}
-                {formatMoney(confirmVoid.amount_minor, currency)} returns to this account, and
+                {formatMoney(confirmVoid.amount_minor, currency, { base: currency })} returns to this account, and
                 the matching entry on{' '}
                 {confirmVoid.transfer_counterparty_name ?? 'the other account'} is retracted
                 with it.
@@ -370,7 +371,7 @@ export function Timeline({
             </>
           ) : confirmVoid?.entry_kind === 'settlement' ? (
             <>
-              The {formatMoney(confirmVoid.amount_minor, currency)} goes back to outstanding. The
+              The {formatMoney(confirmVoid.amount_minor, currency, { base: currency })} goes back to outstanding. The
               record stays in the timeline marked as reversed.
             </>
           ) : (

@@ -137,8 +137,26 @@ describe('the amount hierarchy', () => {
   });
 
   it('writes a converted amount as an approximation, in full', () => {
-    expect(formatApprox(1_039_369, 'INR')).toBe('≈ ₹10,393.69 INR');
-    expect(formatApprox(381_710, 'INR')).toBe('≈ ₹3,817.10 INR');
+    // On screen the conversion is always *into* the workspace currency, which
+    // the screen states all around the figure — so the ≈ carries the meaning
+    // and the code would only repeat the ₹ (upgrade §45).
+    expect(formatApprox(1_039_369, 'INR')).toBe('≈ ₹10,393.69');
+    expect(formatApprox(381_710, 'INR')).toBe('≈ ₹3,817.10');
+  });
+
+  it('puts the code back for anything that leaves the app', () => {
+    // A statement is read in an inbox or a folder, with no workspace around it
+    // to supply the missing currency. Exports ask for the code explicitly.
+    expect(formatApprox(1_039_369, 'INR', { withCode: true })).toBe('≈ ₹10,393.69 INR');
+  });
+
+  it('keeps the code on every currency that is not the workspace one', () => {
+    // The whole point of dropping the suffix: the foreign row still names
+    // itself, and the contrast is what marks it as foreign.
+    expect(formatMoney(253_750, 'INR', { base: 'INR' })).toBe('₹2,537.50');
+    expect(formatMoney(50_000, 'AED', { base: 'INR' })).toBe('500 AED');
+    // No base known → nothing may be assumed, so the code stays.
+    expect(formatMoney(253_750, 'INR')).toBe('₹2,537.50 INR');
   });
 
   it('handles the awkward values without special-casing at the call site', () => {

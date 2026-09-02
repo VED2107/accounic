@@ -107,6 +107,10 @@ export default async function ActivityPage({
             amount={totals.settled}
             currency={currency}
             tone="neutral"
+            // Two of these three cards drew a trend line and this one did not,
+            // which made the row read as two charts and one gap rather than as
+            // three of the same thing. The series was already computed.
+            points={trends.settled.points}
           />
         </div>
       </Reveal>
@@ -214,7 +218,7 @@ function SummaryCard({
       </div>
       <div className="mt-1 flex items-end justify-between gap-3">
         <p className="truncate font-display text-[1.25rem] font-semibold tracking-tight">
-          <Money minor={amount} currency={currency} tone={tone} />
+          <Money minor={amount} currency={currency} base={currency} tone={tone} />
         </p>
         {points && points.length > 1 ? (
           <div className="w-14 shrink-0">

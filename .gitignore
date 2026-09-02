@@ -32,3 +32,12 @@ app/build/installer/
 # Data-safety snapshots: they hold real person ids and real balances, so they
 # are evidence for a migration, not repository contents (db/tools/snapshot.mjs).
 db/tools/snapshot-*.json
+
+# Playwright MCP scratch output, and the screenshots taken while verifying a
+# change against the running app. Evidence for a review, not repository
+# contents — the app they were taken from is the source of truth.
+.playwright-mcp/
+web/.playwright-mcp/
+*-desktop.png
+*-mobile.png
+*-tablet.png

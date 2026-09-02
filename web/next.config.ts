@@ -37,7 +37,18 @@ const nextConfig: NextConfig = {
       // unavoidable without a nonce pipeline; scripts get 'unsafe-inline' only
       // because Next's inline bootstrap has no stable hash across builds.
       // Tightening this to a nonce is the next step worth taking here.
-      "script-src 'self' 'unsafe-inline'",
+      //
+      // 'unsafe-eval' in development ONLY. Next's dev server ships React Fast
+      // Refresh, which evaluates modules as strings; with it blocked the whole
+      // client bundle failed to initialise and NOTHING on localhost hydrated —
+      // every dialog, menu, filter and form was dead, while the server-rendered
+      // HTML looked perfectly fine. That is a nasty way to lose an afternoon,
+      // and it hid every interaction bug behind a page that merely looked
+      // correct. The production bundle evaluates no strings, so the deployed
+      // policy is unchanged and stays as strict as it was.
+      process.env.NODE_ENV === 'development'
+        ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+        : "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
       "font-src 'self' data:",
