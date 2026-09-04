@@ -25,6 +25,11 @@ import '../core/theme.dart';
 class Motion {
   const Motion._();
 
+  /// A press acknowledging itself. Faster than thought — any slower and the
+  /// control reads as deciding rather than responding. Matches the web
+  /// client's `--dur-tap`.
+  static const tap = Duration(milliseconds: 110);
+
   static const micro = Duration(milliseconds: 140);
   static const component = Duration(milliseconds: 240);
   static const major = Duration(milliseconds: 380);
@@ -45,6 +50,13 @@ class Motion {
   static const exit = Curves.easeInCubic;
   static const move = Curves.fastOutSlowIn;
   static const standard = Curves.easeInOutCubic;
+
+  /// One restrained overshoot, and the vocabulary's rarest member. Reserved for
+  /// confirming that money moved: it appears on the settlement tick and nowhere
+  /// else, which is what keeps it reading as emphasis rather than as house
+  /// style. The web client's `--ease-emph` is the same idea with the same
+  /// single caller.
+  static const emphasis = Curves.easeOutBack;
 
   /// The per-item step of a list stagger, and the point past which it stops
   /// reading as sequence and starts reading as lag.
@@ -194,7 +206,7 @@ class _PressableState extends State<Pressable> {
       behavior: HitTestBehavior.opaque,
       child: AnimatedScale(
         scale: _down && !reduced ? widget.scale : 1,
-        duration: Motion.micro,
+        duration: Motion.tap,
         curve: Motion.enter,
         child: widget.child,
       ),
@@ -275,7 +287,7 @@ class SettledMark extends StatelessWidget {
 
     return mark
         .animate()
-        .scaleXY(begin: 0.7, end: 1, duration: Motion.major, curve: Curves.easeOutBack)
+        .scaleXY(begin: 0.7, end: 1, duration: Motion.major, curve: Motion.emphasis)
         .fadeIn(duration: Motion.component);
   }
 }

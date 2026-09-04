@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'brand.dart';
+
 import '../../core/icons.dart';
 import '../../core/layout.dart';
 import '../../core/theme.dart';
@@ -37,9 +39,17 @@ class AppPage extends StatelessWidget {
     this.width = ContentWidth.standard,
     this.bottomPadding = 32,
     this.scrollController,
+    this.brandTitle = false,
   });
 
   final String title;
+
+  /// Paint the wide header's title with the brand ramp.
+  ///
+  /// Set on the dashboard only. It is the one screen whose title is the
+  /// product greeting rather than a noun, and the one place a gradient reads as
+  /// identity rather than decoration.
+  final bool brandTitle;
 
   /// The page itself. Laid out as one centred, width-capped column.
   final List<Widget> children;
@@ -118,6 +128,7 @@ class AppPage extends StatelessWidget {
               leading: leading,
               width: width,
               gutter: gutter,
+              brandTitle: brandTitle,
             ),
           if (toolbar != null)
             Padding(
@@ -145,7 +156,10 @@ class _WideHeader extends StatelessWidget {
     required this.leading,
     required this.width,
     required this.gutter,
+    this.brandTitle = false,
   });
+
+  final bool brandTitle;
 
   final String title;
   final String? subtitle;
@@ -173,7 +187,10 @@ class _WideHeader extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(title, style: context.display(26)),
+                    if (brandTitle)
+                      BrandText(title, style: context.display(26))
+                    else
+                      Text(title, style: context.display(26)),
                     if (subtitle != null) ...[
                       const SizedBox(height: AppSpacing.xs + 2),
                       Text(

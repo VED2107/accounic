@@ -4,14 +4,8 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, ErrorNote } from '@/components/ui/primitives';
 import { ConfirmDialog } from '@/components/ui/modal';
-import {
-  ArchiveIcon,
-  ArrowDownIcon,
-  ArrowRightIcon,
-  ArrowUpIcon,
-  EditIcon,
-  SettleIcon,
-} from '@/components/icons';
+import { Menu, type MenuItemSpec } from '@/components/ui/menu';
+import { ArrowDownIcon, ArrowUpIcon, SettleIcon } from '@/components/icons';
 import { TransactionSheet } from '@/components/ledger/transaction-sheet';
 import { SettleSheet } from '@/components/ledger/settle-sheet';
 import { TransferSheet } from '@/components/ledger/transfer-sheet';
@@ -23,9 +17,28 @@ import { TYPE_FOR_FLOW } from '@/lib/direction';
 /**
  * Actions on a person account (context.md §9, §17).
  *
- * Settle is the prominent one whenever anything is outstanding — that is the
- * spec's headline interaction. Archiving is offered before deletion, and
- * deletion is only possible while there is no history to corrupt.
+ * v1.11.0 — one primary action, two ordinary ones, everything else behind a
+ * menu.
+ *
+ * This bar used to be five buttons, two icon buttons, and two lines of
+ * destructive plain text, all at the same visual weight and all permanently on
+ * screen. That is a control panel, not an account header: a reader looking for
+ * "settle" had to pick it out of nine equal things, and "Retract all history"
+ * sat one line under the primary call to action on every visit.
+ *
+ * The hierarchy now says what the screen is for:
+ *
+ *   Settle           filled, first, and present only when there is something
+ *                    to settle — the product's headline interaction
+ *   Add credit /     the two ordinary entries. Still two buttons rather than
+ *   Add debit        one "add" that asks which, because the type IS the
+ *                    decision and making it a click saves a step
+ *   ⋯                transfer, edit, archive, and the two destructive routes,
+ *                    which are reached only by someone who came looking
+ *
+ * The destructive items keep their explanations — the menu carries a
+ * description line, so "Delete" can still say why it is unavailable and name
+ * Archive as the thing to do instead, rather than simply being greyed.
  */
 export function PersonActionBar({
   person,
@@ -75,104 +88,107 @@ export function PersonActionBar({
     });
   }
 
+  const items: MenuItemSpec[] = [
+    {
+      // Moving money between two of your own accounts is neither a credit nor a
+      // debit — nothing is owed differently overall, it just sits somewhere
+      // else. Hence its own item rather than a mode of "add".
+      label: 'Transfer to another account',
+      onSelect: () => setTransferOpen(true),
+    },
+    {
+      label: 'Edit details',
+      onSelect: () => setEditOpen(true),
+    },
+    person.is_archived
+      ? {
+          label: 'Restore',
+          description: 'Show this account in your people list and totals again.',
+          onSelect: () => setConfirm('restore'),
+        }
+      : {
+          label: 'Archive',
+          description: 'Hide from lists and totals. Every entry is kept.',
+          onSelect: () => setConfirm('archive'),
+        },
+  ];
+
+  if (hasHistory) {
+    // The way back from an account entered wrong. Reached only by someone who
+    // came looking for it — which, in a menu, is exactly what opening the menu
+    // and reading to the bottom means.
+    items.push({
+      label: 'Retract all history',
+      description: 'Void every entry. Nothing is deleted; the record stays, marked voided.',
+      destructive: true,
+      onSelect: () => setConfirm('void-history'),
+    });
+    items.push({
+      label: 'Delete this person',
+      // Listed and explained rather than absent. A missing Delete reads as the
+      // action being broken; a disabled one that says what blocks it and names
+      // the alternative answers the question it raises.
+      description:
+        liveEntries > 0
+          ? `${liveEntries} ${liveEntries === 1 ? 'entry' : 'entries'} on this account. Archive instead.`
+          : 'A settlement is recorded here. Archive instead.',
+      destructive: true,
+      disabled: true,
+      onSelect: () => {},
+    });
+  } else {
+    items.push({
+      label: 'Delete this person',
+      description: 'Possible only while the account has no history.',
+      destructive: true,
+      onSelect: () => setConfirm('delete'),
+    });
+  }
+
   return (
-    <div className="flex flex-col items-stretch gap-2">
+    <div className="flex flex-col items-stretch gap-3">
       {error ? <ErrorNote>{error}</ErrorNote> : null}
 
-      <div className="flex flex-wrap gap-2">
+      {/* On a phone Settle takes a row of its own and the two entry buttons
+          share the next one with the menu. The primary action must never be the
+          one that wrapped, and the menu must never be the orphan on a line by
+          itself — which is what a single wrapping flex row produced at 375px:
+          two buttons, then a lone "…" on the row below with half a card of
+          empty space beside it.
+
+          `basis-0 flex-1` keeps the pair equal without percentage arithmetic,
+          `min-w-0` lets them actually shrink, and the menu is `shrink-0`, so
+          the row fits 360px without wrapping at all. */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         {hasOutstanding ? (
-          <Button onClick={() => setSettleOpen(true)}>
+          <Button className="w-full sm:w-auto sm:min-w-32" onClick={() => setSettleOpen(true)}>
             <SettleIcon className="size-4" />
             Settle
           </Button>
         ) : null}
 
-        {/* Credit and debit are separate buttons rather than one "add" that
-            asks which — the type is the decision, so it is the click. */}
-        <Button
-          variant="secondary"
-          onClick={() => setAddType(TYPE_FOR_FLOW.person_to_owner)}
-        >
-          <ArrowDownIcon className="size-4 text-payable" />
-          Add credit
-        </Button>
-
-        <Button
-          variant="secondary"
-          onClick={() => setAddType(TYPE_FOR_FLOW.owner_to_person)}
-        >
-          <ArrowUpIcon className="size-4 text-receivable" />
-          Add debit
-        </Button>
-
-        {/* Moving money between two of your own accounts is neither of the
-            above — nothing is owed differently overall, it just sits somewhere
-            else. Hence its own control rather than a mode of "add". */}
-        <Button variant="secondary" onClick={() => setTransferOpen(true)}>
-          <ArrowRightIcon className="size-4" />
-          Transfer
-        </Button>
-
-        {/* The two icon-only controls stay together when the row wraps on a
-            narrow screen — split across lines they read as orphans. */}
-        <div className="flex gap-1">
-          <Button variant="ghost" onClick={() => setEditOpen(true)} aria-label="Edit details">
-            <EditIcon className="size-4" />
+        <div className="flex items-center gap-2 sm:contents">
+          <Button
+            variant="secondary"
+            className="min-w-0 flex-1 basis-0 sm:flex-none sm:basis-auto"
+            onClick={() => setAddType(TYPE_FOR_FLOW.person_to_owner)}
+          >
+            <ArrowDownIcon className="size-4 text-payable" />
+            Add credit
           </Button>
 
           <Button
-            variant="ghost"
-            onClick={() => setConfirm(person.is_archived ? 'restore' : 'archive')}
-            aria-label={person.is_archived ? 'Restore' : 'Archive'}
+            variant="secondary"
+            className="min-w-0 flex-1 basis-0 sm:flex-none sm:basis-auto"
+            onClick={() => setAddType(TYPE_FOR_FLOW.owner_to_person)}
           >
-            <ArchiveIcon className="size-4" />
+            <ArrowUpIcon className="size-4 text-receivable" />
+            Add debit
           </Button>
+
+          <Menu label={person.name} items={items} className="shrink-0 sm:ml-auto" />
         </div>
       </div>
-
-      {/* Always offered, never silently absent. Removing the control when there
-          is history reads as the action being broken rather than as it being
-          unavailable, and it names no alternative — so it is disabled instead,
-          carrying the count that blocks it and pointing at Archive. */}
-      {/* The same test the server applies. Both counts exclude voided rows and
-          delete_person() now counts live rows only, so the two agree — which
-          they did not before: an account whose transactions had all been voided
-          reported zero here, offered Delete, and was then refused. */}
-      {!hasHistory ? (
-        <button
-          type="button"
-          onClick={() => setConfirm('delete')}
-          className="text-[0.75rem] text-ink-faint transition-colors duration-[var(--dur)] hover:text-payable"
-        >
-          Delete this person
-        </button>
-      ) : (
-        <div className="space-y-1.5">
-          <p className="text-[0.75rem] text-ink-faint">
-            <span className="text-ink-muted">Delete this person</span>
-            {' — '}
-            {liveEntries > 0
-              ? `${liveEntries} ${
-                  liveEntries === 1 ? 'transaction' : 'transactions'
-                } on this account.`
-              : 'a settlement is still recorded here.'}{' '}
-            Archive them instead.
-          </p>
-
-          {/*
-            The way back from an account entered wrong. Deliberately the quietest
-            control on the screen and never the one the eye lands on first: it is
-            reached only by someone who came looking for it.
-          */}
-          <button
-            type="button"
-            onClick={() => setConfirm('void-history')}
-            className="text-[0.75rem] text-ink-faint transition-colors duration-[var(--dur)] hover:text-payable"
-          >
-            Retract all history for this person
-          </button>
-        </div>
-      )}
 
       <TransactionSheet
         open={addType !== null}

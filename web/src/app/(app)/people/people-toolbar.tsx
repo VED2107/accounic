@@ -110,7 +110,7 @@ export function PeopleToolbar({
             type="button"
             onClick={() => setValue('')}
             aria-label="Clear search"
-            className="grid size-5 shrink-0 place-items-center rounded text-ink-faint transition hover:text-ink"
+            className="press grid size-5 shrink-0 place-items-center rounded text-ink-faint transition-[color,transform] duration-[var(--dur-fast)] ease-[var(--ease)] hover:text-ink"
           >
             <CloseIcon className="size-3.5" />
           </button>
@@ -133,43 +133,66 @@ export function PeopleToolbar({
       </button>
       </div>
 
+      {/* At 375px the four Show segments plus their label are wider than the
+          viewport. A segmented control cannot wrap — broken across two lines it
+          stops reading as one control — so the group scrolls inside its own
+          track instead, and the page never scrolls sideways. The bleed to the
+          screen edge is deliberate: a control that is cut off at the container
+          padding looks broken, one that runs off the edge looks scrollable. */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <div className="flex items-center gap-2">
-          <span className="stat-label shrink-0" id="people-show-label">
-            Show
-          </span>
-          <div className={SEGMENT_GROUP} role="group" aria-labelledby="people-show-label">
-            {SIDES.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => push(build({ side: option.value }))}
-                aria-pressed={side === option.value}
-                className={segmentClass(side === option.value)}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        <FilterGroup
+          id="people-show-label"
+          label="Show"
+          options={SIDES}
+          active={side}
+          onSelect={(value) => push(build({ side: value }))}
+        />
+        <FilterGroup
+          id="people-sort-label"
+          label="Sort"
+          options={SORTS}
+          active={sort}
+          onSelect={(value) => push(build({ sort: value }))}
+        />
+      </div>
+    </div>
+  );
+}
 
-        <div className="flex items-center gap-2">
-          <span className="stat-label shrink-0" id="people-sort-label">
-            Sort
-          </span>
-          <div className={SEGMENT_GROUP} role="group" aria-labelledby="people-sort-label">
-            {SORTS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => push(build({ sort: option.value }))}
-                aria-pressed={sort === option.value}
-                className={segmentClass(sort === option.value)}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
+/** A named segmented control that scrolls rather than wraps or overflows. */
+function FilterGroup({
+  id,
+  label,
+  options,
+  active,
+  onSelect,
+}: {
+  id: string;
+  label: string;
+  options: ReadonlyArray<{ value: string; label: string }>;
+  active: string;
+  onSelect: (value: string) => void;
+}) {
+  return (
+    <div className="flex min-w-0 max-w-full items-center gap-2">
+      <span className="stat-label shrink-0" id={id}>
+        {label}
+      </span>
+      {/* The vertical padding keeps the focus ring off the scroll edge, which
+          would otherwise clip it to a hairline on the first and last segment. */}
+      <div className="-my-1 min-w-0 overflow-x-auto py-1 no-scrollbar">
+        <div className={cn(SEGMENT_GROUP, 'w-max')} role="group" aria-labelledby={id}>
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onSelect(option.value)}
+              aria-pressed={active === option.value}
+              className={segmentClass(active === option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
         </div>
       </div>
     </div>

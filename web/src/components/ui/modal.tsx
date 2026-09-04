@@ -170,7 +170,7 @@ export function ConfirmDialog({
             type="button"
             onClick={onClose}
             disabled={pending}
-            className="inline-flex h-10 items-center rounded-field border border-line-strong bg-surface px-4 text-sm font-medium text-ink transition hover:bg-sunken disabled:opacity-50"
+            className="press inline-flex h-10 items-center rounded-field border border-line-strong bg-surface px-4 text-sm font-medium text-ink transition-[background-color,border-color,color] duration-[var(--dur-fast)] ease-[var(--ease)] hover:bg-sunken disabled:opacity-50"
           >
             Cancel
           </button>
@@ -180,7 +180,8 @@ export function ConfirmDialog({
             disabled={pending}
             data-autofocus="true"
             className={cn(
-              'inline-flex h-10 items-center gap-2 rounded-field px-4 text-sm font-medium transition disabled:opacity-50',
+              'press inline-flex h-10 items-center gap-2 rounded-field px-4 text-sm font-medium disabled:opacity-50',
+              'transition-[background-color,border-color,color,box-shadow] duration-[var(--dur-fast)] ease-[var(--ease)]',
               tone === 'danger'
                 ? 'bg-payable text-payable-ink hover:brightness-95'
                 : 'bg-accent-solid text-accent-ink hover:bg-accent-solid-hover',

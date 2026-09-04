@@ -7,8 +7,8 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { cn } from '@/components/ui/primitives';
 
 /**
@@ -65,6 +65,10 @@ export function Menu({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
+  // The list is portalled to <body>, which cannot happen during the server
+  // render, so mounting is tracked rather than assumed.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const enabled = items.filter((item) => !item.disabled);
 
@@ -185,7 +189,24 @@ export function Menu({
         </svg>
       </button>
 
-      {open ? (
+      {/* Portalled to <body>.
+
+          The list is `position: fixed` at viewport coordinates, which normally
+          escapes any ancestor's overflow — but only while no ancestor has
+          established a containing block for fixed descendants. An ancestor that
+          is animating `transform` does exactly that, and every panel in this
+          product enters through `Reveal`, which animates transform and fills
+          its final frame. So on the account header the menu was positioned
+          inside the Panel and then clipped by its `overflow-hidden`: the
+          three-dot menu opened underneath the card.
+
+          Escaping the DOM is the only fix that does not depend on knowing what
+          every ancestor does, and it is what a popup at viewport coordinates
+          should have been doing from the start. Nothing else changes: the
+          trigger keeps focus, Escape still returns it, and the outside-pointer
+          test already compares against both refs rather than walking the tree. */}
+      {open && mounted
+        ? createPortal(
         <div
           ref={listRef}
           id={menuId}
@@ -243,7 +264,7 @@ export function Menu({
                     item.onSelect();
                   }}
                   className={cn(
-                    'flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-[0.8125rem]',
+                    'press flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-[0.8125rem]',
                     'transition-colors duration-[var(--dur-fast)] ease-[var(--ease)]',
                     'disabled:cursor-not-allowed disabled:opacity-45',
                     item.destructive
@@ -264,8 +285,10 @@ export function Menu({
           {enabled.length === 0 ? (
             <p className="px-3 py-2 text-[0.8125rem] text-ink-faint">Nothing available</p>
           ) : null}
-        </div>
-      ) : null}
+        </div>,
+            document.body,
+          )
+        : null}
     </>
   );
 }

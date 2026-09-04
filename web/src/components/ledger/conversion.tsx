@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import {
   convertMinor,
   normaliseCode,
@@ -8,7 +8,7 @@ import {
   rateSentence,
   rateToInput,
 } from '@/lib/currencies';
-import { formatApprox, formatMoney, minorToInput, parseAmountToMinor } from '@/lib/money';
+import { formatMoney, minorToInput, parseAmountToMinor } from '@/lib/money';
 import { rateIsManual } from '@/lib/conversion';
 import { lookupRate, type RateQuote } from '@/lib/actions';
 import { cn } from '@/components/ui/primitives';
@@ -150,6 +150,7 @@ export function ConversionPanel({
   defaultRateE9 = null,
   defaultRateIsManual = false,
   allowAmountOverride = true,
+  onResolved,
   className,
 }: {
   amountMinor: number | null;
@@ -172,6 +173,22 @@ export function ConversionPanel({
    * the write path cannot keep.
    */
   allowAmountOverride?: boolean;
+  /**
+   * The figure this entry will be written into the ledger as, in `to`, reported
+   * whenever it changes (v1.11.0).
+   *
+   * The settlement sheet has to state "you'll receive X" — X being the account-
+   * currency figure, after both overrides. It used to print the amount the user
+   * typed, which on a foreign settlement is a number in the wrong currency
+   * wearing the account's symbol. Nothing may re-derive this: the panel owns
+   * the rate and the two overrides, so the panel is what says what it resolves
+   * to. `null` while the answer is genuinely unknown — no amount yet, no rate,
+   * or an override mid-typing that does not parse.
+   *
+   * Pass a stable function (`useCallback`); the panel reports only on change,
+   * so an unstable one costs a wasted effect rather than a loop.
+   */
+  onResolved?: (ledgerMinor: number | null) => void;
   className?: string;
 }) {
   const source = normaliseCode(from);
@@ -200,6 +217,43 @@ export function ConversionPanel({
     setRateManual(defaultRateIsManual);
     setRateText(defaultRateIsManual && defaultRateE9 ? rateToInput(defaultRateE9) : '');
   }, [defaultMode, defaultConvertedMinor, defaultRateE9, defaultRateIsManual, target, source]);
+
+  /* ------------------------------------------------------------------------
+     What this entry resolves to in the ledger currency.
+
+     Computed here, above every early return, because it has to be reported
+     through a hook and hooks cannot live behind a branch. The body below
+     recomputes the same figures from the same inputs for display; this block is
+     the one that leaves the component, and the two agree because they read the
+     same state.
+     ------------------------------------------------------------------------ */
+  const liveTyped = text.trim();
+  const liveTypedRate = rateText.trim();
+  const liveRateE9 =
+    (rateManual && liveTypedRate !== '' ? parseRateToE9(liveTypedRate) : null) ??
+    state.rate?.rate_e9 ??
+    null;
+  const resolvedMinor: number | null =
+    !source || !target
+      ? null
+      : source === target
+        ? amountMinor
+        : manual
+          ? liveTyped === ''
+            ? null
+            : parseAmountToMinor(liveTyped, target)
+          : amountMinor === null || liveRateE9 === null
+            ? null
+            : convertMinor(amountMinor, source, target, liveRateE9);
+
+  // Reported on change only, so an unmemoised callback costs one extra effect
+  // run rather than an update loop.
+  const reported = useRef<number | null>(Number.NaN);
+  useEffect(() => {
+    if (Object.is(reported.current, resolvedMinor)) return;
+    reported.current = resolvedMinor;
+    onResolved?.(resolvedMinor);
+  }, [resolvedMinor, onResolved]);
 
   if (!source || !target || source === target) return null;
 

@@ -325,17 +325,17 @@ class _Rail extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 14),
-            for (final (i, destination) in destinations.indexed)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
-                child: _RailItem(
-                  label: destination.label,
-                  icon: destination.icon,
-                  selected: i == index,
-                  onTap: () => onSelect(i),
-                ),
-              ),
-            const Spacer(),
+            // The primary action sits with the navigation, not at the far end
+            // of the column.
+            //
+            // It used to be pinned to the bottom, which on a 1080p screen left
+            // roughly 570px of nothing between the last destination and the one
+            // filled button in the app — the two things a reader uses most,
+            // separated by half a screen of void, with the action closer to the
+            // taskbar than to the product. Directly under the destinations it
+            // is where the eye already is, and the space that remains falls
+            // above the profile card, where empty space in a column is simply
+            // margin. Same change, same reason, as the web client's sidebar.
             Padding(
               padding: const EdgeInsets.all(12),
               child: Pressable(
@@ -365,6 +365,18 @@ class _Rail extends StatelessWidget {
                 ),
               ),
             ),
+            const SizedBox(height: 6),
+            for (final (i, destination) in destinations.indexed)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
+                child: _RailItem(
+                  label: destination.label,
+                  icon: destination.icon,
+                  selected: i == index,
+                  onTap: () => onSelect(i),
+                ),
+              ),
+            const Spacer(),
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
               child: Container(

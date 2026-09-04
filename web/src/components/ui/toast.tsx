@@ -121,7 +121,7 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
         type="button"
         onClick={onDismiss}
         aria-label="Dismiss"
-        className="-mr-1 -mt-0.5 grid size-6 shrink-0 place-items-center rounded-md text-ink-faint transition hover:bg-sunken hover:text-ink"
+        className="press -mr-1 -mt-0.5 grid size-6 shrink-0 place-items-center rounded-md text-ink-faint transition-[background-color,border-color,color,box-shadow] duration-[var(--dur-fast)] ease-[var(--ease)] hover:bg-sunken hover:text-ink"
       >
         <CloseIcon className="size-3.5" />
       </button>
@@ -141,7 +141,11 @@ export function SettledMark({ className }: { className?: string }) {
         aria-hidden
         className="absolute inset-0 rounded-full bg-receivable-soft motion-safe:animate-[ring-out_600ms_var(--ease)_both]"
       />
-      <span className="grid size-14 place-items-center rounded-full bg-receivable-soft text-receivable">
+      {/* The one place in the product that overshoots. A settlement is the
+          moment money actually moved, so the mark arrives with a little weight
+          behind it rather than merely appearing — and because it is the only
+          one, it reads as emphasis rather than as house style. */}
+      <span className="grid size-14 place-items-center rounded-full bg-receivable-soft text-receivable motion-safe:animate-[pop_var(--dur-slow)_var(--ease-emph)_both]">
         <svg viewBox="0 0 24 24" fill="none" className="size-7" aria-hidden>
           <path
             d="m5 12.5 4.5 4.5L19 7"

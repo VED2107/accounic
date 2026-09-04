@@ -137,14 +137,48 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
                 type="button"
                 onClick={toggleRail}
                 aria-label="Collapse sidebar"
-                className="grid size-8 place-items-center rounded-lg text-ink-faint transition hover:bg-sunken hover:text-ink"
+                className="press grid size-8 place-items-center rounded-lg text-ink-faint transition-[background-color,color,transform] duration-[var(--dur-fast)] ease-[var(--ease)] hover:bg-sunken hover:text-ink"
               >
                 <ChevronRightIcon className="size-4 rotate-180" />
               </button>
             ) : null}
           </div>
 
-          <nav className="flex-1 space-y-0.5 px-3 pt-2">
+          {/* The primary action sits with the navigation, not at the far end of
+              the column.
+
+              It used to be pinned to the bottom, which on a 1080p screen left
+              roughly 450px of nothing between the last nav row and the one
+              filled button on the page — the two things a reader uses most,
+              separated by half a screen of void, with the action closer to the
+              taskbar than to the app. Directly under the destinations it is
+              where the eye already is, and the remaining space falls above the
+              profile footer, where empty space in a column is simply margin. */}
+          <div className="px-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setAddOpen(true)}
+              aria-label="Add transaction"
+              title={rail ? 'Add transaction' : undefined}
+              className={cn(
+                // Prominent, but sized like a control rather than a banner:
+                // 44px is the touch minimum and the same height as a nav row
+                // plus its padding, so the sidebar reads as one system (§4).
+                'flex w-full items-center justify-center gap-2 rounded-field bg-accent-solid',
+                '[background-image:var(--grad-action)] text-[0.875rem] font-semibold text-accent-ink',
+                'shadow-[0_1px_0_0_rgb(255_255_255/0.14)_inset,0_6px_16px_-10px_rgb(37_99_235/0.65)]',
+                'transition-[filter,transform,box-shadow] duration-[var(--dur)] ease-[var(--ease)]',
+                'hover:brightness-110 hover:shadow-[0_1px_0_0_rgb(255_255_255/0.18)_inset,0_10px_22px_-10px_rgb(37_99_235/0.8)]',
+                'active:scale-[0.985] motion-reduce:active:scale-100',
+                rail ? 'h-11' : 'h-11 px-4',
+              )}
+            >
+              <PlusIcon className="size-4 shrink-0" />
+              {!rail ? 'Add transaction' : null}
+            </button>
+          </div>
+
+          <nav className="flex-1 space-y-0.5 px-3 pt-3">
             {nav.map((item) => {
               const active = isActive(item);
               return (
@@ -154,8 +188,8 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
                   aria-current={active ? 'page' : undefined}
                   title={rail ? item.label : undefined}
                   className={cn(
-                    'group relative flex items-center rounded-field text-[0.875rem] font-medium',
-                    'transition-[background-color,color,box-shadow] duration-[var(--dur)] ease-[var(--ease)]',
+                    'press group relative flex items-center rounded-field text-[0.875rem] font-medium',
+                    'transition-[background-color,color,box-shadow,transform] duration-[var(--dur-fast)] ease-[var(--ease)]',
                     rail ? 'h-10 justify-center' : 'gap-3 px-3 py-2.5',
                     // Selected reads as "you are here", not as a button: a tinted
                     // field, a hairline border and the brand rule at the left
@@ -187,36 +221,14 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
             })}
           </nav>
 
-          <div className={cn('space-y-3', rail ? 'p-3' : 'p-3')}>
-            <button
-              type="button"
-              onClick={() => setAddOpen(true)}
-              aria-label="Add transaction"
-              title={rail ? 'Add transaction' : undefined}
-              className={cn(
-                // Prominent, but sized like a control rather than a banner:
-                // 44px is the touch minimum and the same height as a nav row
-                // plus its padding, so the sidebar reads as one system (§4).
-                'flex w-full items-center justify-center gap-2 rounded-field bg-accent-solid',
-                '[background-image:var(--grad-action)] text-[0.875rem] font-semibold text-accent-ink',
-                'shadow-[0_1px_0_0_rgb(255_255_255/0.14)_inset,0_6px_16px_-10px_rgb(37_99_235/0.65)]',
-                'transition-[filter,transform,box-shadow] duration-[var(--dur)] ease-[var(--ease)]',
-                'hover:brightness-110 hover:shadow-[0_1px_0_0_rgb(255_255_255/0.18)_inset,0_10px_22px_-10px_rgb(37_99_235/0.8)]',
-                'active:scale-[0.985] motion-reduce:active:scale-100',
-                rail ? 'h-11' : 'h-11 px-4',
-              )}
-            >
-              <PlusIcon className="size-4 shrink-0" />
-              {!rail ? 'Add transaction' : null}
-            </button>
-
+          <div className="space-y-3 border-t border-line p-3">
             {rail ? (
               <div className="flex flex-col items-center gap-2">
                 <button
                   type="button"
                   onClick={toggleRail}
                   aria-label="Expand sidebar"
-                  className="grid size-8 place-items-center rounded-lg text-ink-faint transition hover:bg-sunken hover:text-ink"
+                  className="press grid size-8 place-items-center rounded-lg text-ink-faint transition-[background-color,color,transform] duration-[var(--dur-fast)] ease-[var(--ease)] hover:bg-sunken hover:text-ink"
                 >
                   <ChevronRightIcon className="size-4" />
                 </button>
@@ -263,7 +275,7 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
               type="button"
               onClick={() => setSearchOpen(true)}
               aria-label="Search"
-              className="ml-auto grid size-9 place-items-center rounded-field text-ink-muted transition hover:bg-sunken hover:text-ink"
+              className="press ml-auto grid size-9 place-items-center rounded-field text-ink-muted transition-[background-color,border-color,color,box-shadow] duration-[var(--dur-fast)] ease-[var(--ease)] hover:bg-sunken hover:text-ink"
             >
               <SearchIcon />
             </button>
@@ -311,7 +323,7 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
                   type="button"
                   onClick={() => setAddOpen(true)}
                   aria-label="Add transaction"
-                  className="-mt-5 grid size-12 place-items-center rounded-2xl bg-accent-solid [background-image:var(--grad-action)] text-accent-ink shadow-[var(--shadow-pop)] transition active:scale-95 motion-reduce:active:scale-100"
+                  className="-mt-5 grid size-12 place-items-center rounded-2xl bg-accent-solid [background-image:var(--grad-action)] text-accent-ink shadow-[var(--shadow-pop)] transition-[filter,transform,box-shadow] duration-[var(--dur-tap)] ease-[var(--ease)] hover:brightness-110 active:scale-95 motion-reduce:active:scale-100"
                 >
                   <PlusIcon className="size-5" />
                 </button>
@@ -341,8 +353,8 @@ function BottomLink({ item, active }: { item: NavItem; active: boolean }) {
       href={item.href}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'flex flex-col items-center gap-0.5 rounded-field py-1.5 text-[0.625rem] font-medium',
-        'transition-colors duration-[var(--dur)] ease-[var(--ease)]',
+        'press flex flex-col items-center gap-0.5 rounded-field py-1.5 text-[0.625rem] font-medium',
+        'transition-[color,transform] duration-[var(--dur-fast)] ease-[var(--ease)]',
         active ? 'text-accent' : 'text-ink-faint',
       )}
     >

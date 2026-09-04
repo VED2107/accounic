@@ -106,7 +106,7 @@ export function UserTable({
               type="button"
               onClick={() => setSearch('')}
               aria-label="Clear search"
-              className="grid size-5 shrink-0 place-items-center rounded text-ink-faint transition hover:text-ink"
+              className="press grid size-5 shrink-0 place-items-center rounded text-ink-faint transition-[background-color,border-color,color,box-shadow] duration-[var(--dur-fast)] ease-[var(--ease)] hover:text-ink"
             >
               <CloseIcon className="size-3.5" />
             </button>

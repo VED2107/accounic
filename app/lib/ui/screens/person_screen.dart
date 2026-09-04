@@ -24,19 +24,90 @@ import '../widgets/app_page.dart';
 import '../widgets/common.dart';
 import '../widgets/currency_field.dart';
 
+/// The metadata line under an account's name.
+///
+/// [currency] is what this person's figures are denominated in. [entry] is what
+/// a new transaction with them defaults to, and is stated only when the two
+/// differ — a person who has never switched has one currency and should be told
+/// about exactly one (db/migrations/0013).
+///
+/// Status and last activity join it in v1.11.0: "is this account live, and when
+/// did anything last happen on it" are the two questions a name raises that the
+/// figure below does not answer, and both clients now answer them here.
+String _personSubtitle(
+  Person person,
+  String currency, {
+  String? entry,
+  String? lastActivityAt,
+}) =>
+    [
+      person.type.label,
+      currency,
+      if (entry != null && entry != currency) 'new entries in $entry',
+      if (person.phone != null) person.phone!,
+      person.isArchived ? 'Archived' : 'Active',
+      if (lastActivityAt != null)
+        'last activity ${relativeTime(lastActivityAt)}'
+      else
+        'no activity yet',
+    ].join(' · ');
+
+/// Which of the account's four questions is on screen.
+enum PersonTab {
+  overview('Overview'),
+  transactions('Transactions'),
+  settlements('Settlements'),
+  activity('Activity');
+
+  const PersonTab(this.label);
+  final String label;
+}
+
 /// Person / business account — the screen the product is really about
 /// (context.md §6, §16).
 ///
 /// Credit and debit appear together, never in separate modules, and the net
-/// position is the largest thing on the page so "where do we stand?" needs no
-/// arithmetic from the reader. The account is a statement, not a set of tabs.
-class PersonScreen extends ConsumerWidget {
+/// position is the largest thing on the screen so "where do we stand?" needs no
+/// arithmetic from the reader.
+///
+/// v1.11.0 rebuilt it, in step with the web client. It used to be one long
+/// statement, and the comment here used to defend that: "the account is a
+/// statement, not a set of tabs". That held while the account knew four things.
+/// It knows a dozen now — cash in hand, the opening balance, the account
+/// position, two per-currency breakdowns, four figures, the notes, the opening
+/// book's own activity and the whole timeline — and stacking all of them above
+/// the fold meant the answer to "where do we stand?" arrived buried in its own
+/// working.
+///
+/// So: the position and its one action stand alone at the top, and everything
+/// else is behind four tabs, because an account is four questions and a reader
+/// only ever has one of them at a time.
+///
+///   Overview      what the position is made of, and the last few entries
+///   Transactions  credits, debits and transfers
+///   Settlements   money that actually moved
+///   Activity      everything in order, including the opening book
+///
+/// The tab is local state rather than a route. On the web the tabs are links
+/// because a URL there is worth having; here a route per tab would put three
+/// extra entries in the back stack between the account and the list it came
+/// from, which is the wrong trade on a phone.
+class PersonScreen extends ConsumerStatefulWidget {
   const PersonScreen({super.key, required this.personId});
 
   final String personId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PersonScreen> createState() => _PersonScreenState();
+}
+
+class _PersonScreenState extends ConsumerState<PersonScreen> {
+  PersonTab _tab = PersonTab.overview;
+
+  String get personId => widget.personId;
+
+  @override
+  Widget build(BuildContext context) {
     final async = ref.watch(personPageProvider(personId));
     final page = async.valueOrNull;
 
@@ -44,7 +115,12 @@ class PersonScreen extends ConsumerWidget {
       title: page?.person.name ?? 'Account',
       subtitle: page == null
           ? null
-          : _subtitle(page.person, page.currency, page.defaultCurrency),
+          : _personSubtitle(
+              page.person,
+              page.currency,
+              entry: page.defaultCurrency,
+              lastActivityAt: page.balance.lastActivityAt,
+            ),
       width: ContentWidth.standard,
       bottomPadding: context.isCompact ? 48 : 48,
       leading: _BackButton(),
@@ -69,20 +145,15 @@ class PersonScreen extends ConsumerWidget {
     );
   }
 
-  /// [currency] is what this person's figures are denominated in. [entry] is
-  /// what a new transaction with them defaults to, and is stated only when the
-  /// two differ — a person who has never switched has one currency and should
-  /// be told about exactly one (db/migrations/0013).
-  static String _subtitle(Person person, String currency, [String? entry]) => [
-        person.type.label,
-        currency,
-        if (entry != null && entry != currency) 'new entries in $entry',
-        if (person.phone != null) person.phone!,
-        if (person.isArchived) 'Archived',
-      ].join(' · ');
-
+  /// The account, in one screen: who, where we stand, what to do — then four
+  /// tabs for everything that explains it.
   List<Widget> _body(BuildContext context, PersonPage page, String currency) {
-    final groups = groupByDate(page.timeline, (entry) => entry.entryDate);
+    // `isSettlement` comes from the database's own entry_kind, so neither list
+    // is inferred from a shape (db/migrations/0023).
+    final transactions =
+        page.timeline.where((entry) => !entry.isSettlement).toList();
+    final settlements =
+        page.timeline.where((entry) => entry.isSettlement).toList();
 
     return [
       // On a phone the app bar has only room for the name, so the identity row
@@ -93,6 +164,7 @@ class PersonScreen extends ConsumerWidget {
             person: page.person,
             currency: page.currency,
             entryCurrency: page.defaultCurrency,
+            lastActivityAt: page.balance.lastActivityAt,
           ),
         ),
         const SizedBox(height: AppSpacing.lg),
@@ -103,21 +175,155 @@ class PersonScreen extends ConsumerWidget {
         child: _PositionCard(page: page, currency: currency),
       ),
 
-      // Cash in hand broken out by the currency each amount was entered in
-      // (db/migrations/0024). Worth showing only when this account has traded
-      // in more than one currency, or in one that is not its ledger
-      // denomination — otherwise the headline above already IS the original.
+      const SizedBox(height: AppSpacing.lg),
+
+      // Four questions, one at a time. The control is the app's own segmented
+      // one, so the selected segment slides between tabs rather than blinking
+      // from one to the next — on this screen that movement is the only thing
+      // telling the eye that what appeared below belongs to what was tapped.
+      Segmented<PersonTab>(
+        value: _tab,
+        segments: [
+          for (final tab in PersonTab.values) (value: tab, label: tab.label),
+        ],
+        onChanged: (tab) => setState(() => _tab = tab),
+      ),
+
+      const SizedBox(height: AppSpacing.lg),
+
+      ...switch (_tab) {
+        PersonTab.overview => _overview(context, page, currency),
+        PersonTab.transactions => _entries(
+            context,
+            page,
+            currency,
+            entries: transactions,
+            title: 'Transactions',
+            note: 'Credits, debits and transfers. Settlements have their own '
+                'tab, and the opening balance is not a transaction.',
+            emptyTitle: 'No transactions here',
+            emptyBody: 'Credits and debits you record with this account will '
+                'appear on this tab.',
+            actions: [
+              ExportButton(person: page.person),
+              const SizedBox(width: AppSpacing.sm),
+              StatementButton(page: page),
+            ],
+          ),
+        PersonTab.settlements => _entries(
+            context,
+            page,
+            currency,
+            entries: settlements,
+            title: 'Settlements',
+            note: 'Money that actually changed hands, and what it closed.',
+            emptyTitle: 'Nothing settled yet',
+            emptyBody: page.balance.outstandingReceivable > 0 ||
+                    page.balance.outstandingPayable > 0
+                ? 'Settle with ${_firstName(page)} and the record will appear '
+                    'here.'
+                : 'Settlements you record against this account will appear '
+                    'here.',
+          ),
+        PersonTab.activity => [
+            ..._entries(
+              context,
+              page,
+              currency,
+              entries: page.timeline,
+              title: 'Activity',
+              note: 'Every entry on this account in the order it happened.',
+              emptyTitle: 'Nothing has happened yet',
+              emptyBody: 'Everything you record with this account will show up '
+                  'here.',
+            ),
+            if (page.openingActivity.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.xl),
+              const SectionHeader('Against the opening balance'),
+              Card(
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  children: [
+                    for (final (row, entry) in page.openingActivity.indexed)
+                      TimelineTile(
+                        entry: entry,
+                        page: page,
+                        currency: currency,
+                        divider: row < page.openingActivity.length - 1,
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+      },
+    ];
+  }
+
+  static String _firstName(PersonPage page) => page.person.name.split(' ').first;
+
+  /// What the headline is made of, then how it got there, then the last few
+  /// entries — and only then the material a reader has to go looking for.
+  List<Widget> _overview(BuildContext context, PersonPage page, String currency) {
+    final tone = balanceTone(page.regular.positionMinor);
+    final recent =
+        page.timeline.where((entry) => !entry.isSettlement).take(4).toList();
+
+    return [
+      Reveal(
+        child: SectionCard(
+          child: _Figures(
+            balance: page.balance,
+            regular: page.regular,
+            currency: currency,
+            tone: tone,
+          ),
+        ),
+      ),
+
+      // The opening balance, in its own section — never a row in the history
+      // (db/migrations/0019), and since 0022 never inside the cash-in-hand
+      // figure either.
+      if (page.balance.hasOpening) ...[
+        const SizedBox(height: AppSpacing.md),
+        Reveal(
+          delay: const Duration(milliseconds: 40),
+          child: OpeningBalanceCard(page: page),
+        ),
+      ],
+
+      // Looked up rather than read, so these are closed by default. Worth
+      // drawing at all only when this account has traded in more than one
+      // currency, or in one that is not its ledger denomination — otherwise the
+      // headline already IS the original figure.
       if (_showByCurrency(page.regularByCurrency, page.currency)) ...[
         const SizedBox(height: AppSpacing.md),
         Reveal(
-          delay: const Duration(milliseconds: 50),
+          delay: const Duration(milliseconds: 55),
           child: CurrencyBreakdownCard(
             title: 'Cash in hand by currency',
-            description:
-                'The original amounts entered for this account, kept in their own currency.',
+            description: 'The original amounts entered for this account, kept '
+                'in their own currency.',
             rows: page.regularByCurrency,
             baseCurrency: page.currency,
             opening: false,
+            collapsible: true,
+          ),
+        ),
+      ],
+
+      if (_showByCurrency(page.openingByCurrency, page.currency)) ...[
+        const SizedBox(height: AppSpacing.md),
+        Reveal(
+          delay: const Duration(milliseconds: 60),
+          child: CurrencyBreakdownCard(
+            title: 'Opening balance by currency',
+            description: 'What this account was carried in with, per currency, '
+                'less whatever has settled.',
+            rows: page.openingByCurrency,
+            baseCurrency: page.currency,
+            opening: true,
+            collapsible: true,
           ),
         ),
       ],
@@ -153,52 +359,98 @@ class PersonScreen extends ConsumerWidget {
 
       const SizedBox(height: AppSpacing.xl),
 
-      // The opening balance, in its own section — never a row in the history
-      // below (db/migrations/0019), and since 0022 never inside the cash-in-hand
-      // figure either. The card above prints it as a figure of its own, beside
-      // the account position that is the two together.
-      Reveal(
-        delay: const Duration(milliseconds: 90),
-        child: OpeningBalanceCard(page: page),
-      ),
-
-      if (_showByCurrency(page.openingByCurrency, page.currency)) ...[
-        const SizedBox(height: AppSpacing.md),
-        Reveal(
-          delay: const Duration(milliseconds: 100),
-          child: CurrencyBreakdownCard(
-            title: 'Opening balance by currency',
-            description:
-                'What this account was carried in with, per currency, less whatever has settled.',
-            rows: page.openingByCurrency,
-            baseCurrency: page.currency,
-            opening: true,
-          ),
-        ),
-      ],
-
-      const SizedBox(height: AppSpacing.xl),
-
-      // Regular activity: credits, debits, transfers and settlements.
       Row(
         children: [
-          const Expanded(child: SectionHeader('Regular transactions')),
-          // Two exports, deliberately distinct: the statement is this account
-          // as a document, the export is this account as data, in whichever of
-          // the three formats the user actually needs.
-          ExportButton(person: page.person),
-          const SizedBox(width: AppSpacing.sm),
-          StatementButton(page: page),
+          const Expanded(child: SectionHeader('Recent transactions')),
+          if (recent.isNotEmpty)
+            _TabLink(
+              label: 'All',
+              onTap: () => setState(() => _tab = PersonTab.transactions),
+            ),
         ],
       ),
 
-      if (page.timeline.isEmpty)
+      if (recent.isEmpty)
         const Card(
           child: EmptyState(
             icon: AppIcons.quiet,
             title: 'Nothing recorded yet',
-            description: 'Credits, debits, transfers and settlements with this '
-                'account will appear here.',
+            description: 'Credits and debits with this account will appear here.',
+          ),
+        )
+      else
+        Card(
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              for (final (row, entry) in recent.indexed)
+                TimelineTile(
+                  entry: entry,
+                  page: page,
+                  currency: currency,
+                  divider: row < recent.length - 1,
+                ),
+            ],
+          ),
+        ),
+    ];
+  }
+
+  /// One tab's worth of ledger rows, grouped by day.
+  List<Widget> _entries(
+    BuildContext context,
+    PersonPage page,
+    String currency, {
+    required List<TimelineEntry> entries,
+    required String title,
+    required String note,
+    required String emptyTitle,
+    required String emptyBody,
+    List<Widget> actions = const [],
+  }) {
+    final groups = groupByDate(entries, (entry) => entry.entryDate);
+
+    final heading = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SectionHeader(title),
+        Padding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+          child: Text(
+            note,
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.45,
+              color: context.money.inkFaint,
+            ),
+          ),
+        ),
+      ],
+    );
+
+    return [
+      // The two exports do not fit beside a heading on a phone — the pair is
+      // about 260dp and the heading needs the rest, which is how this row
+      // overflowed by 132px at 390 (test/person_tabs_test.dart). They take
+      // their own line there and sit beside the heading on a wider screen,
+      // rather than being squeezed into one row at every width.
+      if (actions.isEmpty || !context.isCompact)
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [Expanded(child: heading), ...actions],
+        )
+      else ...[
+        heading,
+        Row(mainAxisAlignment: MainAxisAlignment.end, children: actions),
+        const SizedBox(height: AppSpacing.md),
+      ],
+
+      if (entries.isEmpty)
+        Card(
+          child: EmptyState(
+            icon: AppIcons.quiet,
+            title: emptyTitle,
+            description: emptyBody,
           ),
         )
       else
@@ -236,6 +488,42 @@ class PersonScreen extends ConsumerWidget {
   }
 }
 
+/// "All →" beside a section heading, moving to another tab on this screen.
+class _TabLink extends StatelessWidget {
+  const _TabLink({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Pressable(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.xs,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: context.colors.primary,
+              ),
+            ),
+            const SizedBox(width: 2),
+            Icon(AppIcons.forward, size: AppIconSize.xs, color: context.colors.primary),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// A back affordance that matches the header's other controls.
 class _BackButton extends StatelessWidget {
   @override
@@ -254,9 +542,13 @@ class _Identity extends StatelessWidget {
     required this.person,
     required this.currency,
     required this.entryCurrency,
+    this.lastActivityAt,
   });
 
   final Person person;
+
+  /// When anything last happened on this account, for the metadata line.
+  final String? lastActivityAt;
 
   /// What a new entry for this person defaults to. Shown only when it differs.
   final String entryCurrency;
@@ -287,8 +579,13 @@ class _Identity extends StatelessWidget {
               ),
               const SizedBox(height: 2),
               Text(
-                PersonScreen._subtitle(person, currency, entryCurrency),
-                maxLines: 1,
+                _personSubtitle(
+                  person,
+                  currency,
+                  entry: entryCurrency,
+                  lastActivityAt: lastActivityAt,
+                ),
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontSize: 13, color: context.money.inkMuted),
               ),
@@ -309,6 +606,15 @@ bool _showByCurrency(List<CurrencyHalfBreakdown> rows, String ledgerCurrency) {
   return withData.length == 1 && withData.first.currency != ledgerCurrency;
 }
 
+/// Where we stand, and the one action that changes it.
+///
+/// v1.11.0 emptied this card out. It used to carry the headline, two secondary
+/// figures, a workspace-currency equivalent, the action row AND the four
+/// figures the position is made of — which meant the answer to "where do we
+/// stand?" shared its card with three other answers and the reader had to pick.
+/// The four figures moved to the Overview tab, the opening balance to one line
+/// of prose, and what is left is the figure, what it means in words, and what
+/// to do about it.
 class _PositionCard extends StatelessWidget {
   const _PositionCard({required this.page, required this.currency});
 
@@ -321,8 +627,8 @@ class _PositionCard extends StatelessWidget {
     final balance = page.balance;
     // The headline is CASH IN HAND: the regular trading position, with the
     // opening balance taken out (db/migrations/0022). The opening balance is a
-    // figure of its own, printed below and in its own section, and the two are
-    // never added together into one number on this screen.
+    // figure of its own, stated below and owned by its own section, and the two
+    // are never added together into one number here.
     final regular = page.regular;
     final opening = page.openingPosition;
     final tone = balanceTone(regular.positionMinor);
@@ -337,220 +643,151 @@ class _PositionCard extends StatelessWidget {
     return SectionCard(
       raised: true,
       brandRule: true,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: EdgeInsets.all(context.isCompact ? AppSpacing.lg : AppSpacing.xl),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: Padding(
+        padding: EdgeInsets.all(context.isCompact ? AppSpacing.lg : AppSpacing.xl),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // The state as a word, not only as a colour (§29). Right-aligned,
+            // where a statement puts it.
+            Row(
               children: [
-                Row(
-                  children: [
-                    Icon(AppIcons.net, size: AppIconSize.xs, color: palette.inkFaint),
-                    const SizedBox(width: AppSpacing.xs + 2),
-                    Text(
-                      'CASH IN HAND',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.7,
-                        color: palette.inkFaint,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.sm + 2),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  // Animates when it changes — which is exactly when a
-                  // settlement has just been recorded on this screen.
-                  child: AnimatedMoney(
-                    regular.positionMinor.abs(),
-                    currency: currency,
-                    color: color,
-                    style: context.display(context.isCompact ? 34 : 40),
+                Icon(AppIcons.net, size: AppIconSize.xs, color: palette.inkFaint),
+                const SizedBox(width: AppSpacing.xs + 2),
+                Text(
+                  'CASH IN HAND',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.7,
+                    color: palette.inkFaint,
                   ),
                 ),
-                const SizedBox(height: AppSpacing.sm - 1),
-                Row(
-                  children: [
-                    Icon(
-                      switch (tone) {
-                        BalanceTone.receivable => AppIcons.receivable,
-                        BalanceTone.payable => AppIcons.payable,
-                        BalanceTone.settled => AppIcons.success,
-                      },
-                      size: AppIconSize.xs,
-                      color: tone == BalanceTone.settled ? palette.inkFaint : color,
-                    ),
-                    const SizedBox(width: AppSpacing.xs + 2),
-                    Text(
-                      switch (tone) {
-                        BalanceTone.receivable => '$first owes you, on regular activity',
-                        BalanceTone.payable => 'You owe $first, on regular activity',
-                        BalanceTone.settled => 'Regular activity is settled',
-                      },
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: tone == BalanceTone.settled ? palette.inkFaint : color,
-                      ),
-                    ),
-                  ],
-                ),
-                // The same position in the workspace's currency, and the
-                // opening balance if there is one. Both are context rather than
-                // figures anything settles against, so they sit under the
-                // headline in the quiet colour (upgrade §10).
-                if (page.currency != page.baseCurrency && regular.positionMinor != 0) ...[
-                  const SizedBox(height: AppSpacing.xs + 2),
-                  Text(
-                    regular.positionBaseMinor == null
-                        ? 'No ${page.currency} → ${page.baseCurrency} rate yet'
-                        : '${formatApprox(regular.positionBaseMinor!.abs(), currency: page.baseCurrency)} at today’s rate',
-                    style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
-                  ),
-                ],
-
-                // The opening balance, stated as its own figure and never
-                // folded into the one above. The account position is printed
-                // beside it so the arithmetic is visible rather than implied —
-                // the reader can see the two figures and their sum, and no
-                // number appears twice inside another.
-                if (balance.hasOpening) ...[
-                  const SizedBox(height: AppSpacing.md),
-                  _SecondaryFigure(
-                    label: 'OPENING BALANCE',
-                    minor: opening.positionMinor,
-                    currency: currency,
-                    // The workspace equivalent, on an account kept in another
-                    // currency. Every figure on this card then says both what
-                    // it is and what it is worth, rather than leaving the
-                    // reader to convert one of the three in their head.
-                    baseMinor: opening.positionBaseMinor,
-                    baseCurrency: page.baseCurrency,
-                    caption: opening.positionMinor == 0
-                        ? 'Settled in full'
-                        : opening.positionMinor > 0
-                            ? '$first owed you this when the account opened'
-                            : 'You owed $first this when the account opened',
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  _SecondaryFigure(
-                    label: 'ACCOUNT POSITION',
-                    minor: balance.netBalance,
-                    currency: currency,
-                    baseMinor: balance.netBalanceBase,
-                    baseCurrency: page.baseCurrency,
-                    caption: 'Cash in hand and the opening balance together',
-                    quiet: true,
-                  ),
-                ],
-                const SizedBox(height: AppSpacing.lg + 2),
-                _ActionRow(page: page),
+                const Spacer(),
+                _ToneBadge(tone: tone),
               ],
             ),
-          ),
-          Divider(height: 1, color: palette.line),
-          _Figures(
-            balance: balance,
-            regular: regular,
-            currency: currency,
-            tone: tone,
-          ),
-        ],
+
+            const SizedBox(height: AppSpacing.lg),
+
+            // The one figure this screen is about, centred and alone. Everything
+            // that explains it is one tab away rather than one line below.
+            Center(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                // Animates when it changes — which is exactly when a settlement
+                // has just been recorded on this screen.
+                child: AnimatedMoney(
+                  regular.positionMinor.abs(),
+                  currency: currency,
+                  color: color,
+                  style: context.display(context.isCompact ? 36 : 44),
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Center(
+              child: Text(
+                switch (tone) {
+                  BalanceTone.receivable => '$first owes you',
+                  BalanceTone.payable => 'You owe $first',
+                  BalanceTone.settled => 'Everything is settled',
+                },
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: tone == BalanceTone.settled ? palette.inkFaint : color,
+                ),
+              ),
+            ),
+
+            // The same position in the workspace's currency. Context rather
+            // than a figure anything settles against (upgrade §10).
+            if (page.currency != page.baseCurrency && regular.positionMinor != 0) ...[
+              const SizedBox(height: AppSpacing.xs + 2),
+              Center(
+                child: Text(
+                  regular.positionBaseMinor == null
+                      ? 'No ${page.currency} → ${page.baseCurrency} rate yet'
+                      : '${formatApprox(regular.positionBaseMinor!.abs(), currency: page.baseCurrency)} at today\u2019s rate',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
+                ),
+              ),
+            ],
+
+            // The opening balance in one line, not as a second figure beside
+            // the first. Two large numbers on one card is how this header
+            // started becoming a dashboard; the figures themselves are in the
+            // Overview tab and in the opening book's own section.
+            if (balance.hasOpening) ...[
+              const SizedBox(height: AppSpacing.md),
+              Center(
+                child: Text(
+                  'Opening balance of '
+                  '${formatMoney(opening.positionMinor.abs(), currency: currency, base: currency)} '
+                  'is accounted separately',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, height: 1.4, color: palette.inkFaint),
+                ),
+              ),
+            ],
+
+            const SizedBox(height: AppSpacing.lg + 2),
+            _ActionRow(page: page),
+          ],
+        ),
       ),
     );
   }
 }
 
-/// A figure that sits under the headline without competing with it.
+/// Which side of the ledger this account is on, as a word.
 ///
-/// Used for the opening balance and the account position — two numbers the
-/// reader needs beside cash in hand, and neither of which may be mistaken for
-/// it. Smaller, labelled, and never animated: only the headline moves.
-class _SecondaryFigure extends StatelessWidget {
-  const _SecondaryFigure({
-    required this.label,
-    required this.minor,
-    required this.currency,
-    required this.caption,
-    this.baseMinor,
-    this.baseCurrency,
-    this.quiet = false,
-  });
+/// Deliberately not [StatusChip], whose tones mean a settlement's progress —
+/// done, partial, none. This one means a direction, and the two must not be
+/// confused by sharing a widget.
+class _ToneBadge extends StatelessWidget {
+  const _ToneBadge({required this.tone});
 
-  final String label;
-  final int minor;
-  final String currency;
-  final String caption;
-
-  /// The same figure in the workspace currency. Printed only when it says
-  /// something the figure above does not — that is, on an account kept in
-  /// another currency — and marked as the approximation it is.
-  final int? baseMinor;
-  final String? baseCurrency;
-  final bool quiet;
+  final BalanceTone tone;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.money;
-    final color = quiet
-        ? palette.inkMuted
-        : minor > 0
-            ? palette.receivable
-            : minor < 0
-                ? palette.payable
-                : palette.inkFaint;
+    final (bg, fg, border, label) = switch (tone) {
+      BalanceTone.receivable => (
+          palette.receivableSoft,
+          palette.receivable,
+          palette.receivableLine,
+          'RECEIVABLE',
+        ),
+      BalanceTone.payable => (
+          palette.payableSoft,
+          palette.payable,
+          palette.payableLine,
+          'PAYABLE',
+        ),
+      BalanceTone.settled => (palette.sunken, palette.inkFaint, palette.line, 'SETTLED'),
+    };
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 10.5,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.7,
-                color: palette.inkFaint,
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Flexible(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: MoneyText(
-                  minor.abs(),
-                  currency: currency,
-                  base: currency,
-                  tone: MoneyTone.neutral,
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    color: color,
-                  ),
-                ),
-              ),
-            ),
-          ],
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(100),
+        border: Border.all(color: border),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.6,
+          color: fg,
         ),
-        if (baseCurrency != null && baseCurrency != currency && minor != 0)
-          Text(
-            baseMinor == null
-                ? 'No $currency → $baseCurrency rate yet'
-                : formatApprox(baseMinor!.abs(), currency: baseCurrency),
-            style: TextStyle(fontSize: 12, color: palette.inkFaint),
-          ),
-        Text(
-          caption,
-          style: TextStyle(fontSize: 12, color: palette.inkFaint),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -586,62 +823,78 @@ class _ActionRow extends ConsumerWidget {
     final balance = page.balance;
     final palette = context.money;
 
+    final settle = _Action(
+      label: 'Settle',
+      icon: AppIcons.settlement,
+      filled: true,
+      onTap: () async {
+        final saved = await showSettleSheet(
+          context,
+          ref,
+          balance: balance,
+          openTransactions: page.openTransactions,
+        );
+        if (saved && context.mounted) {
+          showMessage(context, 'Settlement recorded.');
+        }
+      },
+    );
+
+    final credit = _Action(
+      label: 'Credit',
+      icon: AppIcons.payable,
+      tint: palette.payable,
+      onTap: () => _add(context, ref, MoneyFlow.personToOwner),
+    );
+
+    final debit = _Action(
+      label: 'Debit',
+      icon: AppIcons.receivable,
+      tint: palette.receivable,
+      onTap: () => _add(context, ref, MoneyFlow.ownerToPerson),
+    );
+
+    // Four equal actions do not fit a phone.
+    //
+    // Settle, Credit, Debit and Transfer used to share one Row of Expandeds. On
+    // a 390px screen that is about 72dp each, and "Settle" — icon, gap, label —
+    // needs closer to 110: the row overflowed and the labels were clipped, on
+    // the product's most important screen, in the layout most of its users see.
+    // Caught by a widget test rather than by analyze, which cannot see a layout
+    // overflow at all (test/person_tabs_test.dart).
+    //
+    // The fix is the hierarchy the web client already has. Transfer moves into
+    // the menu — it is the rarest of the four and the only one that is not
+    // about this account alone — and Settle takes a row of its own on a phone,
+    // because the primary action must never be the one that got squeezed.
+    if (context.isCompact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (balance.hasOutstanding) ...[
+            settle,
+            const SizedBox(height: AppSpacing.sm + 2),
+          ],
+          Row(
+            children: [
+              Expanded(child: credit),
+              const SizedBox(width: AppSpacing.sm + 2),
+              Expanded(child: debit),
+            ],
+          ),
+        ],
+      );
+    }
+
     return Row(
       children: [
         if (balance.hasOutstanding) ...[
-          Expanded(
-            child: _Action(
-              label: 'Settle',
-              icon: AppIcons.settlement,
-              filled: true,
-              onTap: () async {
-                final saved = await showSettleSheet(
-                  context,
-                  ref,
-                  balance: balance,
-                  openTransactions: page.openTransactions,
-                );
-                if (saved && context.mounted) {
-                  showMessage(context, 'Settlement recorded.');
-                }
-              },
-            ),
-          ),
+          Expanded(child: settle),
           const SizedBox(width: AppSpacing.sm + 2),
         ],
-        Expanded(
-          child: _Action(
-            label: 'Credit',
-            icon: AppIcons.payable,
-            tint: palette.payable,
-            onTap: () => _add(context, ref, MoneyFlow.personToOwner),
-          ),
-        ),
+        Expanded(child: credit),
         const SizedBox(width: AppSpacing.sm + 2),
-        Expanded(
-          child: _Action(
-            label: 'Debit',
-            icon: AppIcons.receivable,
-            tint: palette.receivable,
-            onTap: () => _add(context, ref, MoneyFlow.ownerToPerson),
-          ),
-        ),
-        const SizedBox(width: AppSpacing.sm + 2),
-        // Moving money between two of your own accounts is neither of the
-        // above — nothing is owed differently overall, it just sits somewhere
-        // else. Hence its own control rather than a mode of "add".
-        Expanded(
-          child: _Action(
-            label: 'Transfer',
-            icon: AppIcons.forward,
-            onTap: () async {
-              final saved = await showTransferSheet(context, ref, from: page.balance);
-              if (saved && context.mounted) {
-                showMessage(context, 'Transfer recorded. Both accounts updated.');
-              }
-            },
-          ),
-        ),
+        Expanded(child: debit),
       ],
     );
   }
@@ -918,6 +1171,17 @@ class PersonMenu extends ConsumerWidget {
         final repository = ref.read(ledgerRepositoryProvider);
 
         switch (value) {
+          // Moving money between two of your own accounts is neither a credit
+          // nor a debit — nothing is owed differently overall, it just sits
+          // somewhere else. It lives here rather than in the action row because
+          // it is the rarest of the four and the only one that is not about
+          // this account alone.
+          case 'transfer':
+            final saved = await showTransferSheet(context, ref, from: page.balance);
+            if (saved && context.mounted) {
+              showMessage(context, 'Transfer recorded. Both accounts updated.');
+            }
+
           case 'edit':
             await showPersonSheet(
               context,
@@ -1005,6 +1269,10 @@ class PersonMenu extends ConsumerWidget {
         }
       },
       itemBuilder: (context) => [
+        PopupMenuItem(
+          value: 'transfer',
+          child: item(AppIcons.forward, 'Transfer to another account'),
+        ),
         PopupMenuItem(value: 'edit', child: item(AppIcons.edit, 'Edit details')),
         PopupMenuItem(
           value: person.isArchived ? 'restore' : 'archive',

@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/primitives';
 import { CurrencyBreakdown, Money, NetBadge, SplitBar } from '@/components/money';
 import { ActivityChart } from '@/components/charts/activity-chart';
-import { Sparkline, TrendChip } from '@/components/charts/sparkline';
+import { Sparkline, SparklineFigure, TrendChip } from '@/components/charts/sparkline';
 import { ActivityRow } from '@/components/ledger/activity-row';
 import { AddTransactionButton } from '@/components/ledger/add-transaction-button';
 import { Reveal, staggerStyle } from '@/components/motion/reveal';
@@ -27,7 +27,7 @@ import {
   TrendUpIcon,
 } from '@/components/icons';
 import { friendlyDate, greeting } from '@/lib/dates';
-import { balanceTone, formatApprox, formatMoney } from '@/lib/money';
+import { balanceTone, formatMoney } from '@/lib/money';
 import { trendsFromBuckets, type Trend } from '@/lib/series';
 import type {
   CurrencyHalfBreakdown,
@@ -191,11 +191,29 @@ export default async function DashboardPage() {
               ) : null}
             </div>
 
-            <div className="flex min-w-0 flex-1 flex-col items-end gap-2">
-              <span className="stat-label">Last 30 days</span>
-              <div className="w-full max-w-[16rem]">
-                <Sparkline id="net" points={trends.net.points} tone="accent" />
-              </div>
+            {/* What this line actually is: lending less borrowing, accumulated
+                across the window and starting from zero on its first day. It is
+                NOT the figure to its left — the net position includes every
+                account's whole history and every settlement, and the two are
+                routinely an order of magnitude apart. Calling it "net position"
+                would put two numbers that far apart under one name.
+
+                Drawn against zero rather than against its own floor, because
+                the one event worth seeing on it is the crossing between lending
+                more than you borrowed and the reverse. */}
+            <div className="flex min-w-0 flex-1 justify-end">
+              <SparklineFigure
+                id="net"
+                label="Last 30 days"
+                points={trends.net.points}
+                tone={
+                  (trends.net.points.at(-1) ?? 0) < 0 ? 'payable' : 'receivable'
+                }
+                currency={currency}
+                caption="Lent less borrowed, cumulative"
+                className="w-full max-w-[16rem]"
+                chartClassName="h-14"
+              />
             </div>
           </div>
 

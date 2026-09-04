@@ -121,3 +121,44 @@ class AccounicLogo extends StatelessWidget {
     );
   }
 }
+
+/// Text painted with the brand ramp.
+///
+/// The Flutter half of the web client's `.brand-text`, and it follows the same
+/// rule the token was written under: the gradient belongs to the brand — the
+/// mark, a hairline, one emphasised line — and never to a large field of UI. It
+/// is used on the dashboard greeting and nowhere else, because a second caller
+/// is the point at which it stops meaning "this is Accounic" and starts meaning
+/// "this app likes gradients".
+///
+/// Money never takes it. Green and red are the only colours in this product
+/// that carry meaning, and a figure wearing the brand ramp would be a figure
+/// that has stopped saying which way it runs.
+class BrandText extends StatelessWidget {
+  const BrandText(this.text, {super.key, required this.style, this.maxLines, this.overflow});
+
+  final String text;
+  final TextStyle style;
+  final int? maxLines;
+  final TextOverflow? overflow;
+
+  @override
+  Widget build(BuildContext context) {
+    return ShaderMask(
+      // srcIn keeps the glyph shapes and replaces only their colour, so the
+      // gradient runs across the word rather than behind it.
+      blendMode: BlendMode.srcIn,
+      shaderCallback: (bounds) => AccounicColors.brandGradient.createShader(
+        Rect.fromLTWH(0, 0, bounds.width, bounds.height),
+      ),
+      child: Text(
+        text,
+        maxLines: maxLines,
+        overflow: overflow,
+        // The mask needs opaque ink underneath it; the colour itself is
+        // discarded by srcIn.
+        style: style.copyWith(color: Colors.white),
+      ),
+    );
+  }
+}
