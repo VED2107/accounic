@@ -10,10 +10,13 @@ it, because a review that predicts its own findings is not a review — every
 defect below was found by running the two clients and looking at them, and each
 one names how it was found.
 
-**Nothing here shipped as a release.** The instruction was not to cut another
-version until the untouched screens and the interaction system reached the same
-bar as the refined ones. That condition is met for the screens listed as done
-and explicitly not met for the ones listed as outstanding.
+**This shipped as v1.11.0.** The work was originally run under a rule of not
+cutting a version until every screen reached the same bar; that rule was lifted
+deliberately, so the Premium UX improvements reach installed clients through the
+existing update checker rather than waiting on a later polish pass. The screens
+listed as done below are done. The ones listed as outstanding are **planned
+follow-up work for a subsequent milestone** — they have not been audited, and
+nothing in the release notes claims otherwise.
 
 ---
 
@@ -250,13 +253,38 @@ screen takes a visible ring.
 The five rows in bold are the honest remainder. They are not "mostly fine"; they
 are unlooked-at, and this document would be worth less if it implied otherwise.
 
+### Planned follow-up work
+
+Carried into the next milestone, unstarted:
+
+1. **Profile** — full visual review.
+2. **Administration** — full visual review.
+3. **Activity** — final visual review. The route was checked for correctness and
+   for horizontal overflow; its composition was not reviewed.
+4. **Flutter light theme** — the binary was driven in dark only, at desktop
+   width, so the light scheme is unverified on that client.
+5. **Flutter keyboard and focus** — not audited. The web client's audit does not
+   transfer: focus order, traversal and visible focus are separate
+   implementations there.
+
+None of the five is a regression introduced by v1.11.0. They are areas this pass
+did not reach.
+
 ---
 
-## The rule this milestone was run under
+## Why this shipped before the polish pass finished
 
-> Do not ship another release until the untouched screens and the interaction
-> system are brought to the same quality bar as the screens already refined.
+The milestone opened under a rule of not cutting a version until every screen
+reached the bar of the refined ones. That rule was lifted on purpose.
 
-Person Detail, Settlement and the interaction system are there. Profile,
-Administration and the Flutter light theme are not. That is the gate for
-whatever gets cut next.
+Person Detail, Settlement and the interaction system — the three things the
+milestone existed for — are done, and with them six defects that were live in
+v1.10.0, including a focus ring that had never rendered in the documented
+colour and a foreign settlement that did its arithmetic in the wrong currency.
+Holding all of that behind a review of Profile and Administration would keep
+fixes out of installed clients to buy consistency in screens that are not
+broken.
+
+So v1.11.0 ships what is finished, the release notes say plainly what it
+contains, and the five areas above are the opening scope of the next
+milestone.
