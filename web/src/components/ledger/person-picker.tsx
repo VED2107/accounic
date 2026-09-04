@@ -139,7 +139,7 @@ export function PersonPicker({
               onChange(null);
               setQuery('');
             }}
-            className="shrink-0 text-[0.8125rem] font-medium text-accent transition hover:underline"
+            className="shrink-0 text-[0.8125rem] font-medium text-accent transition-[color] duration-[var(--dur-fast)] ease-[var(--ease)] hover:underline"
           >
             Change
           </button>

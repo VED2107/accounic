@@ -353,8 +353,8 @@ export const SEGMENT_GROUP =
 
 export function segmentClass(active: boolean) {
   return cn(
-    'tap rounded-lg px-3 py-1.5 text-center text-[0.8125rem] font-medium',
-    'transition-[background-color,color,box-shadow] duration-[var(--dur)] ease-[var(--ease)]',
+    'tap press rounded-lg px-3 py-1.5 text-center text-[0.8125rem] font-medium',
+    'transition-[background-color,color,box-shadow,transform] duration-[var(--dur-fast)] ease-[var(--ease)]',
     active
       ? 'bg-surface text-ink shadow-[var(--shadow-card)]'
       : 'text-ink-muted hover:text-ink',

@@ -143,8 +143,8 @@ export function Timeline({
                       onClick={() => setExpanded(open ? null : entry.id)}
                       aria-expanded={open}
                       className={cn(
-                        'flex w-full items-center gap-3 px-4 py-3 text-left sm:px-5',
-                        'transition-colors duration-[var(--dur)] ease-[var(--ease)]',
+                        'press flex w-full items-center gap-3 px-4 py-3 text-left sm:px-5',
+                        'transition-[background-color,opacity,transform] duration-[var(--dur-fast)] ease-[var(--ease)]',
                         open ? 'bg-sunken' : 'hover:bg-sunken',
                         entry.is_void && 'opacity-55',
                       )}

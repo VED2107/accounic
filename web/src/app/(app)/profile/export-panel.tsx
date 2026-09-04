@@ -66,7 +66,7 @@ export function ExportPanel() {
             type="button"
             onClick={() => setScope(value)}
             aria-pressed={scope === value}
-            className={`h-8 rounded-full border px-3 text-[0.8125rem] transition ${
+            className={`tap press h-8 rounded-full border px-3 text-[0.8125rem] transition-[background-color,border-color,color,box-shadow] duration-[var(--dur-fast)] ease-[var(--ease)] ${
               scope === value
                 ? 'border-line-strong bg-surface-raised text-ink'
                 : 'border-line text-ink-muted hover:text-ink'

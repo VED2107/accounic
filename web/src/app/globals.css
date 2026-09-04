@@ -100,11 +100,59 @@
      balance so that red and green keep meaning money (lib/avatar-color.ts). */
   --avatar-ink: 68%;
 
-  /* Motion — 120–220ms, one easing curve. */
+  /* ------------------------------------------------------------------------
+     Motion (v1.11.0).
+
+     One interaction language, not a pile of animations. Every moving thing in
+     the product picks a duration and a curve from these eight tokens, and the
+     token is chosen by what the motion is FOR — never by taste at the call
+     site. That is the whole difference between an app that animates and an app
+     that feels like one thing.
+
+     Durations. Named for the job, and every one of them under a quarter of a
+     second, because none of these is a performance:
+
+       --dur-tap    a press acknowledging itself. Faster than thought; any
+                    slower and the control feels like it is deciding.
+       --dur-fast   hover, focus, colour, a selected state changing hands.
+                    Things that happen while the pointer is still moving.
+       --dur        a component appearing or leaving: a menu, a tooltip, a
+                    tab's panel, a row's disclosure.
+       --dur-slow   a surface: a dialog, a sheet, a panel's entrance. The only
+                    band with real distance to cover.
+
+     Curves. Three, and the third is nearly never used:
+
+       --ease       the app's curve. Ease-OUT with authority — it leaves
+                    immediately and settles late, so an entrance is visible
+                    from its first frame. Never ease-in anywhere in the UI: a
+                    slow start is a slow interface at exactly the moment the
+                    user is watching hardest.
+       --ease-move  for something already on screen changing position or size,
+                    where there is no "arrival" to sell and both ends need
+                    easing. Movement only; never entrances.
+       --ease-emph  one restrained overshoot, reserved for confirming that
+                    money moved. It appears exactly once in the product, on the
+                    settlement tick, and earns it by being rare.
+
+     Reduced motion is handled once, globally, at the foot of this file.
+     ------------------------------------------------------------------------ */
+  --dur-tap: 110ms;
   --dur-fast: 120ms;
   --dur: 170ms;
   --dur-slow: 220ms;
   --ease: cubic-bezier(0.2, 0.8, 0.3, 1);
+  --ease-move: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-emph: cubic-bezier(0.22, 1.1, 0.36, 1);
+
+  /* The three transition shorthands nine components out of ten need. Declaring
+     the properties explicitly rather than reaching for `all` is not pedantry:
+     `all` animates layout properties nobody meant to animate, and it is the
+     single most reliable way to drop frames on a list. */
+  --tr-tap: transform var(--dur-tap) var(--ease);
+  --tr-hover: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast)
+    var(--ease), color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+  --tr-surface: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
 
 /* The light scheme applies when the system asks for it and the user has not
@@ -513,6 +561,40 @@
   .reveal-row {
     animation: fade var(--dur) ease-out both;
     animation-delay: var(--reveal-delay, 0ms);
+  }
+
+  /* ------------------------------------------------------------------------
+     Press feedback (v1.11.0).
+
+     Every pressable thing acknowledges the press — not only the ones that
+     happen to be a <Button>. A segmented tab, a menu item, a nav row, a
+     timeline row and a bottom-bar destination are all pressed with the same
+     finger and all owe the same 110ms confirmation that the interface heard it.
+     Without it a tap on a row that then takes 200ms to navigate reads as a tap
+     that did nothing.
+
+     0.975 rather than something showier: on a full-width row a deeper scale
+     reads as the row detaching from the list.
+     ------------------------------------------------------------------------ */
+  .press {
+    transition: var(--tr-tap);
+  }
+  .press:active {
+    transform: scale(0.975);
+  }
+
+  /* A row that responds to a pointer. One tint, one duration, everywhere — the
+     alternative is every list inventing its own hover. */
+  .row-press {
+    transition:
+      background-color var(--dur-fast) var(--ease),
+      transform var(--dur-tap) var(--ease);
+  }
+  .row-press:hover {
+    background-color: var(--surface-sunken);
+  }
+  .row-press:active {
+    transform: scale(0.995);
   }
 
   /* Cards lift a little on hover. 170ms, 1px, no scaling. */

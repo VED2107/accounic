@@ -243,7 +243,7 @@ export function Menu({
                     item.onSelect();
                   }}
                   className={cn(
-                    'flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-[0.8125rem]',
+                    'press flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-[0.8125rem]',
                     'transition-colors duration-[var(--dur-fast)] ease-[var(--ease)]',
                     'disabled:cursor-not-allowed disabled:opacity-45',
                     item.destructive
