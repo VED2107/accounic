@@ -1011,8 +1011,9 @@ bugs and are not:
 * A running dev server and a `next build` share `.next` and will corrupt each other
   (`PageNotFoundError: Cannot find module for page`). Stop the dev server first.
 
-`npm run lint` is a deprecated `next lint` that prompts interactively and has no ESLint
-config to run; `npm run typecheck` is the gate.
+`npm run lint` was a deprecated `next lint` with no ESLint config to run, so it prompted
+or errored and never linted anything; `npm run typecheck` was the only gate. Fixed in
+§14 — the script is now `eslint .` against a flat config.
 
 ### 13.4 Verification
 
@@ -1027,3 +1028,71 @@ Findings 4, 5 and part of 8 from the audit: the net-position sparkline is still 
 decorative line rather than a chart that repays reading; the sidebar still carries a
 large dead band between the nav and its call to action; and person detail did not get
 its progressive-disclosure pass. No release was cut.
+
+---
+
+## 14. Premium UX (v1.11.0, unreleased)
+
+The milestone the 1.10.0 audit left open, run under one rule: **no release until
+the untouched screens and the interaction system reach the same bar as the
+refined ones.** The full screen-by-screen record — before, review, change,
+verification — is `docs/milestone-1.11.0.md`. This is the index.
+
+### 14.1 What was rebuilt
+
+**Person Detail**, in both clients. It was the product's most important screen
+and its least designed one: everything the account knew stacked into the first
+viewport before the history it is all evidence for even began. Now the position
+stands alone, and four tabs — Overview, Transactions, Settlements, Activity —
+carry the rest, with the supporting material behind disclosures. Links on the
+web (no JavaScript, shareable URL), local state on Flutter (a route per tab
+would bloat the back stack on a phone).
+
+**Settlement**, in both clients. The sheet states the chain end to end: balance
+due → amount → currency → rate → what it resolves to, closing on "You'll
+receive" / "You'll pay" with the remainder under it.
+
+**The motion vocabulary**, in both clients. Four durations and three curves,
+each named for its job rather than its speed, identical across web and Flutter.
+Press feedback on every pressable thing rather than only on buttons. Every bare
+`transition` shorthand — which means `transition-property: all` — replaced with
+an explicit property list.
+
+### 14.2 Defects found by running the apps
+
+Not one of these was visible in a diff.
+
+* **The focus ring had never been the colour it was documented as.** Written
+  with `:where()`, which zeroes specificity, against Tailwind preflight's
+  `outline-color: currentColor` on the universal selector. It had been rendering
+  in the focused element's own text colour since v1.0.
+* **`MoneyText` (Flutter) discarded every caller-supplied colour**, so the whole
+  cash-in-hand breakdown rendered in plain ink while the web's identical block
+  rendered green and red.
+* **Foreign settlements did their arithmetic on the typed figure**, so paying a
+  rupee account with AED 40 read "Settling ₹40.00" and derived the remainder
+  from it. Both clients.
+* **The actions menu opened underneath its card** — `position: fixed` does not
+  escape overflow when an ancestor animates `transform`, and every panel here
+  enters through `Reveal`. Now portalled to `<body>`.
+* **Two RenderFlex overflows on the Flutter phone layout**, on the account's
+  action row and the tab heading. `flutter analyze` cannot see a layout
+  overflow; the new widget tests can.
+* **The sparkline scale disagreed with its own chart**, dropped the sign on
+  negative bounds, and the dashboard captioned a cumulative-flow series with the
+  name of the balance figure beside it.
+
+### 14.3 Verification
+
+Web: typecheck clean, 204 tests, production build clean, **lint clean for the
+first time in the project's life** (seven dead-code findings fixed). Driven in a
+real browser at 1440 / 1024 / 375, both schemes, keyboard-first for focus.
+Flutter: `analyze` clean, 323 tests (six new). Driven as the real Windows
+release binary, rebuilt from the working tree before each look.
+
+### 14.4 Still open
+
+Profile and Administration were not reviewed. Activity was route-checked but not
+visually reviewed. The Flutter binary was driven in dark only, so its light
+theme is unverified, and its keyboard/focus behaviour was not audited. Those
+five are the gate for whatever is cut next. No release was cut.
