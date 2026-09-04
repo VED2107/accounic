@@ -2,9 +2,11 @@
 
 A small, fast, personal accounting system. Three clients, one backend, one database.
 
-Current release: **[v1.9.0](https://github.com/VED2107/accounic/releases/latest)** —
+Current release: **[v1.12.0](https://github.com/VED2107/accounic/releases/latest)** —
 Windows installer, Windows portable zip, and an Android APK. The app checks GitHub
-Releases on launch and tells you when a newer one exists.
+Releases on launch and tells you when a newer one exists. A release is built by CI
+on a tag and left as a draft: the update check only ever offers a *published* one,
+so a person decides when a build reaches the installed clients.
 
 Every push runs three workflows — web (typecheck · tests · production build), Flutter
 (analyze · tests · debug APK) and SQL (every migration and every suite against a
@@ -63,7 +65,11 @@ and parse input — they never derive a balance.
 | Tenant isolation | `db/migrations/0005_rls.sql` + `0016_revoke_anon.sql` | RLS forced on every table; `anon` holds no EXECUTE in `public` |
 | Currency of record | `db/migrations/0017_entry_currency.sql` | entries keep the currency they were entered in; base is supplementary |
 | Live exchange rates | `web/src/lib/rates.ts`, `app/lib/data/rates_repository.dart` | open.er-api.com, falling back to frankfurter.dev (ECB). Free, keyless, cached per owner |
-| Update check | `app/lib/data/update_repository.dart` | GitHub Releases API + semver; links are host-allow-listed |
+| Update check | `app/lib/data/update_repository.dart` | GitHub Releases API + semver; drafts are ignored; links are host-allow-listed |
+| Exports | `db/migrations/0025_export_workspace.sql` | `export_workspace()` + `export_entries()`, SECURITY INVOKER; one filter contract, two documents |
+| — the ledger report | `web/src/lib/pdf/workspace.ts` · `app/lib/data/export_pdf.dart` | Profile: **account → ledger → transactions** |
+| — the activity journal | `web/src/lib/pdf/activity.ts` · `app/lib/data/activity_pdf.dart` | Activity: **day → events**, the screen typeset. Never regrouped by person |
+| Date picking | `web/src/components/ui/date-picker.tsx` · `app/lib/ui/widgets/date_picker.dart` | one calendar for every date in the product; no native or Material picker |
 | Admin operations | `db/migrations/0007_admin.sql` + `web/src/lib/admin-actions.ts` | service-role never leaves the server |
 | Money representation | `money.ts` / `money.dart` | integer minor units, mirrored line for line |
 | Currency definitions | `shared/currencies.json` | one source; `db/tools/sync-currencies.mjs` generates the SQL seed, the TS and the Dart |
@@ -223,9 +229,11 @@ db/
 web/
   src/app/                  App Router: login, dashboard, people, activity, profile, admin
   src/lib/                  money, types, validation, queries, server actions
+  src/lib/export/           the filter contract and the two report models
+  src/lib/pdf/              statement, workspace ledger, activity journal
   src/components/           UI primitives, ledger sheets, shell
 app/
-  lib/core/                 config, money, dates, theme, failures
+  lib/core/                 config, money, dates, theme, failures, report models
   lib/data/                 models + repositories (the only Supabase callers)
   lib/ui/                   screens, sheets, widgets, motion
   windows/installer/        Inno Setup script for the Windows installer
@@ -254,6 +262,11 @@ docs/                       security, performance, deployment, decisions, direct
 CRM · payroll · inventory · HR · tax/GST · invoicing · expense management ·
 banking integrations · payment gateways · social login · public signup ·
 push/email infrastructure · a reporting engine · full offline sync.
+
+**Exports are not a reporting engine.** They restate what the screens already show —
+the workspace ledger from Profile, the activity journal from Activity — in a file.
+Nothing in an export is computed: every figure came out of the database, and the two
+documents differ only in how they group the same rows.
 
 **Offline is about rates, not about writes.** Exchange rates are cached per owner and a
 missing rate never blocks a save. Recording a transaction still needs the network, because
