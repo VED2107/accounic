@@ -3,10 +3,19 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import { getMe } from '@/lib/supabase/server';
 import { getPersonPage } from '@/lib/queries';
-import { Avatar, Badge, Card, Panel, cn, segmentClass, SEGMENT_GROUP } from '@/components/ui/primitives';
+import {
+  Avatar,
+  Badge,
+  Card,
+  EmptyState,
+  Panel,
+  cn,
+  segmentClass,
+  SEGMENT_GROUP,
+} from '@/components/ui/primitives';
 import { CurrencyBreakdown, Money } from '@/components/money';
 import { CountUp } from '@/components/motion/count-up';
-import { Sparkline } from '@/components/charts/sparkline';
+import { SparklineFigure } from '@/components/charts/sparkline';
 import { Reveal } from '@/components/motion/reveal';
 import { initials } from '@/lib/names';
 import { PersonActionBar } from './person-action-bar';
@@ -16,11 +25,42 @@ import { StatementButton } from './statement-button';
 import { balanceTone, formatApprox, formatMoney } from '@/lib/money';
 import { currencyLabel } from '@/lib/currencies';
 import { personBalanceSeries } from '@/lib/series';
-import { fullDate } from '@/lib/dates';
-import { ArrowRightIcon } from '@/components/icons';
+import { fullDate, relativeTime } from '@/lib/dates';
+import { ArrowRightIcon, SettleIcon, WalletIcon } from '@/components/icons';
+import type {
+  CurrencyHalfBreakdown,
+  OpenTransaction,
+  OpeningHistoryEntry,
+  Person,
+  PersonBalance,
+  PersonOpening,
+  PositionSplit,
+  TimelineEntry,
+} from '@/lib/types';
 
-const PAGE_SIZE = 30;
-type Tab = 'history' | 'details' | 'notes';
+/** Everything a `<Timeline>` needs besides the rows it is drawing. */
+interface TimelineProps {
+  person: Person;
+  balance: PersonBalance;
+  openTransactions: OpenTransaction[];
+  currency: string;
+}
+
+/**
+ * How many entries one server page of this account holds.
+ *
+ * Every tab reads from the same window, so the pagination controls mean one
+ * thing rather than four. 150 is generous enough that the Settlements tab is
+ * almost never truncated on a real account, and light enough that the window
+ * renders without the page feeling assembled — a timeline row is a list item,
+ * not a card.
+ */
+const WINDOW = 150;
+/** How many transactions the Overview previews before handing over to its tab. */
+const PREVIEW = 5;
+
+type Tab = 'overview' | 'transactions' | 'settlements' | 'activity';
+const TABS: Tab[] = ['overview', 'transactions', 'settlements', 'activity'];
 
 export async function generateMetadata({
   params,
@@ -36,13 +76,33 @@ export async function generateMetadata({
  * Person / business account — the screen the product is really about
  * (context.md §6, §16).
  *
- * It reads like a statement: who, where we stand, what to do about it, then the
- * history that got us here. The net position is the largest thing on the page,
- * so "where do we stand?" needs no arithmetic from the reader, and settling is
- * the one filled button.
+ * v1.11.0 rebuilt this screen. It was the product's most important page and its
+ * least designed one: everything the account knew was stacked into the first
+ * viewport — cash in hand, the opening balance, the account position, a
+ * sparkline, nine controls, four figures, two per-currency tables and an
+ * opening-balance panel — before the history it is all evidence for even began.
+ * A reader who wanted "where do we stand?" had to scroll past the answer's
+ * working to find the answer.
  *
- * The tabs are links, not state — the whole screen is server-rendered, so
- * switching to Details ships no JavaScript and survives a refresh.
+ * The shape now is the one a statement has:
+ *
+ *   1. Who, and where we stand — one figure, in words and in colour, with the
+ *      one action that changes it. Nothing else competes for the first screen.
+ *   2. Four tabs, because an account is four different questions and a reader
+ *      only ever has one of them at a time:
+ *
+ *        Overview      what the position is made of, and the last few entries
+ *        Transactions  credits, debits and transfers
+ *        Settlements   money that actually moved
+ *        Activity      everything, in order, including the opening book
+ *
+ *   3. Everything secondary — per-currency breakdowns, the opening book's own
+ *      tables, the account's details — behind a disclosure inside Overview,
+ *      open on demand and closed by default.
+ *
+ * The tabs are links, not state. The whole screen is server-rendered, so
+ * switching tabs ships no JavaScript, survives a refresh, and is a real URL
+ * that can be shared and bookmarked.
  */
 export default async function PersonPage({
   params,
@@ -53,11 +113,11 @@ export default async function PersonPage({
 }) {
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const pageIndex = Math.max(0, Number.parseInt(query.page ?? '0', 10) || 0);
-  const tab: Tab = query.tab === 'details' || query.tab === 'notes' ? query.tab : 'history';
+  const tab: Tab = TABS.includes(query.tab as Tab) ? (query.tab as Tab) : 'overview';
 
   const [me, data] = await Promise.all([
     getMe(),
-    getPersonPage(id, PAGE_SIZE, pageIndex * PAGE_SIZE),
+    getPersonPage(id, WINDOW, pageIndex * WINDOW),
   ]);
   if (!data) notFound();
 
@@ -132,11 +192,34 @@ export default async function PersonPage({
   const showOpeningByCurrency =
     openingCurrencyRows.length > 1 ||
     (openingCurrencyRows.length === 1 && openingCurrencyRows[0]!.currency !== currency);
-  const hasMore = (pageIndex + 1) * PAGE_SIZE < total;
+
+  const hasMore = (pageIndex + 1) * WINDOW < total;
   const series = personBalanceSeries(timeline, balance);
   const firstName = person.name.split(' ')[0];
 
-  const tabHref = (next: Tab) => `/people/${person.id}${next === 'history' ? '' : `?tab=${next}`}`;
+  // The two halves of the window. `entry_kind` is stated by the database, so
+  // neither list is inferred from a shape.
+  const transactions = timeline.filter((entry) => entry.entry_kind === 'transaction');
+  const settlements = timeline.filter((entry) => entry.entry_kind === 'settlement');
+
+  const tabHref = (next: Tab) =>
+    `/people/${person.id}?tab=${next}${pageIndex > 0 ? `&page=${pageIndex}` : ''}`;
+  const pageHref = (next: number) =>
+    `/people/${person.id}?tab=${tab}${next > 0 ? `&page=${next}` : ''}`;
+
+  const timelineProps: TimelineProps = {
+    person,
+    balance,
+    openTransactions: openTxns,
+    currency,
+  };
+
+  const positionCaption =
+    tone === 'receivable'
+      ? `${firstName} owes you`
+      : tone === 'payable'
+        ? `You owe ${firstName}`
+        : 'Everything is settled';
 
   return (
     <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
@@ -149,133 +232,111 @@ export default async function PersonPage({
       </Link>
 
       {/* ------------------------------------------------------------------ */}
-      {/* Identity                                                            */}
+      {/* The account, in one screen: who, where we stand, what to do          */}
       {/* ------------------------------------------------------------------ */}
-      <Reveal as="header" className="mb-4 flex items-start gap-4">
-        <Avatar size="lg" identity={person.name}>
-          {initials(person.name)}
-        </Avatar>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="page-title truncate">
-              {person.name}
-            </h1>
-            {person.is_archived ? <Badge tone="muted">Archived</Badge> : null}
-            {/* Stated always, not only when it differs from the base: "how much
-                is this in?" is the first question on a multi-currency ledger,
-                and a badge that appears and disappears is a worse answer than
-                one that is simply always there. */}
-            <Badge tone="muted">{currency}</Badge>
-            {/* Only when they differ. A person who has never switched has one
-                currency and should be told about exactly one. */}
-            {currencySwitched ? (
-              <Badge tone="muted">New entries in {defaultCurrency}</Badge>
-            ) : null}
-          </div>
-          <p className="mt-1 truncate text-[0.8125rem] text-ink-muted">
-            <span className="capitalize">{person.type}</span>
-            {person.phone ? ` · ${person.phone}` : ''}
-            {person.email ? ` · ${person.email}` : ''}
-          </p>
-        </div>
-      </Reveal>
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Position — both sides on one page (context.md §6)                   */}
-      {/* ------------------------------------------------------------------ */}
-      <Reveal delay={40}>
+      <Reveal>
         <Panel>
-          <div className="relative flex flex-wrap items-end justify-between gap-5 px-5 py-6 sm:px-6">
-            <div className="relative min-w-0">
-              <p className="text-[0.8125rem] font-medium text-ink-muted">Cash in hand</p>
-              <p
-                className={cn(
-                  // The account's headline figure, on the money scale like every other
-                  // figure in the product — it was hand-sized at 2.25/2.75rem, which is
-                  // the one place a balance was not using the money typography.
-                  'money-hero mt-1.5',
-                  tone === 'receivable' && 'text-receivable',
-                  tone === 'payable' && 'text-payable',
-                  tone === 'settled' && 'text-ink',
-                )}
-              >
-                {/* Animates when it changes — which is exactly when a settlement
-                    has just been recorded on this page. */}
-                <CountUp minor={Math.abs(regular.position)} currency={currency} />
+          <header className="flex flex-wrap items-start gap-x-4 gap-y-3 px-5 pt-5 sm:px-6 sm:pt-6">
+            <Avatar size="lg" identity={person.name}>
+              {initials(person.name)}
+            </Avatar>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="page-title min-w-0 break-words">{person.name}</h1>
+                {person.is_archived ? <Badge tone="muted">Archived</Badge> : null}
+                {/* Stated always, not only when it differs from the base: "how
+                    much is this in?" is the first question on a multi-currency
+                    ledger, and a badge that appears and disappears is a worse
+                    answer than one that is simply always there. */}
+                <Badge tone="muted">{currency}</Badge>
+                {/* Only when they differ. A person who has never switched has
+                    one currency and should be told about exactly one. */}
+                {currencySwitched ? (
+                  <Badge tone="muted">New entries in {defaultCurrency}</Badge>
+                ) : null}
+              </div>
+              {/* One metadata line, not three. Type, status and when this
+                  account was last touched — the three things that qualify a
+                  name. Phone and email moved into Overview's details, where
+                  they are looked up rather than read. */}
+              <p className="mt-1 text-[0.8125rem] text-ink-muted">
+                <span className="capitalize">{person.type}</span>
+                {' · '}
+                {person.is_archived ? 'Archived' : 'Active'}
+                {balance.last_activity_at
+                  ? ` · Last activity ${relativeTime(balance.last_activity_at)}`
+                  : ' · No activity yet'}
               </p>
-              <p
-                className={cn(
-                  'mt-2 text-[0.8125rem] font-medium',
-                  tone === 'receivable' && 'text-receivable',
-                  tone === 'payable' && 'text-payable',
-                  tone === 'settled' && 'text-ink-faint',
-                )}
-              >
-                {tone === 'receivable'
-                  ? `${firstName} owes you, on regular activity`
-                  : tone === 'payable'
-                    ? `You owe ${firstName}, on regular activity`
-                    : 'Regular activity is settled'}
-              </p>
-
-              {/* The same position in the workspace's currency. Shown only when
-                  there is another currency to show, and labelled as an
-                  approximation at today's rate, because that is what it is —
-                  nothing settles against this figure. */}
-              {currency !== baseCurrency && regular.position !== 0 ? (
-                <p className="mt-1.5 text-[0.8125rem] text-ink-faint">
-                  {regular.position_base === null
-                    ? `No ${currency} → ${baseCurrency} rate yet`
-                    : `${formatApprox(Math.abs(regular.position_base), baseCurrency)} at today’s rate`}
-                </p>
-              ) : null}
-
-              {/* The opening balance, stated as its own figure and never folded
-                  into the one above. The account position is printed beside it
-                  so the arithmetic is visible rather than implied — the reader
-                  can see the two figures and their sum, and no number appears
-                  twice inside another. */}
-              {hasOpening ? (
-                <div className="mt-4 flex flex-wrap gap-x-8 gap-y-3">
-                  <SecondaryFigure
-                    label="Opening balance"
-                    minor={openingPosition.position}
-                    currency={currency}
-                    baseMinor={openingPosition.position_base}
-                    baseCurrency={baseCurrency}
-                    caption={
-                      openingPosition.position === 0
-                        ? 'Settled in full'
-                        : openingPosition.position > 0
-                          ? `${firstName} owed you this when the account opened`
-                          : `You owed ${firstName} this when the account opened`
-                    }
-                  />
-                  <SecondaryFigure
-                    label="Account position"
-                    minor={balance.net_balance}
-                    currency={currency}
-                    baseMinor={balance.net_balance_base}
-                    baseCurrency={baseCurrency}
-                    caption="Cash in hand and the opening balance together"
-                    quiet
-                  />
-                </div>
-              ) : null}
             </div>
 
-            {series ? (
-              <div className="w-full min-w-0 max-w-xs sm:w-56">
-                <Sparkline
-                  id="person"
-                  points={series}
-                  tone={tone === 'payable' ? 'payable' : tone === 'settled' ? 'accent' : 'receivable'}
-                  className="h-12"
-                />
-                <p className="mt-1 text-right text-[0.6875rem] text-ink-faint">
-                  Balance across the last {Math.min(timeline.length, PAGE_SIZE)} entries
-                </p>
-              </div>
+            {/* The state as a word, at the top right, where a statement puts
+                it. Colour alone never carries meaning here (§29). */}
+            <Badge
+              tone={tone === 'receivable' ? 'receivable' : tone === 'payable' ? 'payable' : 'neutral'}
+              className="uppercase tracking-wider"
+            >
+              {tone === 'receivable' ? 'Receivable' : tone === 'payable' ? 'Payable' : 'Settled'}
+            </Badge>
+          </header>
+
+          {/* The one figure this screen is about. Centred, alone, and given the
+              room to be read across a desk — everything that explains it is one
+              tab away rather than one line below. */}
+          <div className="px-5 py-7 text-center sm:px-6 sm:py-9">
+            <p
+              className={cn(
+                'money-hero',
+                tone === 'receivable' && 'text-receivable',
+                tone === 'payable' && 'text-payable',
+                tone === 'settled' && 'text-ink',
+              )}
+            >
+              {/* Animates when it changes — which is exactly when a settlement
+                  has just been recorded on this page. */}
+              <CountUp minor={Math.abs(regular.position)} currency={currency} />
+            </p>
+            <p
+              className={cn(
+                'mt-2 text-[0.9375rem] font-medium',
+                tone === 'receivable' && 'text-receivable',
+                tone === 'payable' && 'text-payable',
+                tone === 'settled' && 'text-ink-muted',
+              )}
+            >
+              {positionCaption}
+            </p>
+
+            {/* The same position in the workspace's currency. Shown only when
+                there is another currency to show, and labelled as an
+                approximation at today's rate, because that is what it is —
+                nothing settles against this figure. */}
+            {currency !== baseCurrency && regular.position !== 0 ? (
+              <p className="mt-1.5 text-[0.8125rem] text-ink-faint">
+                {regular.position_base === null
+                  ? `No ${currency} → ${baseCurrency} rate yet`
+                  : `${formatApprox(Math.abs(regular.position_base), baseCurrency)} at today’s rate`}
+              </p>
+            ) : null}
+
+            {/* Cash in hand is the headline; if this account also carries an
+                opening balance, the fact is stated here in one line and the
+                figures live in Overview. A second number beside the first is
+                how the old header started becoming a dashboard. */}
+            {hasOpening ? (
+              <p className="mt-3 text-[0.75rem] text-ink-faint">
+                Cash in hand. An opening balance of{' '}
+                <span className="tnum text-ink-muted">
+                  {formatMoney(Math.abs(openingPosition.position), currency, { base: currency })}
+                </span>{' '}
+                is accounted separately —{' '}
+                <Link
+                  href={tabHref('overview')}
+                  className="text-accent underline-offset-2 hover:underline"
+                >
+                  see Overview
+                </Link>
+                .
+              </p>
             ) : null}
           </div>
 
@@ -288,9 +349,229 @@ export default async function PersonPage({
               baseCurrency={baseCurrency}
             />
           </div>
+        </Panel>
+      </Reveal>
 
-          {/* Credit / debit / settled summary */}
-          <div className="grid grid-cols-2 divide-line border-t border-line bg-surface/50 sm:grid-cols-4 sm:divide-x">
+      {/* ------------------------------------------------------------------ */}
+      {/* Four questions, one at a time                                       */}
+      {/* ------------------------------------------------------------------ */}
+      <nav
+        // Horizontally scrollable rather than wrapped: four segments at a
+        // readable size do not fit 375px, and a segmented control that breaks
+        // onto two lines stops reading as one control.
+        className="mt-6 -mx-4 overflow-x-auto px-4 no-scrollbar sm:mx-0 sm:px-0"
+        aria-label="Account sections"
+      >
+        <div className={cn(SEGMENT_GROUP, 'w-max')}>
+          {TABS.map((value) => (
+            <Link
+              key={value}
+              href={tabHref(value)}
+              scroll={false}
+              aria-current={tab === value ? 'page' : undefined}
+              className={cn(segmentClass(tab === value), 'capitalize')}
+            >
+              {value}
+            </Link>
+          ))}
+        </div>
+      </nav>
+
+      <section className="mt-4">
+        {tab === 'overview' ? (
+          <Overview
+            currency={currency}
+            baseCurrency={baseCurrency}
+            regular={regular}
+            tone={tone}
+            series={series}
+            windowSize={Math.min(timeline.length, WINDOW)}
+            transactions={transactions.slice(0, PREVIEW)}
+            transactionCount={transactions.length}
+            timelineProps={timelineProps}
+            person={person}
+            balance={balance}
+            opening={opening}
+            openingHistory={openingHistory}
+            openingActivity={openingActivity}
+            openingPosition={openingPosition}
+            hasOpening={hasOpening}
+            regularCurrencyRows={showRegularByCurrency ? regularCurrencyRows : []}
+            openingCurrencyRows={showOpeningByCurrency ? openingCurrencyRows : []}
+            moreHref={tabHref('transactions')}
+          />
+        ) : tab === 'transactions' ? (
+          <TabPane
+            title="Transactions"
+            note="Credits, debits and transfers. Settlements are on their own tab; the opening balance is not a transaction and is not in this list."
+            action={<StatementButton personId={person.id} personName={person.name} />}
+          >
+            {transactions.length > 0 ? (
+              <Timeline entries={transactions} {...timelineProps} />
+            ) : (
+              <Card>
+                <EmptyState
+                  icon={<WalletIcon />}
+                  title="No transactions here"
+                  description="Credits and debits you record with this account will appear on this tab."
+                />
+              </Card>
+            )}
+          </TabPane>
+        ) : tab === 'settlements' ? (
+          <TabPane
+            title="Settlements"
+            note="Money that actually changed hands, and what it closed."
+          >
+            {settlements.length > 0 ? (
+              <Timeline entries={settlements} {...timelineProps} />
+            ) : (
+              <Card>
+                <EmptyState
+                  icon={<SettleIcon />}
+                  title="Nothing settled yet"
+                  description={
+                    balance.outstanding_receivable > 0 || balance.outstanding_payable > 0
+                      ? `Settle with ${firstName} and the record will appear here.`
+                      : 'Settlements you record against this account will appear here.'
+                  }
+                />
+              </Card>
+            )}
+          </TabPane>
+        ) : (
+          <TabPane
+            title="Activity"
+            note="Every entry on this account in the order it happened, including the opening book."
+          >
+            {timeline.length > 0 || openingActivity.length > 0 ? (
+              <div className="space-y-6">
+                <Timeline entries={timeline} {...timelineProps} />
+                {openingActivity.length > 0 ? (
+                  <div>
+                    <h3 className="stat-label mb-2 px-1">Against the opening balance</h3>
+                    <Timeline entries={openingActivity} {...timelineProps} />
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <Card>
+                <EmptyState
+                  icon={<WalletIcon />}
+                  title="Nothing has happened yet"
+                  description="Everything you record with this account will show up here."
+                />
+              </Card>
+            )}
+          </TabPane>
+        )}
+
+        {/* One set of pagination controls, moving one window, shared by every
+            tab — so "Older" means the same thing wherever the reader is. */}
+        {tab !== 'overview' && (hasMore || pageIndex > 0) ? (
+          <div className="mt-5 flex items-center justify-between gap-4">
+            {pageIndex > 0 ? (
+              <PageLink href={pageHref(pageIndex - 1)}>← Newer</PageLink>
+            ) : (
+              <span />
+            )}
+            <span className="text-[0.75rem] text-ink-faint tnum">
+              {pageIndex * WINDOW + 1}–{Math.min((pageIndex + 1) * WINDOW, total)} of {total}
+            </span>
+            {hasMore ? <PageLink href={pageHref(pageIndex + 1)}>Older →</PageLink> : <span />}
+          </div>
+        ) : null}
+      </section>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+
+/** A tab's heading, its one line of explanation, and whatever it holds. */
+function TabPane({
+  title,
+  note,
+  action,
+  children,
+}: {
+  title: string;
+  note: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <Reveal>
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3 px-1">
+        <div className="min-w-0">
+          <h2 className="font-display text-[0.9375rem] font-semibold tracking-tight text-ink">
+            {title}
+          </h2>
+          <p className="mt-0.5 max-w-prose text-[0.75rem] leading-relaxed text-ink-faint">{note}</p>
+        </div>
+        {action ? <div className="shrink-0">{action}</div> : null}
+      </div>
+      {children}
+    </Reveal>
+  );
+}
+
+/**
+ * Overview — what the headline is made of.
+ *
+ * The order is the order the questions are asked in: the four figures behind
+ * the position, then how it got there, then the last few entries, and only then
+ * the material a reader has to go looking for.
+ */
+function Overview({
+  currency,
+  baseCurrency,
+  regular,
+  tone,
+  series,
+  windowSize,
+  transactions,
+  transactionCount,
+  timelineProps,
+  person,
+  balance,
+  opening,
+  openingHistory,
+  openingActivity,
+  openingPosition,
+  hasOpening,
+  regularCurrencyRows,
+  openingCurrencyRows,
+  moreHref,
+}: {
+  currency: string;
+  baseCurrency: string;
+  regular: { credit: number; debit: number; settled: number; receivable: number; payable: number };
+  tone: 'receivable' | 'payable' | 'settled';
+  series: number[] | null;
+  windowSize: number;
+  transactions: TimelineEntry[];
+  transactionCount: number;
+  timelineProps: TimelineProps;
+  person: Person;
+  balance: PersonBalance;
+  opening: PersonOpening | null;
+  openingHistory: OpeningHistoryEntry[];
+  openingActivity: TimelineEntry[];
+  openingPosition: PositionSplit;
+  hasOpening: boolean;
+  regularCurrencyRows: CurrencyHalfBreakdown[];
+  openingCurrencyRows: CurrencyHalfBreakdown[];
+  moreHref: string;
+}) {
+  return (
+    <div className="space-y-4">
+      {/* The four figures the position is made of. On a hairline grid rather
+          than in four cards: they are one statement read across, not four
+          things (craft floor — cards only where elevation means something). */}
+      <Reveal>
+        <Card className="overflow-hidden">
+          <div className="grid grid-cols-2 divide-line sm:grid-cols-4 sm:divide-x">
             {/* Credit is what they gave you, so it is what you owe. The
                 engine's total_credit counts the other direction — the mapping
                 lives in lib/direction.ts and nowhere else. */}
@@ -306,12 +587,7 @@ export default async function PersonPage({
               currency={currency}
               tone={regular.credit > 0 ? 'receivable' : 'neutral'}
             />
-            <Figure
-              label="Settled"
-              minor={regular.settled}
-              currency={currency}
-              tone="neutral"
-            />
+            <Figure label="Settled" minor={regular.settled} currency={currency} tone="neutral" />
             <Figure
               label={tone === 'payable' ? 'You will pay' : 'You will receive'}
               minor={tone === 'payable' ? regular.payable : regular.receivable}
@@ -319,128 +595,76 @@ export default async function PersonPage({
               tone={tone === 'payable' ? 'payable' : tone === 'settled' ? 'neutral' : 'receivable'}
             />
           </div>
-        </Panel>
+
+          {/* How the position moved, against zero — the crossing between owed
+              to you and owed by you is the only event this line is about. */}
+          {series ? (
+            <div className="border-t border-line px-5 py-4 sm:px-6">
+              <SparklineFigure
+                id="person"
+                label="Balance"
+                points={series}
+                tone={tone === 'payable' ? 'payable' : tone === 'settled' ? 'accent' : 'receivable'}
+                currency={currency}
+                caption={`Across the last ${windowSize} ${windowSize === 1 ? 'entry' : 'entries'}`}
+                chartClassName="h-16"
+              />
+            </div>
+          ) : null}
+        </Card>
+      </Reveal>
+
+      {/* The opening balance, in its own section and never folded into the
+          figure above. */}
+      {hasOpening ? (
+        <OpeningBalanceCard
+          person={person}
+          opening={opening}
+          history={openingHistory}
+          activity={openingActivity}
+          position={openingPosition}
+          currency={currency}
+          baseCurrency={baseCurrency}
+          openingMinor={balance.opening_minor}
+        />
+      ) : null}
+
+      {/* The last few entries, so Overview answers "and what happened lately?"
+          without becoming the Transactions tab. */}
+      <Reveal>
+        <div className="mb-2 flex items-baseline justify-between gap-3 px-1">
+          <h2 className="stat-label">Recent transactions</h2>
+          {transactionCount > transactions.length ? (
+            <Link
+              href={moreHref}
+              className="inline-flex items-center gap-1 text-[0.75rem] font-medium text-accent transition-colors duration-[var(--dur)] hover:text-accent-hover"
+            >
+              All {transactionCount}
+              <ArrowRightIcon className="size-3" />
+            </Link>
+          ) : null}
+        </div>
+        {transactions.length > 0 ? (
+          <Timeline entries={transactions} {...timelineProps} />
+        ) : (
+          <Card>
+            <EmptyState
+              icon={<WalletIcon />}
+              title="No transactions yet"
+              description="Add a credit or a debit and it will appear here."
+            />
+          </Card>
+        )}
       </Reveal>
 
       {/* ------------------------------------------------------------------ */}
-      {/* Cash in hand by the currency each amount was entered in (0024)      */}
+      {/* Looked up, not read. Closed by default, and a real disclosure —     */}
+      {/* <details> is keyboard operable, findable by the browser's own       */}
+      {/* in-page search, and costs no JavaScript.                            */}
       {/* ------------------------------------------------------------------ */}
-      {showRegularByCurrency ? (
-        <Reveal delay={55}>
-          <Card className="mt-4 overflow-hidden">
-            <div className="border-b border-line px-5 py-3.5">
-              <h2 className="font-display text-[0.9375rem] font-semibold tracking-tight text-ink">
-                Cash in hand by currency
-              </h2>
-              <p className="mt-0.5 text-[0.75rem] text-ink-faint">
-                The original amounts entered for this account, kept in their own currency.
-              </p>
-            </div>
-            <CurrencyBreakdown
-              rows={regularCurrencyRows}
-              baseCurrency={currency}
-              kind="cash"
-            />
-          </Card>
-        </Reveal>
-      ) : null}
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Opening balance — its own section, never a row in the history       */}
-      {/* ------------------------------------------------------------------ */}
-      <OpeningBalanceCard
-        person={person}
-        opening={opening}
-        history={openingHistory}
-        activity={openingActivity}
-        position={openingPosition}
-        currency={currency}
-        baseCurrency={baseCurrency}
-        openingMinor={balance.opening_minor}
-      />
-
-      {showOpeningByCurrency ? (
-        <Reveal delay={55}>
-          <Card className="mt-4 overflow-hidden">
-            <div className="border-b border-line px-5 py-3.5">
-              <h2 className="font-display text-[0.9375rem] font-semibold tracking-tight text-ink">
-                Opening balance by currency
-              </h2>
-              <p className="mt-0.5 text-[0.75rem] text-ink-faint">
-                What this account was carried in with, per currency, less whatever has settled.
-              </p>
-            </div>
-            <CurrencyBreakdown
-              rows={openingCurrencyRows}
-              baseCurrency={currency}
-              kind="opening"
-            />
-          </Card>
-        </Reveal>
-      ) : null}
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Regular transactions / details / notes                              */}
-      {/* ------------------------------------------------------------------ */}
-      <section className="mt-6">
-        <div className={cn(SEGMENT_GROUP, 'mb-3')} role="tablist" aria-label="Account sections">
-          {(['history', 'details', 'notes'] as const).map((value) => (
-            <Link
-              key={value}
-              href={tabHref(value)}
-              scroll={false}
-              role="tab"
-              aria-selected={tab === value}
-              className={cn(segmentClass(tab === value), 'capitalize')}
-            >
-              {value === 'history'
-                ? 'Transactions'
-                : value === 'details'
-                  ? 'Details'
-                  : 'Notes'}
-            </Link>
-          ))}
-        </div>
-
-        {tab === 'history' ? (
-          <>
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-3 px-1">
-              <h2 className="text-[0.6875rem] font-semibold uppercase tracking-wider text-ink-faint">
-                Regular transactions
-              </h2>
-              {/* Credits, debits, transfers and settlements. The opening
-                  balance is not one of them and is not in this list. */}
-              <StatementButton personId={person.id} personName={person.name} />
-            </div>
-            <Timeline
-              entries={timeline}
-              person={person}
-              balance={balance}
-              openTransactions={openTxns}
-              currency={currency}
-            />
-
-            {(hasMore || pageIndex > 0) && (
-              <div className="mt-4 flex items-center justify-between">
-                {pageIndex > 0 ? (
-                  <PageLink
-                    href={`/people/${person.id}${pageIndex > 1 ? `?page=${pageIndex - 1}` : ''}`}
-                  >
-                    ← Newer
-                  </PageLink>
-                ) : (
-                  <span />
-                )}
-                {hasMore ? (
-                  <PageLink href={`/people/${person.id}?page=${pageIndex + 1}`}>Older →</PageLink>
-                ) : (
-                  <span />
-                )}
-              </div>
-            )}
-          </>
-        ) : tab === 'details' ? (
-          <Card className="divide-y divide-line">
+      <Reveal>
+        <Disclosure summary="Account details" hint="Type, contact, totals">
+          <dl className="divide-y divide-line">
             <Detail label="Type" value={person.type} className="capitalize" />
             <Detail label="Currency" value={currencyLabel(currency)} />
             <Detail label="Phone" value={person.phone ?? '—'} />
@@ -452,84 +676,91 @@ export default async function PersonPage({
             />
             <Detail
               label="Lifetime volume"
-              value={formatMoney(balance.total_credit + balance.total_debit, currency, { base: currency })}
+              value={formatMoney(balance.total_credit + balance.total_debit, currency, {
+                base: currency,
+              })}
             />
             <Detail label="Status" value={person.is_archived ? 'Archived' : 'Active'} />
-          </Card>
-        ) : (
-          <Card className="px-5 py-4">
-            {person.notes ? (
+          </dl>
+          {person.notes ? (
+            <div className="border-t border-line px-5 py-4">
+              <p className="stat-label mb-1.5">Notes</p>
               <p className="whitespace-pre-wrap text-[0.875rem] leading-relaxed text-ink-muted">
                 {person.notes}
               </p>
-            ) : (
-              <p className="py-6 text-center text-[0.8125rem] text-ink-faint">
-                No notes on this account. Add them from the edit dialog.
-              </p>
-            )}
-          </Card>
-        )}
-      </section>
+            </div>
+          ) : null}
+        </Disclosure>
+      </Reveal>
+
+      {regularCurrencyRows.length > 0 ? (
+        <Reveal>
+          <Disclosure
+            summary="Cash in hand by currency"
+            hint={`${regularCurrencyRows.length} currencies`}
+          >
+            <p className="border-b border-line px-5 py-3 text-[0.75rem] text-ink-faint">
+              The original amounts entered for this account, kept in their own currency.
+            </p>
+            <CurrencyBreakdown rows={regularCurrencyRows} baseCurrency={currency} kind="cash" />
+          </Disclosure>
+        </Reveal>
+      ) : null}
+
+      {openingCurrencyRows.length > 0 ? (
+        <Reveal>
+          <Disclosure
+            summary="Opening balance by currency"
+            hint={`${openingCurrencyRows.length} currencies`}
+          >
+            <p className="border-b border-line px-5 py-3 text-[0.75rem] text-ink-faint">
+              What this account was carried in with, per currency, less whatever has settled.
+            </p>
+            <CurrencyBreakdown rows={openingCurrencyRows} baseCurrency={currency} kind="opening" />
+          </Disclosure>
+        </Reveal>
+      ) : null}
     </div>
   );
 }
 
-/* -------------------------------------------------------------------------- */
-
 /**
- * A figure that sits under the headline without competing with it.
+ * A closed-by-default section.
  *
- * Used for the opening balance and the account position — two numbers the
- * reader needs beside cash in hand, and neither of which may be mistaken for
- * it. Smaller, labelled, and never animated: only the headline moves.
+ * Native `<details>`, so it is keyboard operable, announced correctly, found by
+ * the browser's own in-page search even while closed, and free of JavaScript.
+ * The marker is drawn rather than inherited — the platform triangle is the one
+ * part of the element that never matches a design system.
  */
-function SecondaryFigure({
-  label,
-  minor,
-  currency,
-  caption,
-  baseMinor,
-  baseCurrency,
-  quiet = false,
+function Disclosure({
+  summary,
+  hint,
+  children,
 }: {
-  label: string;
-  minor: number;
-  currency: string;
-  caption: string;
-  /**
-   * The same figure in the workspace currency. Printed only when it says
-   * something the figure above does not — that is, on an account kept in
-   * another currency — and marked as the approximation it is.
-   */
-  baseMinor?: number | null;
-  baseCurrency?: string;
-  quiet?: boolean;
+  summary: string;
+  hint?: string;
+  children: React.ReactNode;
 }) {
   return (
-    <div className="min-w-0">
-      <p className="text-[0.6875rem] font-semibold uppercase tracking-wide text-ink-faint">
-        {label}
-      </p>
-      <p
+    <details className="group overflow-hidden rounded-card border border-line bg-surface shadow-[var(--shadow-card)]">
+      <summary
         className={cn(
-          'tnum mt-0.5 text-[1.0625rem] font-semibold',
-          quiet && 'text-ink-muted',
-          !quiet && minor > 0 && 'text-receivable',
-          !quiet && minor < 0 && 'text-payable',
-          !quiet && minor === 0 && 'text-ink-faint',
+          'flex cursor-pointer list-none items-center gap-3 px-5 py-3.5',
+          'transition-colors duration-[var(--dur)] ease-[var(--ease)] hover:bg-sunken',
+          '[&::-webkit-details-marker]:hidden',
         )}
       >
-        {formatMoney(Math.abs(minor), currency, { base: currency })}
-      </p>
-      {baseCurrency && baseCurrency !== currency && minor !== 0 ? (
-        <p className="tnum text-[0.75rem] text-ink-faint">
-          {baseMinor == null
-            ? `No ${currency} → ${baseCurrency} rate yet`
-            : formatApprox(Math.abs(baseMinor), baseCurrency)}
-        </p>
-      ) : null}
-      <p className="text-[0.75rem] text-ink-faint">{caption}</p>
-    </div>
+        <span className="min-w-0 flex-1 font-display text-[0.9375rem] font-semibold tracking-tight text-ink">
+          {summary}
+        </span>
+        {hint ? <span className="shrink-0 text-[0.75rem] text-ink-faint">{hint}</span> : null}
+        <ArrowRightIcon
+          aria-hidden
+          className="size-3.5 shrink-0 text-ink-faint transition-transform duration-[var(--dur)] ease-[var(--ease)] group-open:rotate-90 motion-reduce:transition-none"
+        />
+      </summary>
+      <div className="border-t border-line">{children}</div>
+    </details>
   );
 }
 
@@ -547,7 +778,7 @@ function Figure({
   return (
     <div className="border-b border-line px-4 py-3.5 last:border-b-0 sm:border-b-0 sm:px-5">
       <p className="truncate text-[0.75rem] text-ink-muted">{label}</p>
-      <p className="mt-1 truncate text-[1rem] font-semibold">
+      <p className="mt-1 text-[1rem] font-semibold">
         <Money minor={minor} currency={currency} base={currency} tone={tone} />
       </p>
     </div>
@@ -565,10 +796,8 @@ function Detail({
 }) {
   return (
     <div className="flex items-center justify-between gap-4 px-5 py-3">
-      <span className="text-[0.8125rem] text-ink-muted">{label}</span>
-      <span className={cn('truncate text-[0.8125rem] font-medium text-ink', className)}>
-        {value}
-      </span>
+      <dt className="text-[0.8125rem] text-ink-muted">{label}</dt>
+      <dd className={cn('truncate text-[0.8125rem] font-medium text-ink', className)}>{value}</dd>
     </div>
   );
 }
@@ -577,7 +806,7 @@ function PageLink({ href, children }: { href: string; children: React.ReactNode 
   return (
     <Link
       href={href}
-      className="rounded-field border border-line bg-surface px-3 py-1.5 text-[0.8125rem] font-medium text-ink-muted transition-[color,border-color] duration-[var(--dur)] hover:border-line-strong hover:text-ink"
+      className="tap rounded-field border border-line bg-surface px-3 py-1.5 text-[0.8125rem] font-medium text-ink-muted transition-[color,border-color] duration-[var(--dur)] hover:border-line-strong hover:text-ink"
     >
       {children}
     </Link>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useRef, useState } from 'react';
+import { useActionState, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Modal } from '@/components/ui/modal';
 import {
@@ -70,6 +70,18 @@ export function SettleSheet({
   const foreign = entryCurrency !== currency;
   const rate = useRate(entryCurrency, currency);
 
+  /**
+   * What the typed amount comes to in the ACCOUNT's currency.
+   *
+   * Reported by the conversion panel, which owns the rate and both overrides.
+   * Null until there is an answer. Before v1.11.0 this sheet did the arithmetic
+   * on the typed figure alone — so settling a rupee account with AED 40 printed
+   * "Settling ₹40.00" and "Remaining" computed from it. The number was in the
+   * wrong currency and every figure derived from it was wrong with it.
+   */
+  const [convertedMinor, setConvertedMinor] = useState<number | null>(null);
+  const onResolved = useCallback((value: number | null) => setConvertedMinor(value), []);
+
   const [state, formAction] = useActionState<ActionResult<unknown> | null, FormData>(
     createSettlement,
     null,
@@ -104,8 +116,16 @@ export function SettleSheet({
       ? balance.outstanding_receivable
       : balance.outstanding_payable;
 
-  const settling = Math.min(Math.max(amount ?? 0, 0), max);
+  // The settlement in the account's own currency — the only denomination the
+  // ceiling, the remainder and the ledger are expressed in.
+  const ledgerMinor = foreign ? convertedMinor : amount;
+  const settling = Math.min(Math.max(ledgerMinor ?? 0, 0), max);
   const remaining = max - settling;
+  // Over the ceiling is possible only on a foreign entry, where the input has
+  // no `max` to clamp against — the figure is not known until it is converted.
+  // The database refuses it either way; saying so before the submit is kinder
+  // than saying so after.
+  const overCeiling = ledgerMinor !== null && ledgerMinor > max;
   const nothingToSettle = !canReceive && !canPay;
 
   // useActionState keeps the last result for the life of the component, so a
@@ -248,20 +268,35 @@ export function SettleSheet({
               </FormSection>
             ) : null}
 
-            <FormSection title="Amount" aside={foreign ? `Account keeps ${currency}` : currency}>
-              {/* The arithmetic, done for the reader (context.md §9). */}
-              <div className="grid grid-cols-3 divide-x divide-line rounded-card border border-line bg-sunken">
-                <Cell label="Outstanding" value={formatMoney(max, currency, { base: currency })} />
-                <Cell
-                  label="Settling"
-                  value={formatMoney(settling, currency, { base: currency })}
-                  tone={direction === 'in' ? 'receivable' : 'payable'}
-                />
-                <Cell
-                  label="Remaining"
-                  value={formatMoney(remaining, currency, { base: currency })}
-                  tone={remaining === 0 ? 'settled' : undefined}
-                />
+            {/* ----------------------------------------------------------------
+                The settlement, as a chain the reader can follow end to end
+                (v1.11.0).
+
+                A settlement is one of the two financial acts this product
+                performs, and the reader has to be able to answer four questions
+                in order without doing any arithmetic:
+
+                  what is owed   →   what I am paying   →   in what, at what
+                  rate   →   and therefore what this settles
+
+                They used to be scattered: a three-cell strip printed the
+                arithmetic ABOVE the field it depended on — so on opening the
+                sheet it read "Settling 0.00, Remaining <the whole balance>",
+                which is an answer to a question nobody had asked yet — and the
+                result of a foreign settlement was never stated in the account's
+                currency at all. Now the balance due anchors the top, the entry
+                sits under it, the rate under that, and the resolved figure
+                closes it.
+                ---------------------------------------------------------------- */}
+            <FormSection title="Settlement" aside={foreign ? `Account keeps ${currency}` : currency}>
+              <div className="flex items-baseline justify-between gap-4 rounded-card border border-line bg-sunken px-4 py-3">
+                <span className="text-[0.8125rem] text-ink-muted">
+                  Balance due
+                  {selected ? ' on this entry' : ''}
+                </span>
+                <span className="money text-ink">
+                  {formatMoney(max, currency, { base: currency })}
+                </span>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
@@ -275,7 +310,7 @@ export function SettleSheet({
                 />
                 <CurrencySelect
                   name="entry_currency_visible"
-                  label="Paid in"
+                  label="Settlement currency"
                   value={entryCurrency}
                   onChange={setEntryCurrency}
                   hint={foreign ? undefined : 'Account currency'}
@@ -285,18 +320,78 @@ export function SettleSheet({
 
               {/* Both overrides, because both questions are real: the rate may
                   be wrong, and the amount that actually arrived may differ from
-                  what any rate implies once a bank has taken its cut. */}
+                  what any rate implies once a bank has taken its cut. Renders
+                  nothing at all on a same-currency settlement, which is most of
+                  them. */}
               <ConversionPanel
                 amountMinor={amount}
                 from={entryCurrency}
                 to={currency}
                 state={rate}
+                onResolved={onResolved}
               />
               <ConversionFields
                 entryCurrency={entryCurrency}
                 accountCurrency={currency}
                 state={rate}
               />
+
+              {/* The end of the chain. One figure, in the account's currency,
+                  named for what it does to the reader's money — and under it,
+                  what is left. */}
+              <div
+                className={cn(
+                  'rounded-card border px-4 py-3.5',
+                  'transition-[border-color,background-color] duration-[var(--dur)] ease-[var(--ease)]',
+                  settling === 0
+                    ? 'border-line bg-sunken'
+                    : direction === 'in'
+                      ? 'border-receivable-line bg-receivable-soft'
+                      : 'border-payable-line bg-payable-soft',
+                )}
+                aria-live="polite"
+              >
+                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <span className="text-[0.8125rem] font-medium text-ink">
+                    {direction === 'in' ? 'You’ll receive' : 'You’ll pay'}
+                  </span>
+                  <span
+                    className={cn(
+                      'money-lg',
+                      settling === 0
+                        ? 'text-ink-faint'
+                        : direction === 'in'
+                          ? 'text-receivable'
+                          : 'text-payable',
+                    )}
+                  >
+                    {formatMoney(settling, currency, { base: currency })}
+                  </span>
+                </div>
+
+                <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-t border-line/70 pt-2">
+                  <span className="text-[0.75rem] text-ink-muted">
+                    {remaining === 0 && settling > 0 ? 'Closes the balance' : 'Remaining after this'}
+                  </span>
+                  <span
+                    className={cn(
+                      'money-sm',
+                      remaining === 0 && settling > 0 ? 'text-ink' : 'text-ink-muted',
+                    )}
+                  >
+                    {formatMoney(remaining, currency, { base: currency })}
+                  </span>
+                </div>
+
+                {overCeiling ? (
+                  <p role="alert" className="mt-2 text-[0.8125rem] leading-relaxed text-payable">
+                    That comes to more than the{' '}
+                    {formatMoney(max, currency, { base: currency })} outstanding. Reduce it, or
+                    settle the difference as a separate entry — the ledger will refuse an
+                    over-settlement.
+                  </p>
+                ) : null}
+              </div>
             </FormSection>
 
             <FormSection title="Details">
@@ -384,33 +479,6 @@ function SettlementSuccess({
       <Button full className="mt-5" onClick={onClose}>
         Done
       </Button>
-    </div>
-  );
-}
-
-function Cell({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone?: 'receivable' | 'payable' | 'settled';
-}) {
-  return (
-    <div className="min-w-0 px-3 py-2.5">
-      <p className="truncate text-[0.6875rem] text-ink-muted">{label}</p>
-      <p
-        className={cn(
-          'tnum mt-0.5 text-[0.875rem] font-semibold [overflow-wrap:anywhere]',
-          tone === 'receivable' && 'text-receivable',
-          tone === 'payable' && 'text-payable',
-          tone === 'settled' && 'text-ink-faint',
-          !tone && 'text-ink',
-        )}
-      >
-        {value}
-      </p>
     </div>
   );
 }

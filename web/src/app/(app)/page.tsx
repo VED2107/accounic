@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/primitives';
 import { CurrencyBreakdown, Money, NetBadge, SplitBar } from '@/components/money';
 import { ActivityChart } from '@/components/charts/activity-chart';
-import { Sparkline, TrendChip } from '@/components/charts/sparkline';
+import { Sparkline, SparklineFigure, TrendChip } from '@/components/charts/sparkline';
 import { ActivityRow } from '@/components/ledger/activity-row';
 import { AddTransactionButton } from '@/components/ledger/add-transaction-button';
 import { Reveal, staggerStyle } from '@/components/motion/reveal';
@@ -191,11 +191,21 @@ export default async function DashboardPage() {
               ) : null}
             </div>
 
-            <div className="flex min-w-0 flex-1 flex-col items-end gap-2">
-              <span className="stat-label">Last 30 days</span>
-              <div className="w-full max-w-[16rem]">
-                <Sparkline id="net" points={trends.net.points} tone="accent" />
-              </div>
+            {/* The net position over the window, drawn against zero rather than
+                against its own floor: on this series the only event worth
+                seeing is the crossing between owed-to-you and owed-by-you, and
+                a line scaled to its own minimum hides exactly that. */}
+            <div className="flex min-w-0 flex-1 justify-end">
+              <SparklineFigure
+                id="net"
+                label="Last 30 days"
+                points={trends.net.points}
+                tone={netTone === 'payable' ? 'payable' : netTone === 'settled' ? 'accent' : 'receivable'}
+                currency={currency}
+                caption="Net position, daily"
+                className="w-full max-w-[16rem]"
+                chartClassName="h-14"
+              />
             </div>
           </div>
 
