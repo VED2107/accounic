@@ -68,7 +68,21 @@ class MoneyText extends StatelessWidget {
         base: base,
       ),
       style: (style ?? const TextStyle()).copyWith(
-        color: tone.color(context, minor),
+        // An explicit tone wins; otherwise the caller's own colour is kept, and
+        // only then does the default ink apply.
+        //
+        // This used to be a flat `tone.color(...)`, which overwrote the style's
+        // colour unconditionally — so every caller that coloured a figure
+        // through `style` had that colour silently discarded and rendered in
+        // plain ink. The whole cash-in-hand breakdown was doing exactly that:
+        // it passed `palette.receivable` and `palette.payable` per figure and
+        // the per-currency headline's balance tone, and all of it came out
+        // white, while the web client's identical block rendered green and red.
+        // Colour is the only thing in this product that carries meaning without
+        // words (context.md §8), and here it was being thrown away.
+        color: tone == MoneyTone.neutral
+            ? (style?.color ?? context.colors.onSurface)
+            : tone.color(context, minor),
         fontFeatures: const [FontFeature.tabularFigures()],
         letterSpacing: -0.2,
         decoration: strikethrough ? TextDecoration.lineThrough : null,

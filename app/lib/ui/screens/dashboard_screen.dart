@@ -43,6 +43,10 @@ class DashboardScreen extends ConsumerWidget {
       subtitle: async.valueOrNull == null
           ? null
           : _standing(async.value!, context),
+      // The one screen whose title is the product greeting rather than a noun,
+      // and so the one place the brand ramp reads as identity rather than as
+      // decoration. Nothing else in the app takes it, and money never does.
+      brandTitle: true,
       compactTitle: const AccounicLogo(markSize: 24, fontSize: 16),
       width: ContentWidth.standard,
       bottomPadding: compact ? 120 : 48,
@@ -98,7 +102,7 @@ class DashboardScreen extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              BrandText(
                 '${greeting()}, ${data.name.split(' ').first}',
                 style: context.display(22),
               ),
@@ -350,7 +354,7 @@ class PositionCard extends ConsumerWidget {
                   const SizedBox(width: AppSpacing.xxl),
                   SizedBox(
                     width: 150,
-                    child: _NetTrend(color: color),
+                    child: _NetTrend(color: color, currency: currency),
                   ),
                 ],
               ],
@@ -463,6 +467,7 @@ class _Side extends StatelessWidget {
             child: AnimatedMoney(
               minor,
               currency: currency,
+              color: color,
               style: context.display(context.isCompact ? 20 : 23),
             ),
           ),
@@ -511,7 +516,10 @@ class _ActivityChartCard extends ConsumerWidget {
 /// activity screen totals. Cumulative, because a chart of daily movement says
 /// nothing about where the ledger stands.
 class _NetTrend extends ConsumerWidget {
-  const _NetTrend({required this.color});
+  const _NetTrend({required this.color, required this.currency});
+
+  /// What the scale and the ending value are denominated in.
+  final String currency;
 
   final Color color;
 
@@ -530,22 +538,17 @@ class _NetTrend extends ConsumerWidget {
       points.add(running);
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          'LAST 30 DAYS',
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.7,
-            color: context.money.inkFaint,
-          ),
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        Sparkline(points: points, color: color, height: 46),
-      ],
+    // Lending less borrowing, accumulated across the window and starting from
+    // zero on its first day. It is NOT the net position printed beside it — the
+    // net position includes every account's whole history and every settlement,
+    // and the two are routinely an order of magnitude apart — so the caption
+    // says what this actually is rather than borrowing the other figure's name.
+    return SparklineFigure(
+      points: points,
+      color: color,
+      currency: currency,
+      label: 'LAST 30 DAYS',
+      caption: 'Lent less borrowed, cumulative',
     );
   }
 }
