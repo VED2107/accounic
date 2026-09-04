@@ -191,18 +191,26 @@ export default async function DashboardPage() {
               ) : null}
             </div>
 
-            {/* The net position over the window, drawn against zero rather than
-                against its own floor: on this series the only event worth
-                seeing is the crossing between owed-to-you and owed-by-you, and
-                a line scaled to its own minimum hides exactly that. */}
+            {/* What this line actually is: lending less borrowing, accumulated
+                across the window and starting from zero on its first day. It is
+                NOT the figure to its left — the net position includes every
+                account's whole history and every settlement, and the two are
+                routinely an order of magnitude apart. Calling it "net position"
+                would put two numbers that far apart under one name.
+
+                Drawn against zero rather than against its own floor, because
+                the one event worth seeing on it is the crossing between lending
+                more than you borrowed and the reverse. */}
             <div className="flex min-w-0 flex-1 justify-end">
               <SparklineFigure
                 id="net"
                 label="Last 30 days"
                 points={trends.net.points}
-                tone={netTone === 'payable' ? 'payable' : netTone === 'settled' ? 'accent' : 'receivable'}
+                tone={
+                  (trends.net.points.at(-1) ?? 0) < 0 ? 'payable' : 'receivable'
+                }
                 currency={currency}
-                caption="Net position, daily"
+                caption="Lent less borrowed, cumulative"
                 className="w-full max-w-[16rem]"
                 chartClassName="h-14"
               />

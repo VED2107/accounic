@@ -149,37 +149,45 @@ export function PersonActionBar({
     <div className="flex flex-col items-stretch gap-3">
       {error ? <ErrorNote>{error}</ErrorNote> : null}
 
-      {/* On a phone the two entry buttons share a row and Settle takes the full
-          width above them, because the primary action should never be the one
-          that wrapped. `flex-1 basis-0` keeps them equal without percentage
-          arithmetic. */}
-      <div className="flex flex-wrap items-center gap-2">
+      {/* On a phone Settle takes a row of its own and the two entry buttons
+          share the next one with the menu. The primary action must never be the
+          one that wrapped, and the menu must never be the orphan on a line by
+          itself — which is what a single wrapping flex row produced at 375px:
+          two buttons, then a lone "…" on the row below with half a card of
+          empty space beside it.
+
+          `basis-0 flex-1` keeps the pair equal without percentage arithmetic,
+          `min-w-0` lets them actually shrink, and the menu is `shrink-0`, so
+          the row fits 360px without wrapping at all. */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         {hasOutstanding ? (
-          <Button className="min-w-32 flex-1 sm:flex-none" onClick={() => setSettleOpen(true)}>
+          <Button className="w-full sm:w-auto sm:min-w-32" onClick={() => setSettleOpen(true)}>
             <SettleIcon className="size-4" />
             Settle
           </Button>
         ) : null}
 
-        <Button
-          variant="secondary"
-          className="flex-1 basis-0 sm:flex-none sm:basis-auto"
-          onClick={() => setAddType(TYPE_FOR_FLOW.person_to_owner)}
-        >
-          <ArrowDownIcon className="size-4 text-payable" />
-          Add credit
-        </Button>
+        <div className="flex items-center gap-2 sm:contents">
+          <Button
+            variant="secondary"
+            className="min-w-0 flex-1 basis-0 sm:flex-none sm:basis-auto"
+            onClick={() => setAddType(TYPE_FOR_FLOW.person_to_owner)}
+          >
+            <ArrowDownIcon className="size-4 text-payable" />
+            Add credit
+          </Button>
 
-        <Button
-          variant="secondary"
-          className="flex-1 basis-0 sm:flex-none sm:basis-auto"
-          onClick={() => setAddType(TYPE_FOR_FLOW.owner_to_person)}
-        >
-          <ArrowUpIcon className="size-4 text-receivable" />
-          Add debit
-        </Button>
+          <Button
+            variant="secondary"
+            className="min-w-0 flex-1 basis-0 sm:flex-none sm:basis-auto"
+            onClick={() => setAddType(TYPE_FOR_FLOW.owner_to_person)}
+          >
+            <ArrowUpIcon className="size-4 text-receivable" />
+            Add debit
+          </Button>
 
-        <Menu label={person.name} items={items} className="ml-auto" />
+          <Menu label={person.name} items={items} className="shrink-0 sm:ml-auto" />
+        </div>
       </div>
 
       <TransactionSheet

@@ -324,11 +324,25 @@ export default async function PersonPage({
                 how the old header started becoming a dashboard. */}
             {hasOpening ? (
               <p className="mt-3 text-[0.75rem] text-ink-faint">
-                Cash in hand. An opening balance of{' '}
-                <span className="tnum text-ink-muted">
-                  {formatMoney(Math.abs(openingPosition.position), currency, { base: currency })}
-                </span>{' '}
-                is accounted separately —{' '}
+                Cash in hand.{' '}
+                {openingPosition.position === 0 ? (
+                  // An account whose opening book is closed still HAS one, and
+                  // "an opening balance of ₹0" is a true figure that reads
+                  // as an absurd one. What is left of it is nothing; that is the
+                  // sentence to write.
+                  <>This account&rsquo;s opening balance is settled in full</>
+                ) : (
+                  <>
+                    An opening balance of{' '}
+                    <span className="tnum text-ink-muted">
+                      {formatMoney(Math.abs(openingPosition.position), currency, {
+                        base: currency,
+                      })}
+                    </span>{' '}
+                    is accounted separately
+                  </>
+                )}{' '}
+                &mdash;{' '}
                 <Link
                   href={tabHref('overview')}
                   className="text-accent underline-offset-2 hover:underline"

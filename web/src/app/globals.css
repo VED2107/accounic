@@ -399,8 +399,34 @@
     letter-spacing: -0.018em;
   }
 
-  /* One consistent focus treatment everywhere, keyboard-first (context.md §18). */
-  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  /* One consistent focus treatment everywhere, keyboard-first (context.md §18).
+
+     `summary` joined the list in v1.11.0. Disclosures are focusable by the
+     platform, not by anything this app does, so a selector written from the
+     app's own controls missed them entirely — a keyboard user tabbing onto
+     "Account details" got whatever outline the browser felt like, which on a
+     near-black ground is frequently nothing at all. */
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  summary:focus-visible,
+  [tabindex]:focus-visible {
+    /* Written out rather than wrapped in :where().
+
+       :where() zeroes specificity, which is usually the polite thing to do in a
+       base layer — but Tailwind's preflight sets `outline-color: currentColor`
+       on the universal selector, and at equal specificity the later rule wins.
+       The result was that this ring, documented since v1.0 as the product's one
+       brand-blue focus treatment, had been rendering in whatever colour the
+       focused element's TEXT happened to be for the life of the project: black
+       on a button, and grey — 2px of #646e7e on #f6f7f9 — on the quiet links
+       and metadata rows where a keyboard user needs it most.
+
+       Measured, not guessed: getComputedStyle on a focused control returned
+       outline-color equal to its own `color` on every element tested, in both
+       schemes. */
     outline: 2px solid var(--accent);
     outline-offset: 2px;
     border-radius: 0.5rem;

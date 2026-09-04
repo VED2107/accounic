@@ -142,20 +142,30 @@ export function Sparkline({
         vectorEffect="non-scaling-stroke"
       />
 
-      {/* The endpoint is the current value, so it is marked rather than merely
-          ended: a filled dot inside a ring of the page's own surface colour, so
-          it reads as a pin on the line rather than a bump in it. */}
-      <circle
-        cx={coords[coords.length - 1]![0]}
-        cy={coords[coords.length - 1]![1]}
-        r="3"
-        fill="var(--surface)"
-        stroke={stroke}
-        strokeWidth="1.5"
-        vectorEffect="non-scaling-stroke"
-      />
     </svg>
   );
+}
+
+/**
+ * Where the line ends, as a fraction of the chart's height from the top.
+ *
+ * The endpoint marker cannot be drawn inside the SVG. The chart stretches to
+ * fill its box with `preserveAspectRatio="none"`, and a non-uniform scale turns
+ * a circle into an ellipse — badly, at the aspect ratios these are used at, and
+ * `vector-effect` corrects stroke width but never geometry. So the marker is an
+ * HTML element positioned over the chart, and this is the arithmetic that puts
+ * it on the line. It repeats the projection in [Sparkline] deliberately: the
+ * alternative is the chart returning coordinates, which would turn a server
+ * component with one job into one with two.
+ */
+function endpointFraction(points: number[], zeroBaseline: boolean): number {
+  const height = 32;
+  const pad = 2;
+  const min = Math.min(...points, zeroBaseline ? 0 : Infinity);
+  const max = Math.max(...points, zeroBaseline ? 0 : -Infinity);
+  const span = max - min || 1;
+  const last = points[points.length - 1]!;
+  return (height - pad - ((last - min) / span) * (height - pad * 2)) / height;
 }
 
 /**
@@ -173,6 +183,7 @@ export function SparklineFigure({
   currency,
   caption,
   label,
+  zeroBaseline = true,
   className,
   chartClassName = 'h-12',
 }: {
@@ -185,14 +196,39 @@ export function SparklineFigure({
   caption: string;
   /** The overline above the chart. */
   label?: string;
+  /**
+   * Whether the chart forces zero into its domain. Passed through so the scale
+   * beside it describes the same range the line is drawn in.
+   */
+  zeroBaseline?: boolean;
   className?: string;
   chartClassName?: string;
 }) {
   if (points.length < 2) return null;
 
   const last = points[points.length - 1]!;
-  const min = Math.min(...points);
-  const max = Math.max(...points);
+  // The scale has to describe the domain the CHART is drawn against, not the
+  // data's own range. With a zero baseline the chart stretches its domain to
+  // include zero, so a rail labelled from the data's minimum tells the reader
+  // the line starts higher than it is drawn — which is worse than no scale at
+  // all, because it looks authoritative.
+  const min = Math.min(...points, zeroBaseline ? 0 : Infinity);
+  const max = Math.max(...points, zeroBaseline ? 0 : -Infinity);
+  // A scale bound keeps its sign.
+  //
+  // Everywhere else in the product a figure is printed as an absolute with a
+  // word beside it saying which way it runs — "₹4,500 · you owe ved" — because
+  // a minus sign in front of money is easy to miss and easy to misread. An axis
+  // has no room for that word, and dropping the sign there is not a
+  // simplification but a falsehood: an account whose balance ran from −₹4,500
+  // to ₹15,500 was labelling its floor "₹4,500", a range that contained neither
+  // the zero line drawn through the middle of the chart nor the ₹2,537.50 the
+  // line ends on.
+  const bound = (minor: number) =>
+    `${minor < 0 ? '−' : ''}${formatMoney(Math.abs(minor), currency, {
+      base: currency,
+      compactDecimals: true,
+    })}`;
   const money = (minor: number) =>
     formatMoney(Math.abs(minor), currency, { base: currency, compactDecimals: true });
 
@@ -204,16 +240,29 @@ export function SparklineFigure({
         {/* The scale. Two numbers, hairline-quiet, so the shape has units — a
             line without them can only be compared to itself. */}
         <div className="flex shrink-0 flex-col justify-between py-0.5 text-right text-[0.625rem] leading-none text-ink-subtle tnum">
-          <span>{money(max)}</span>
-          <span>{money(min)}</span>
+          <span>{bound(max)}</span>
+          <span>{bound(min)}</span>
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="relative min-w-0 flex-1">
           <Sparkline
             id={id}
             points={points}
             tone={tone}
-            zeroBaseline
+            zeroBaseline={zeroBaseline}
             className={chartClassName}
+          />
+          {/* The current value, pinned to the line. A ring in the page's own
+              ground rather than a filled dot, so it reads as a marker on the
+              line instead of a thickening of it. */}
+          <span
+            aria-hidden
+            style={{ top: `${endpointFraction(points, zeroBaseline) * 100}%` }}
+            className={cn(
+              'pointer-events-none absolute right-0 size-2 -translate-y-1/2 translate-x-1/2 rounded-full border-2 bg-surface',
+              tone === 'receivable' && 'border-receivable',
+              tone === 'payable' && 'border-payable',
+              tone === 'accent' && 'border-accent',
+            )}
           />
         </div>
       </div>
