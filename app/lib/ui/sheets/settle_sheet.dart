@@ -93,6 +93,16 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
   bool _rateManual = false;
   int? _manualRateE9;
 
+  /// What the typed amount comes to in the ACCOUNT's currency.
+  ///
+  /// Reported by the conversion panel, which owns the rate and both overrides.
+  /// Null until there is an answer. Before v1.11.0 this sheet did its
+  /// arithmetic on the typed figure alone — so settling a rupee account with
+  /// AED 40 printed "Settling ₹40.00" and computed the remainder from it. The
+  /// number was in the wrong currency and every figure derived from it was
+  /// wrong with it. Same fix, same reason, as the web client's.
+  int? _converted;
+
   String get _accountCurrency => widget.balance.currency;
   String get _entry => _entryCurrency ?? _accountCurrency;
   bool get _foreign => _entry != _accountCurrency;
@@ -152,6 +162,18 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
       (_direction == SettlementDirection.moneyIn
           ? widget.balance.outstandingReceivable
           : widget.balance.outstandingPayable);
+
+  /// The settlement in the account's own currency — the only denomination the
+  /// ceiling, the remainder and the ledger are expressed in.
+  int? get _ledgerMinor => _foreign ? _converted : _amount;
+
+  int get _settling => (_ledgerMinor ?? 0).clamp(0, _max);
+
+  /// Over the ceiling is possible only on a foreign entry, where the field has
+  /// no ceiling to clamp against because the figure is not known until it is
+  /// converted. The database refuses it either way; saying so before the submit
+  /// is kinder than saying so after.
+  bool get _overCeiling => _ledgerMinor != null && _ledgerMinor! > _max;
 
   Future<void> _save() async {
     if (!_canSave) return;
@@ -390,15 +412,23 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
           ],
         ),
 
+        // The settlement, as a chain the reader can follow end to end
+        // (v1.11.0). Four questions, in order, with no arithmetic asked of
+        // anyone: what is owed → what I am paying → in what, at what rate →
+        // and therefore what this settles.
+        //
+        // The three-cell strip that used to sit here printed the arithmetic
+        // ABOVE the field it depended on, so opening the sheet read "Settling
+        // 0.00, Remaining <the whole balance>" — an answer to a question nobody
+        // had asked yet.
         FormSection(
-          title: 'Amount',
+          title: 'Settlement',
           aside: _foreign ? 'Account keeps $currency' : currency,
           children: [
-            _Arithmetic(
-              outstanding: _max,
-              settling: (_amount ?? 0).clamp(0, _max),
+            _BalanceDue(
+              minor: _max,
               currency: currency,
-              accent: accent,
+              onEntry: _selected != null,
             ),
             const SizedBox(height: AppSpacing.md),
             AmountField(
@@ -415,7 +445,7 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
             ),
             const SizedBox(height: AppSpacing.md),
             CurrencyField(
-              label: 'Paid in',
+              label: 'Settlement currency',
               value: _entry,
               onChanged: (next) => setState(() => _entryCurrency = next),
               helper: _foreign
@@ -437,8 +467,21 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
                 rateManual: _rateManual,
                 onRateManualChanged: (manual) => setState(() => _rateManual = manual),
                 onManualRateChanged: (rateE9) => setState(() => _manualRateE9 = rateE9),
+                onResolved: (minor) => setState(() => _converted = minor),
               ),
             ],
+            const SizedBox(height: AppSpacing.md),
+            // The end of the chain. One figure, in the account's currency,
+            // named for what it does to the reader's money — and under it, what
+            // is left.
+            _Outcome(
+              settling: _settling,
+              remaining: _max - _settling,
+              currency: currency,
+              incoming: incoming,
+              accent: accent,
+              overBy: _overCeiling ? _max : null,
+            ),
           ],
         ),
 
@@ -520,70 +563,180 @@ class _SideOption extends StatelessWidget {
 }
 
 
-/// Outstanding, settling, remaining — the sum the user would otherwise do in
-/// their head, kept live as they type.
-class _Arithmetic extends StatelessWidget {
-  const _Arithmetic({
-    required this.outstanding,
-    required this.settling,
+/// What is owed, stated before anything is typed — the anchor the rest of the
+/// sheet is measured against.
+class _BalanceDue extends StatelessWidget {
+  const _BalanceDue({
+    required this.minor,
     required this.currency,
-    required this.accent,
+    required this.onEntry,
   });
 
-  final int outstanding;
-  final int settling;
+  final int minor;
   final String currency;
-  final Color accent;
+
+  /// True when a single transaction was named rather than the whole account.
+  final bool onEntry;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.money;
-    final remaining = outstanding - settling;
-
-    Widget cell(String label, int minor, Color color) => Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12, color: palette.inkMuted)),
-                const SizedBox(height: 3),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: AnimatedMoney(
-                    minor,
-                    currency: currency,
-                    color: color,
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-
     return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: palette.sunken,
         borderRadius: BorderRadius.circular(AppTheme.radiusCard),
         border: Border.all(color: palette.line),
       ),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            cell('Outstanding', outstanding, context.colors.onSurface),
-            VerticalDivider(width: 1, color: palette.line),
-            cell('Settling', settling, accent),
-            VerticalDivider(width: 1, color: palette.line),
-            cell('Remaining', remaining,
-                remaining == 0 ? palette.inkFaint : context.colors.onSurface),
-          ],
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              onEntry ? 'Balance due on this entry' : 'Balance due',
+              style: TextStyle(fontSize: 13, color: palette.inkMuted),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Text(
+                formatMoney(minor, currency: currency, base: currency),
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: context.colors.onSurface,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// What the settlement comes to, and what it leaves behind.
+///
+/// The figure here is always in the ACCOUNT's currency, whatever the payment
+/// was typed in — that is the whole reason the conversion panel reports what it
+/// resolves to instead of the sheet guessing from the typed number.
+class _Outcome extends StatelessWidget {
+  const _Outcome({
+    required this.settling,
+    required this.remaining,
+    required this.currency,
+    required this.incoming,
+    required this.accent,
+    this.overBy,
+  });
+
+  final int settling;
+  final int remaining;
+  final String currency;
+  final bool incoming;
+  final Color accent;
+
+  /// The ceiling, when the converted amount is above it. Null otherwise.
+  final int? overBy;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.money;
+    final idle = settling == 0;
+    final closes = remaining == 0 && settling > 0;
+
+    return AnimatedContainer(
+      duration: Motion.normal,
+      curve: Motion.enter,
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: idle
+            ? palette.sunken
+            : incoming
+                ? palette.receivableSoft
+                : palette.payableSoft,
+        borderRadius: BorderRadius.circular(AppTheme.radiusCard),
+        border: Border.all(
+          color: idle
+              ? palette.line
+              : incoming
+                  ? palette.receivableLine
+                  : palette.payableLine,
         ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  incoming ? 'You’ll receive' : 'You’ll pay',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: context.colors.onSurface,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: AnimatedMoney(
+                    settling,
+                    currency: currency,
+                    color: idle ? palette.inkFaint : accent,
+                    style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Divider(height: 1, color: palette.line),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  closes ? 'Closes the balance' : 'Remaining after this',
+                  style: TextStyle(fontSize: 12, color: palette.inkMuted),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: AnimatedMoney(
+                    remaining,
+                    currency: currency,
+                    color: closes ? context.colors.onSurface : palette.inkMuted,
+                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (overBy != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'That comes to more than the '
+              '${formatMoney(overBy!, currency: currency, base: currency)} '
+              'outstanding. Reduce it, or settle the difference as a separate '
+              'entry — the ledger will refuse an over-settlement.',
+              style: TextStyle(fontSize: 12.5, height: 1.45, color: palette.payable),
+            ),
+          ],
+        ],
       ),
     );
   }

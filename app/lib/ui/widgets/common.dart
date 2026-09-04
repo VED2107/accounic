@@ -332,7 +332,7 @@ class Avatar extends StatelessWidget {
 enum AvatarTone { neutral, receivable, payable, accent }
 
 /// A bordered card with an optional header row.
-class SectionCard extends StatelessWidget {
+class SectionCard extends StatefulWidget {
   const SectionCard({
     super.key,
     required this.child,
@@ -341,12 +341,26 @@ class SectionCard extends StatelessWidget {
     this.padding = EdgeInsets.zero,
     this.raised = false,
     this.brandRule = false,
+    this.collapsible = false,
+    this.hint,
   });
 
   final Widget child;
   final String? title;
   final Widget? action;
   final EdgeInsets padding;
+
+  /// Closed by default, opened by tapping the title row.
+  ///
+  /// For material a reader looks up rather than reads: a per-currency
+  /// breakdown, an account's own metadata. The web client uses a native
+  /// `<details>` for exactly the same job, and the rule is the same on both —
+  /// nothing a reader NEEDS ever hides behind one of these.
+  final bool collapsible;
+
+  /// A short right-aligned note in the title row — a count, a currency total.
+  /// Only drawn when [collapsible] is set and no [action] was given.
+  final String? hint;
 
   /// Lifts the card a step above the page — used for the one hero panel on a
   /// screen, never for a list.
@@ -357,40 +371,88 @@ class SectionCard extends StatelessWidget {
   final bool brandRule;
 
   @override
+  State<SectionCard> createState() => _SectionCardState();
+}
+
+class _SectionCardState extends State<SectionCard> {
+  bool _open = false;
+
+  @override
   Widget build(BuildContext context) {
-    final card = Card(
+    final palette = context.money;
+    final collapsed = widget.collapsible && !_open;
+
+    Widget header() {
+      final row = Padding(
+        padding: EdgeInsets.fromLTRB(16, widget.brandRule ? 13 : 14, 8, 14),
+        child: Row(
+          children: [
+            Expanded(child: Text(widget.title!, style: context.display(15))),
+            if (widget.action != null)
+              widget.action!
+            else if (widget.collapsible) ...[
+              if (widget.hint != null)
+                Text(
+                  widget.hint!,
+                  style: TextStyle(fontSize: 12, color: palette.inkFaint),
+                ),
+              const SizedBox(width: AppSpacing.sm),
+              // A quarter turn rather than a swap: the same glyph rotating is
+              // read as the same control changing state, where two different
+              // glyphs are read as two controls.
+              AnimatedRotation(
+                turns: _open ? 0.25 : 0,
+                duration: Motion.fast,
+                curve: Motion.enter,
+                child: Icon(AppIcons.forward, size: AppIconSize.sm, color: palette.inkFaint),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+            ],
+          ],
+        ),
+      );
+
+      if (!widget.collapsible) return row;
+      return Semantics(
+        button: true,
+        expanded: _open,
+        child: Pressable(
+          scale: 0.995,
+          onTap: () => setState(() => _open = !_open),
+          child: row,
+        ),
+      );
+    }
+
+    return Card(
       clipBehavior: Clip.antiAlias,
-      color: raised ? context.money.raised : null,
+      color: widget.raised ? palette.raised : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (brandRule)
+          if (widget.brandRule)
             const SizedBox(
               height: 1,
               child: DecoratedBox(decoration: BoxDecoration(gradient: AccounicColors.brandGradient)),
             ),
-          if (title != null) ...[
-            Padding(
-              padding: EdgeInsets.fromLTRB(16, brandRule ? 13 : 14, 8, 14),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      title!,
-                      style: context.display(15),
-                    ),
-                  ),
-                  if (action != null) action!,
-                ],
-              ),
-            ),
-            Divider(height: 1, color: context.money.line),
+          if (widget.title != null) ...[
+            header(),
+            if (!collapsed) Divider(height: 1, color: palette.line),
           ],
-          Padding(padding: padding, child: child),
+          // Size, not opacity: the card has to give the space back when it
+          // closes, and AnimatedSize does that on one implicit controller
+          // rather than on a controller per child.
+          AnimatedSize(
+            alignment: Alignment.topCenter,
+            duration: Motion.normal,
+            curve: Motion.move,
+            child: collapsed
+                ? const SizedBox(width: double.infinity)
+                : Padding(padding: widget.padding, child: widget.child),
+          ),
         ],
       ),
     );
-    return card;
   }
 }
 
@@ -1061,6 +1123,7 @@ class CurrencyBreakdownCard extends StatelessWidget {
     required this.rows,
     required this.baseCurrency,
     required this.opening,
+    this.collapsible = false,
   });
 
   final String title;
@@ -1068,6 +1131,11 @@ class CurrencyBreakdownCard extends StatelessWidget {
   final List<CurrencyHalfBreakdown> rows;
   final String baseCurrency;
   final bool opening;
+
+  /// Closed until asked for. Set on the person screen, where the breakdown is
+  /// supporting material behind an Overview tab rather than the answer to the
+  /// question the screen was opened with.
+  final bool collapsible;
 
   @override
   Widget build(BuildContext context) {
@@ -1077,6 +1145,10 @@ class CurrencyBreakdownCard extends StatelessWidget {
 
     return SectionCard(
       title: title,
+      collapsible: collapsible,
+      hint: collapsible
+          ? '${ordered.length} ${ordered.length == 1 ? 'currency' : 'currencies'}'
+          : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

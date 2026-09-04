@@ -152,6 +152,7 @@ class ConversionPanel extends ConsumerStatefulWidget {
     this.onManualRateChanged,
     this.initialRateE9,
     this.allowAmountOverride = true,
+    this.onResolved,
   });
 
   final int? amountMinor;
@@ -192,6 +193,20 @@ class ConversionPanel extends ConsumerStatefulWidget {
   /// The twin of `allowAmountOverride` on the web's `ConversionPanel`.
   final bool allowAmountOverride;
 
+  /// The figure this entry will be written into the ledger as, in [to],
+  /// reported whenever it changes (v1.11.0).
+  ///
+  /// The settlement sheet has to state "you'll receive X" — X being the
+  /// account-currency figure, after both overrides. It used to print the amount
+  /// the user typed, which on a foreign settlement is a number in the wrong
+  /// currency wearing the account's symbol. Nothing may re-derive this: the
+  /// panel owns the rate and the two overrides, so the panel is what says what
+  /// it resolves to. Null while the answer is genuinely unknown — no amount
+  /// yet, no rate, or an override mid-typing that does not parse.
+  ///
+  /// The twin of `onResolved` on the web's `ConversionPanel`.
+  final ValueChanged<int?>? onResolved;
+
   @override
   ConsumerState<ConversionPanel> createState() => _ConversionPanelState();
 }
@@ -209,6 +224,15 @@ class _ConversionPanelState extends ConsumerState<ConversionPanel> {
   );
   String? _error;
   String? _rateError;
+
+  /// The override's parsed figure, in the ACCOUNT currency. Kept so the
+  /// resolved value can be reported without parsing the field twice.
+  int? _actualMinor;
+
+  /// The last value handed to [ConversionPanel.onResolved]. Reported on change
+  /// only, so a rebuild that changes nothing costs nothing.
+  int? _reported;
+  bool _everReported = false;
 
   /// The typed rate, once it parses. The panel previews at this and the
   /// database writes at it; the shortened rate the sentence prints is never
@@ -264,6 +288,7 @@ class _ConversionPanelState extends ConsumerState<ConversionPanel> {
     final target = normaliseCode(widget.to);
     if (raw.trim().isEmpty) {
       setState(() => _error = null);
+      _actualMinor = null;
       widget.onActualChanged(null);
       return;
     }
@@ -273,11 +298,24 @@ class _ConversionPanelState extends ConsumerState<ConversionPanel> {
     final minor = parseAmountToMinor(raw, currency: target);
     if (minor == null || minor <= 0) {
       setState(() => _error = 'Enter a valid $target amount');
+      _actualMinor = null;
       widget.onActualChanged(null);
       return;
     }
     setState(() => _error = null);
+    _actualMinor = minor;
     widget.onActualChanged(minor);
+  }
+
+  void _report(int? value) {
+    if (_everReported && _reported == value) return;
+    _everReported = true;
+    _reported = value;
+    final callback = widget.onResolved;
+    if (callback == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) callback(value);
+    });
   }
 
   @override
@@ -318,9 +356,15 @@ class _ConversionPanelState extends ConsumerState<ConversionPanel> {
           ],
         ),
       ),
-      error: (_, __) => _Unavailable(from: source, to: target),
+      error: (_, __) {
+        _report(null);
+        return _Unavailable(from: source, to: target);
+      },
       data: (quote) {
-        if (quote == null) return _Unavailable(from: source, to: target);
+        if (quote == null) {
+          _report(null);
+          return _Unavailable(from: source, to: target);
+        }
 
         // The rate this entry will actually be written at: the typed one when
         // there is a valid one, otherwise the fetched one. Used at full stored
@@ -332,6 +376,12 @@ class _ConversionPanelState extends ConsumerState<ConversionPanel> {
         final automatic = widget.amountMinor == null
             ? null
             : convertMinor(widget.amountMinor!, source, target, rateE9);
+
+        // What this entry resolves to in the ledger currency: the overridden
+        // figure when there is one, otherwise the converted one. Reported after
+        // the frame, because the owner rebuilds on it and calling back during
+        // build would be a setState inside a build.
+        _report(widget.manual ? _actualMinor : automatic);
 
         return Container(
           width: double.infinity,
