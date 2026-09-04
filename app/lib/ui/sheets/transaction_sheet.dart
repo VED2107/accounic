@@ -17,6 +17,7 @@ import '../widgets/currency_field.dart';
 import '../../core/layout.dart';
 import '../widgets/forms.dart';
 import 'sheet_scaffold.dart';
+import '../widgets/date_picker.dart';
 
 /// Fast transaction entry (context.md §14).
 ///
@@ -531,13 +532,14 @@ class _DateField extends StatelessWidget {
         InkWell(
           borderRadius: BorderRadius.circular(10),
           onTap: () async {
-            final picked = await showDatePicker(
-              context: context,
+            final picked = await showAccounicDatePicker(
+              context,
               initialDate: parseDbDate(value),
               firstDate: DateTime(2000),
               // Future-dated entries are rejected by the database, so the
               // picker will not offer one either.
               lastDate: DateTime.now(),
+              title: 'Which day?',
             );
             if (picked != null) onChanged(isoDate(picked));
           },

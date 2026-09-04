@@ -27,6 +27,7 @@ import { FALLBACK_CURRENCY, normaliseCode } from '@/lib/currencies';
 import { TYPE_FOR_FLOW, isReceivable, txnEffect, txnMeaning } from '@/lib/direction';
 import { todayIso } from '@/lib/dates';
 import type { ActionResult, ConversionMode, TxnType } from '@/lib/types';
+import { DateField } from '@/components/ui/date-picker';
 
 interface EditableTransaction {
   id: string;
@@ -238,10 +239,9 @@ export function TransactionSheet({
           <FormSection title="Details">
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Date" htmlFor="date" error={fieldError('date')}>
-                <Input
+                <DateField
                   id="date"
                   name="date"
-                  type="date"
                   max={todayIso()}
                   defaultValue={transaction?.transaction_date ?? todayIso()}
                   required

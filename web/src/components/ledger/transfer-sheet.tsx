@@ -23,6 +23,7 @@ import { convertMinor, FALLBACK_CURRENCY, normaliseCode } from '@/lib/currencies
 import { formatMoney } from '@/lib/money';
 import { todayIso } from '@/lib/dates';
 import type { ActionResult } from '@/lib/types';
+import { DateField } from '@/components/ui/date-picker';
 
 /**
  * Move money from one person to another (upgrade §46).
@@ -255,10 +256,9 @@ export function TransferSheet({
           <FormSection title="Details">
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Date" htmlFor="transfer-date" error={fieldError('date')}>
-                <Input
+                <DateField
                   id="transfer-date"
                   name="date"
-                  type="date"
                   max={todayIso()}
                   defaultValue={todayIso()}
                   required

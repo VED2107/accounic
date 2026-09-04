@@ -60,6 +60,23 @@ class ExportFilters {
     'p_include_void': includeVoid,
   };
 
+  /// The filter contract for an Activity export.
+  ///
+  /// Two independent choices, both expressed in what `export_entries()` already
+  /// accepts: the category as [kinds] (null for Everything), and the dates as
+  /// [from]/[to] (equal for one day, both null for the whole feed).
+  ///
+  /// `scope` stays `all` because the Activity feed includes the opening book,
+  /// and voided history stays out because `activity_page()` excludes it too —
+  /// the export must not show what the screen does not.
+  ///
+  /// Mirrors `activityExportRequest()` in `web/src/lib/export/activity.ts`.
+  factory ExportFilters.activity({
+    List<String>? kinds,
+    String? from,
+    String? to,
+  }) => ExportFilters(from: from, to: to, kinds: kinds, scope: 'all');
+
   /// What this export holds, in the words a sheet can show before generating it.
   String get description {
     final parts = <String>[];

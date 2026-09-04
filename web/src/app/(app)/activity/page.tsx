@@ -15,6 +15,8 @@ import { ActivityRow } from '@/components/ledger/activity-row';
 import { AddTransactionButton } from '@/components/ledger/add-transaction-button';
 import { Reveal, staggerStyle } from '@/components/motion/reveal';
 import { ActivityIcon } from '@/components/icons';
+import { ExportActivityButton, ExportDayButton } from './export-activity';
+import { parseView } from '@/lib/export/activity';
 import { dayGroupLabel, groupByDate } from '@/lib/dates';
 import { trendsFromBuckets } from '@/lib/series';
 
@@ -40,6 +42,8 @@ export default async function ActivityPage({
   const pageIndex = Math.max(0, Number.parseInt(params.page ?? '0', 10) || 0);
   const kind: Kind | undefined =
     params.kind === 'transaction' || params.kind === 'settlement' ? params.kind : undefined;
+  // The same three words the tabs use, in the vocabulary the export speaks.
+  const view = parseView(kind);
 
   const [me, activity, buckets] = await Promise.all([
     getMe(),
@@ -74,6 +78,10 @@ export default async function ActivityPage({
         <PageHeader
           title="Activity"
           description={`${activity.total} ${activity.total === 1 ? 'entry' : 'entries'} in this workspace`}
+          // The feed is what this screen is for, so exporting it belongs here
+          // rather than three screens away in Profile. On the title's line,
+          // above the tabs, so it never reads as a fourth tab.
+          action={<ExportActivityButton view={view} hasEntries={activity.total > 0} />}
         />
       </Reveal>
 
@@ -148,12 +156,15 @@ export default async function ActivityPage({
         <div className="mt-4 space-y-5">
           {groups.map((group, groupIndex) => (
             <Reveal key={group.date} delay={Math.min(groupIndex, 4) * 30}>
-              <p className="mb-2 flex items-center gap-3 px-1 text-[0.6875rem] font-semibold uppercase tracking-wider text-ink-faint">
+              <p className="group/day mb-2 flex items-center gap-3 px-1 text-[0.6875rem] font-semibold uppercase tracking-wider text-ink-faint">
                 {group.label}
                 <span aria-hidden className="h-px flex-1 bg-line" />
                 <span className="tnum font-normal normal-case tracking-normal">
                   {group.items.length} {group.items.length === 1 ? 'entry' : 'entries'}
                 </span>
+                {/* The day itself is the handle for exporting the day. Quiet
+                    until wanted: the heading is structure, not chrome. */}
+                <ExportDayButton view={view} day={group.date} dayLabel={group.label} />
               </p>
               <Card className="overflow-hidden">
                 <ul className="divide-y divide-line">

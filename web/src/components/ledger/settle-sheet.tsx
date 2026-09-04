@@ -22,6 +22,7 @@ import { createSettlement } from '@/lib/actions';
 import { formatMoney } from '@/lib/money';
 import { friendlyDate, todayIso } from '@/lib/dates';
 import type { ActionResult, OpenTransaction, PersonBalance, SettlementDirection } from '@/lib/types';
+import { DateField } from '@/components/ui/date-picker';
 
 /**
  * Settlement (context.md §9).
@@ -397,11 +398,10 @@ export function SettleSheet({
             <FormSection title="Details">
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Date" htmlFor="settle-date">
-                  <Input
+                  <DateField
                     id="settle-date"
                     name="date"
-                    type="date"
-                    max={todayIso()}
+                      max={todayIso()}
                     defaultValue={todayIso()}
                     required
                   />

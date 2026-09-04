@@ -47,6 +47,9 @@ abstract final class AppIcons {
   static const IconData delete = LucideIcons.trash2;
   static const IconData more = LucideIcons.ellipsisVertical;
   static const IconData forward = LucideIcons.chevronRight;
+
+  /// The mirror of [forward], for stepping backwards through a calendar.
+  static const IconData previous = LucideIcons.chevronLeft;
   static const IconData back = LucideIcons.arrowLeft;
   static const IconData close = LucideIcons.x;
   static const IconData refresh = LucideIcons.refreshCw;

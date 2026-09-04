@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/activity_report.dart';
 import '../../core/dates.dart';
 import '../../core/icons.dart';
 import '../../core/layout.dart';
@@ -9,6 +10,7 @@ import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../providers.dart';
 import '../motion.dart';
+import '../sheets/export_sheet.dart';
 import '../sheets/transaction_sheet.dart';
 import '../widgets/app_page.dart';
 import '../widgets/common.dart';
@@ -45,6 +47,21 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
       subtitle: total == null
           ? null
           : '$total ${total == 1 ? 'entry' : 'entries'} in this workspace',
+      // The ledger is what this screen is for, so exporting it belongs here
+      // rather than three screens away in Profile. On the title's line, above
+      // the filter segments, so it never reads as a fourth segment.
+      actions: [
+        AppIconAction(
+          icon: AppIcons.download,
+          tooltip: 'Export activity',
+          onPressed: () => showExportSheet(
+            context,
+            ref,
+            subject: ExportSubject.activity,
+            view: ActivityView.fromKind(_kind),
+          ),
+        ),
+      ],
       width: ContentWidth.standard,
       bottomPadding: context.isCompact ? 120 : 48,
       // Capped rather than stretched: three words do not need 880px, and a
@@ -117,6 +134,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                   currency: currency,
                   page: _page,
                   onPage: (page) => setState(() => _page = page),
+                  view: ActivityView.fromKind(_kind),
                 ),
               _ => const Card(child: SkeletonList(rows: 8)),
             },
@@ -127,13 +145,52 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
   }
 }
 
+/// Exporting one day, from the day's own heading.
+///
+/// Sized and coloured to disappear into the heading it sits in: a control loud
+/// enough to compete with the day would turn a readable feed into a column of
+/// buttons.
+class _ExportDay extends ConsumerWidget {
+  const _ExportDay({required this.day, required this.label, required this.view});
+
+  final String day;
+  final String label;
+  final ActivityView view;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Tooltip(
+      message: 'Export $label',
+      child: Pressable(
+        onTap: () => showExportSheet(
+          context,
+          ref,
+          subject: ExportSubject.activity,
+          view: view,
+          day: day,
+        ),
+        scale: 0.92,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: Icon(
+            AppIcons.download,
+            size: 14,
+            color: context.money.inkFaint,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// The entries, grouped by day.
-class _Timeline extends StatelessWidget {
+class _Timeline extends ConsumerWidget {
   const _Timeline({
     required this.activity,
     required this.currency,
     required this.page,
     required this.onPage,
+    required this.view,
   });
 
   final ActivityPage activity;
@@ -141,8 +198,12 @@ class _Timeline extends StatelessWidget {
   final int page;
   final ValueChanged<int> onPage;
 
+  /// The tab that is showing, so a day exported from here holds what the day
+  /// on screen holds.
+  final ActivityView view;
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     // Weekday names inside the last week, dates beyond it — which is how people
     // actually refer to recent days.
     final groups = groupByDate(
@@ -165,6 +226,13 @@ class _Timeline extends StatelessWidget {
                   group.label,
                   trailing: '${group.items.length} '
                       '${group.items.length == 1 ? 'entry' : 'entries'}',
+                  // The day itself is the handle for exporting the day. Quiet,
+                  // because the heading is structure and not chrome.
+                  action: _ExportDay(
+                    day: group.items.first.entryDate,
+                    label: group.label,
+                    view: view,
+                  ),
                 ),
                 Card(
                   clipBehavior: Clip.antiAlias,

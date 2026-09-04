@@ -56,12 +56,29 @@ export function fullDate(value: string): string {
  * person page and the PDF export so an exported statement and the screen it was
  * exported from cannot print a date two different ways.
  */
+const SHORT_MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+] as const;
+
 export function statementDate(value: string): string {
-  return new Intl.DateTimeFormat('en-IN', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  }).format(parseDbDate(value));
+  const date = parseDbDate(value);
+  // Spelled out here rather than handed to Intl, because the two clients have
+  // to produce the same string and they do not share a locale database: en-IN
+  // renders September as "Sept" in the browser and "Sep" in Dart, so the same
+  // export carried two different dates depending on which client wrote it.
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${day} ${SHORT_MONTHS[date.getMonth()]} ${date.getFullYear()}`;
 }
 
 /**

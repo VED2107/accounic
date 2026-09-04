@@ -4,12 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/activity_csv.dart';
+import '../../core/activity_report.dart';
 import '../../core/dates.dart';
 import '../../core/export_csv.dart';
 import '../../core/export_json.dart';
 import '../../core/icons.dart';
 import '../../core/layout.dart';
 import '../../core/theme.dart';
+import '../../data/activity_pdf.dart';
 import '../../data/export_models.dart';
 import '../../data/export_pdf.dart';
 import '../../data/ledger_repository.dart';
@@ -18,6 +21,7 @@ import '../../data/statement_download.dart';
 import '../../providers.dart';
 import '../motion.dart';
 import '../widgets/common.dart';
+import '../widgets/date_picker.dart';
 import 'sheet_scaffold.dart';
 
 /// Exporting the workspace (Phase 4 and 5).
@@ -39,33 +43,81 @@ import 'sheet_scaffold.dart';
 ///     lie about how much is left;
 ///   * every ending is stated in words, including the one where the user
 ///     cancels the save dialog, which is not an error.
+///
+/// The sheet has two subjects. [ExportSubject.workspace] is the full one above,
+/// reached from Profile: the formal ledger report, grouped by account.
+/// [ExportSubject.activity] is the Activity screen's: the same architecture,
+/// the same RPCs and the same words, producing the chronological journal that
+/// screen actually shows — day, then everything that happened on it.
+///
+/// They are deliberately different documents, and the two must not converge.
 Future<void> showExportSheet(
   BuildContext context,
   WidgetRef ref, {
   Person? person,
+  ExportSubject subject = ExportSubject.workspace,
+  ActivityView view = ActivityView.all,
+  String? day,
 }) {
   return showAppSheet<void>(
     context,
-    (context) => _ExportSheet(person: person),
+    (context) => _ExportSheet(
+      person: person,
+      subject: subject,
+      view: view,
+      day: day,
+    ),
   );
 }
+
+/// What an export is of.
+enum ExportSubject {
+  /// Everything, grouped by account: the formal ledger report.
+  workspace,
+
+  /// The Activity feed, grouped by day: the chronological journal.
+  activity,
+}
+
+/// Which dates an Activity export covers.
+enum _DateScope { day, range, all }
 
 enum _Format { pdf, csv, json }
 
 enum _Period { all, month, quarter, year, custom }
 
 class _ExportSheet extends ConsumerStatefulWidget {
-  const _ExportSheet({this.person});
+  const _ExportSheet({
+    this.person,
+    this.subject = ExportSubject.workspace,
+    this.view = ActivityView.all,
+    this.day,
+  });
 
   /// When the sheet is opened from a person's screen, that account is the
   /// default — the export the user is most likely to have come for.
   final Person? person;
+
+  final ExportSubject subject;
+
+  /// The Activity tab that was showing when this was opened.
+  final ActivityView view;
+
+  /// The day heading this was opened from, if any.
+  final String? day;
 
   @override
   ConsumerState<_ExportSheet> createState() => _ExportSheetState();
 }
 
 class _ExportSheetState extends ConsumerState<_ExportSheet> {
+  /// True for the Activity export: two choices, two formats, one journal.
+  bool get _isActivity => widget.subject == ExportSubject.activity;
+
+  late ActivityView _view;
+  late _DateScope _dateScope;
+  DateTimeRange? _pickedRange;
+
   _Format _format = _Format.pdf;
   _Period _period = _Period.all;
   String _scope = 'all';
@@ -85,9 +137,41 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
     super.initState();
     _personId = widget.person?.id;
     _personName = widget.person?.name;
+    _view = widget.view;
+    // Opened from a day heading, that day is the scope; opened from the page
+    // header there is no day in context and the scope is the whole feed.
+    _dateScope = widget.day != null ? _DateScope.day : _DateScope.all;
   }
 
+  /// The dates an Activity export covers, from the two controls above it.
+  ActivityRange get _activityRange => switch (_dateScope) {
+    _DateScope.all => ActivityRange.all,
+    _DateScope.day => widget.day == null
+        ? ActivityRange.all
+        : ActivityRange.day(widget.day!),
+    _DateScope.range => ActivityRange(
+      from: _pickedRange == null ? null : isoDate(_pickedRange!.start),
+      to: _pickedRange == null ? null : isoDate(_pickedRange!.end),
+    ),
+  };
+
+  /// A half-picked range is not an error, it is an unfinished thought: nothing
+  /// is counted or exported until both ends are there.
+  bool get _blocked =>
+      _isActivity &&
+      (_activityRange.isBackwards ||
+          (_dateScope == _DateScope.range && _pickedRange == null));
+
   ExportFilters get _filters {
+    if (_isActivity) {
+      final range = _activityRange;
+      return ExportFilters.activity(
+        kinds: _view.kinds,
+        from: range.from,
+        to: range.to,
+      );
+    }
+
     final range = _range();
     return ExportFilters(
       from: range?.start == null ? null : isoDate(range!.start),
@@ -117,50 +201,156 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
     final palette = context.money;
     final preview = ref.watch(exportPreviewProvider(_filters));
 
+    // Nothing to export is a state, not a failure: the action goes quiet and
+    // the sheet says why rather than producing an empty file.
+    final empty = !_blocked && preview.valueOrNull?.counts.entries == 0;
+
     return SheetScaffold(
-      title: 'Export',
-      subtitle: _personName ?? 'Your whole workspace',
+      title: _isActivity ? 'Export activity' : 'Export',
+      subtitle: _isActivity
+          ? 'Day by day, newest first'
+          : (_personName ?? 'Your whole workspace'),
       icon: AppIcons.download,
       error: _error,
       busy: _busy,
       primaryLabel: _done != null ? 'Done' : (_busy ? 'Preparing…' : 'Export'),
       cancelLabel: _done != null ? 'Close' : 'Cancel',
-      onPrimary: _busy ? null : (_done != null ? () => Navigator.of(context).pop() : _run),
+      onPrimary: _busy || ((empty || _blocked) && _done == null)
+          ? null
+          : (_done != null ? () => Navigator.of(context).pop() : _run),
       children: _done != null
           ? [_Done(message: _done!)]
-          : [
-              _label('What'),
-              _accountRow(),
-              const SizedBox(height: AppSpacing.lg),
+          : _isActivity
+          ? _activityBody(preview, palette)
+          : _workspaceBody(preview, palette),
+    );
+  }
 
-              _label('Period'),
-              _periodChips(),
-              if (_period == _Period.custom) ...[
-                const SizedBox(height: AppSpacing.sm),
-                _customRange(),
-              ],
-              const SizedBox(height: AppSpacing.lg),
+  /// The Activity export: two independent choices, then a format.
+  List<Widget> _activityBody(AsyncValue<ExportHeader> preview, AccounicColors palette) => [
+    _label('Date'),
+    Segmented<_DateScope>(
+      value: _dateScope,
+      segments: [
+        if (widget.day != null)
+          (value: _DateScope.day, label: dayGroupLabel(widget.day!)),
+        (value: _DateScope.range, label: 'Date range'),
+        (value: _DateScope.all, label: 'All activity'),
+      ],
+      onChanged: (value) => setState(() => _dateScope = value),
+    ),
+    if (_dateScope == _DateScope.range) ...[
+      const SizedBox(height: AppSpacing.sm),
+      _rangeRow(palette),
+    ],
+    const SizedBox(height: AppSpacing.lg),
 
-              _label('Include'),
-              Segmented<String>(
-                value: _scope,
-                segments: const [
-                  (value: 'all', label: 'Everything'),
-                  (value: 'regular', label: 'Transactions'),
-                  (value: 'opening', label: 'Opening'),
-                ],
-                onChanged: (value) => setState(() => _scope = value),
+    _label('Category'),
+    Segmented<ActivityView>(
+      value: _view,
+      segments: const [
+        (value: ActivityView.all, label: 'Everything'),
+        (value: ActivityView.transaction, label: 'Transactions'),
+        (value: ActivityView.settlement, label: 'Settlements'),
+      ],
+      onChanged: (value) => setState(() => _view = value),
+    ),
+    const SizedBox(height: AppSpacing.lg),
+
+    _label('Format'),
+    _formatCards(),
+    const SizedBox(height: AppSpacing.lg),
+
+    _summary(preview, palette),
+  ];
+
+  /// The workspace export, unchanged: the formal ledger report.
+  List<Widget> _workspaceBody(AsyncValue<ExportHeader> preview, AccounicColors palette) => [
+    _label('What'),
+    _accountRow(),
+    const SizedBox(height: AppSpacing.lg),
+
+    _label('Period'),
+    _periodChips(),
+    if (_period == _Period.custom) ...[
+      const SizedBox(height: AppSpacing.sm),
+      _customRange(),
+    ],
+    const SizedBox(height: AppSpacing.lg),
+
+    _label('Include'),
+    Segmented<String>(
+      value: _scope,
+      segments: const [
+        (value: 'all', label: 'Everything'),
+        (value: 'regular', label: 'Transactions'),
+        (value: 'opening', label: 'Opening'),
+      ],
+      onChanged: (value) => setState(() => _scope = value),
+    ),
+    const SizedBox(height: AppSpacing.sm),
+    _voidToggle(),
+    const SizedBox(height: AppSpacing.lg),
+
+    _label('Format'),
+    _formatCards(),
+    const SizedBox(height: AppSpacing.lg),
+
+    _summary(preview, palette),
+  ];
+
+  /// The custom range, picked with the product's own calendar.
+  Widget _rangeRow(AccounicColors palette) {
+    final range = _pickedRange;
+
+    return Pressable(
+      onTap: _busy
+          ? null
+          : () async {
+              final picked = await showAccounicDateRangePicker(
+                context,
+                initialRange: range,
+                firstDate: DateTime(2000),
+                title: 'Which days?',
+              );
+              if (picked != null && mounted) {
+                setState(() => _pickedRange = picked);
+              }
+            },
+      scale: 0.99,
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 48),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg,
+          vertical: AppSpacing.md,
+        ),
+        decoration: BoxDecoration(
+          color: palette.sunken,
+          borderRadius: AppRadius.fieldAll,
+          border: Border.all(color: palette.line),
+        ),
+        child: Row(
+          children: [
+            Icon(AppIcons.date, size: AppIconSize.sm, color: palette.inkFaint),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Text(
+                range == null
+                    ? 'Pick two dates'
+                    : '${statementDate(isoDate(range.start))} → '
+                          '${statementDate(isoDate(range.end))}',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: range == null
+                      ? palette.inkFaint
+                      : Theme.of(context).colorScheme.onSurface,
+                ),
               ),
-              const SizedBox(height: AppSpacing.sm),
-              _voidToggle(),
-              const SizedBox(height: AppSpacing.lg),
-
-              _label('Format'),
-              _formatCards(),
-              const SizedBox(height: AppSpacing.lg),
-
-              _summary(preview, palette),
-            ],
+            ),
+            Icon(AppIcons.forward, size: AppIconSize.sm, color: palette.inkFaint),
+          ],
+        ),
+      ),
     );
   }
 
@@ -249,11 +439,11 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
           selected: _period == option.$1,
           onTap: () async {
             if (option.$1 == _Period.custom) {
-              final picked = await showDateRangePicker(
-                context: context,
+              final picked = await showAccounicDateRangePicker(
+                context,
                 firstDate: DateTime(2000),
-                lastDate: DateTime.now(),
-                initialDateRange: _custom,
+                initialRange: _custom,
+                title: 'Which days?',
               );
               if (picked == null) return;
               setState(() {
@@ -289,13 +479,26 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
     ),
   );
 
+  /// The formats offered.
+  ///
+  /// JSON is absent from the Activity export on purpose. It is the backup
+  /// format — versioned, relational, every account and the opening book — and
+  /// offering it beside two views of the feed would present a workspace backup
+  /// as though it were a third way to read the same days.
+  List<(_Format, String, String)> get _formats => _isActivity
+      ? const [
+          (_Format.pdf, 'PDF', 'The activity report, day by day.'),
+          (_Format.csv, 'CSV', 'One row per entry, for a spreadsheet.'),
+        ]
+      : const [
+          (_Format.pdf, 'PDF', 'A printable report: position, accounts, ledger.'),
+          (_Format.csv, 'CSV', 'One row per entry, for a spreadsheet.'),
+          (_Format.json, 'JSON', 'A complete backup, every field kept.'),
+        ];
+
   Widget _formatCards() => Column(
     children: [
-      for (final option in const [
-        (_Format.pdf, 'PDF', 'A printable report: position, accounts, ledger.'),
-        (_Format.csv, 'CSV', 'One row per entry, for a spreadsheet.'),
-        (_Format.json, 'JSON', 'A complete backup, every field kept.'),
-      ])
+      for (final option in _formats)
         Padding(
           padding: const EdgeInsets.only(bottom: AppSpacing.sm),
           child: _FormatCard(
@@ -308,44 +511,77 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
     ],
   );
 
+  /// The count and the scope, in the database's own numbers.
+  ///
+  /// For an Activity export it counts exactly the slice the file will hold —
+  /// the same figure, from the same filters, so the number above the button and
+  /// the number of rows in the document cannot disagree.
+  String _summaryLine(ExportHeader header) {
+    if (_isActivity) {
+      final n = header.counts.entries;
+      if (n == 0) return 'No activity to export';
+      return '$n ${n == 1 ? 'entry' : 'entries'} · ${_view.label} · '
+          '${activityScopeLabel(_activityRange).toLowerCase()}';
+    }
+    return '${header.counts.entries} entries · ${header.counts.people} '
+        '${header.counts.people == 1 ? 'account' : 'accounts'} · '
+        '${header.filters.description}';
+  }
+
   /// The answer to "what am I exporting?", in the database's own numbers.
   Widget _summary(AsyncValue<ExportHeader> preview, AccounicColors palette) {
     final busyLine = _busy && _total > 0 ? 'Loading $_loaded of $_total entries…' : null;
 
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: palette.sunken,
-        borderRadius: AppRadius.cardAll,
-        border: Border.all(color: palette.line),
-      ),
-      child: Row(
-        children: [
-          Icon(AppIcons.note, size: 16, color: palette.inkFaint),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: preview.when(
-              loading: () => Text(
-                'Counting…',
-                style: TextStyle(fontSize: 12, color: palette.inkMuted),
-              ),
-              error: (_, __) => Text(
-                'The size of this export could not be checked. You can still try it.',
-                style: TextStyle(fontSize: 12, color: palette.inkMuted),
-              ),
-              data: (header) => Text(
-                busyLine ??
-                    '${header.counts.entries} entries · ${header.counts.people} '
-                        '${header.counts.people == 1 ? 'account' : 'accounts'} · '
-                        '${header.filters.description}',
-                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
-              ),
-            ),
-          ),
-        ],
+    // A range that is half-picked or the wrong way round is answered here
+    // rather than by counting something nobody asked for.
+    if (_blocked) {
+      final message = _activityRange.isBackwards
+          ? 'The start of the range is after its end'
+          : 'Pick both ends of the range';
+      return _summaryBox(
+        palette,
+        Text(
+          message,
+          style: TextStyle(fontSize: 12, color: palette.payable),
+        ),
+      );
+    }
+
+    return _summaryBox(
+      palette,
+      preview.when(
+        loading: () => Text(
+          'Counting…',
+          style: TextStyle(fontSize: 12, color: palette.inkMuted),
+        ),
+        error: (_, __) => Text(
+          'The size of this export could not be checked. You can still try it.',
+          style: TextStyle(fontSize: 12, color: palette.inkMuted),
+        ),
+        data: (header) => Text(
+          busyLine ?? _summaryLine(header),
+          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
+        ),
       ),
     );
   }
+
+  /// The bordered line under the choices, whatever it happens to say.
+  Widget _summaryBox(AccounicColors palette, Widget child) => Container(
+    padding: const EdgeInsets.all(AppSpacing.md),
+    decoration: BoxDecoration(
+      color: palette.sunken,
+      borderRadius: AppRadius.cardAll,
+      border: Border.all(color: palette.line),
+    ),
+    child: Row(
+      children: [
+        Icon(AppIcons.note, size: 16, color: palette.inkFaint),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(child: child),
+      ],
+    ),
+  );
 
   Future<void> _run() async {
     setState(() {
@@ -374,7 +610,15 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
 
       switch (_format) {
         case _Format.pdf:
-          bytes = await WorkspaceExportPdf.build(bundle);
+          // Two different documents, deliberately: the Activity journal and
+          // the workspace ledger report. They must not converge.
+          bytes = _isActivity
+              ? await ActivityExportPdf.build(
+                  bundle,
+                  view: _view,
+                  scopeLabel: activityScopeLabel(_activityRange),
+                )
+              : await WorkspaceExportPdf.build(bundle);
           extension = 'pdf';
           mime = 'application/pdf';
           label = 'PDF';
@@ -383,7 +627,13 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
           // Arabic is multi-byte, and codeUnits would write UTF-16 halves as
           // bytes and corrupt the file (Phase 5).
           bytes = Uint8List.fromList(
-            utf8.encode(csvWithBom(entriesToCsv(bundle.entries))),
+            utf8.encode(
+              csvWithBom(
+                _isActivity
+                    ? activityEntriesToCsv(bundle.entries, bundle.header.baseCurrency)
+                    : entriesToCsv(bundle.entries),
+              ),
+            ),
           );
           extension = 'csv';
           mime = 'text/csv';
@@ -399,7 +649,11 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
 
       final result = await const StatementDownloader().saveBytes(
         bytes: bytes,
-        filename: exportFilename(extension, scope: _personName),
+        // Named after what is in it, in the convention every other export
+        // already follows: accounic-activity-2026-09-04.pdf.
+        filename: _isActivity
+            ? activityExportFilename(extension, _view, _activityRange)
+            : exportFilename(extension, scope: _personName),
         typeLabel: label,
         extension: extension,
         mimeType: mime,

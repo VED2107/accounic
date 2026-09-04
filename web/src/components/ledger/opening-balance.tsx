@@ -25,6 +25,7 @@ import type {
   PositionSplit,
   TimelineEntry,
 } from '@/lib/types';
+import { DateField } from '@/components/ui/date-picker';
 
 /**
  * The opening balance, in its own section (upgrade §46).
@@ -596,10 +597,9 @@ function OpeningSettleSheet({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Date" htmlFor="opening-settle-date" error={fieldError('date')}>
-            <Input
+            <DateField
               id="opening-settle-date"
               name="date"
-              type="date"
               max={todayIso()}
               defaultValue={todayIso()}
               required
@@ -748,10 +748,9 @@ function OpeningAdjustSheet({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Date" htmlFor="opening-adjust-date" error={fieldError('date')}>
-            <Input
+            <DateField
               id="opening-adjust-date"
               name="date"
-              type="date"
               max={todayIso()}
               defaultValue={todayIso()}
               required
