@@ -410,32 +410,40 @@ class _PersonScreenState extends ConsumerState<PersonScreen> {
   }) {
     final groups = groupByDate(entries, (entry) => entry.entryDate);
 
-    return [
-      Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SectionHeader(title),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                  child: Text(
-                    note,
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 1.45,
-                      color: context.money.inkFaint,
-                    ),
-                  ),
-                ),
-              ],
+    final heading = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SectionHeader(title),
+        Padding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+          child: Text(
+            note,
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.45,
+              color: context.money.inkFaint,
             ),
           ),
-          ...actions,
-        ],
-      ),
+        ),
+      ],
+    );
+
+    return [
+      // The two exports do not fit beside a heading on a phone — the pair is
+      // about 260dp and the heading needs the rest, which is how this row
+      // overflowed by 132px at 390 (test/person_tabs_test.dart). They take
+      // their own line there and sit beside the heading on a wider screen,
+      // rather than being squeezed into one row at every width.
+      if (actions.isEmpty || !context.isCompact)
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [Expanded(child: heading), ...actions],
+        )
+      else ...[
+        heading,
+        Row(mainAxisAlignment: MainAxisAlignment.end, children: actions),
+        const SizedBox(height: AppSpacing.md),
+      ],
 
       if (entries.isEmpty)
         Card(
@@ -815,62 +823,78 @@ class _ActionRow extends ConsumerWidget {
     final balance = page.balance;
     final palette = context.money;
 
+    final settle = _Action(
+      label: 'Settle',
+      icon: AppIcons.settlement,
+      filled: true,
+      onTap: () async {
+        final saved = await showSettleSheet(
+          context,
+          ref,
+          balance: balance,
+          openTransactions: page.openTransactions,
+        );
+        if (saved && context.mounted) {
+          showMessage(context, 'Settlement recorded.');
+        }
+      },
+    );
+
+    final credit = _Action(
+      label: 'Credit',
+      icon: AppIcons.payable,
+      tint: palette.payable,
+      onTap: () => _add(context, ref, MoneyFlow.personToOwner),
+    );
+
+    final debit = _Action(
+      label: 'Debit',
+      icon: AppIcons.receivable,
+      tint: palette.receivable,
+      onTap: () => _add(context, ref, MoneyFlow.ownerToPerson),
+    );
+
+    // Four equal actions do not fit a phone.
+    //
+    // Settle, Credit, Debit and Transfer used to share one Row of Expandeds. On
+    // a 390px screen that is about 72dp each, and "Settle" — icon, gap, label —
+    // needs closer to 110: the row overflowed and the labels were clipped, on
+    // the product's most important screen, in the layout most of its users see.
+    // Caught by a widget test rather than by analyze, which cannot see a layout
+    // overflow at all (test/person_tabs_test.dart).
+    //
+    // The fix is the hierarchy the web client already has. Transfer moves into
+    // the menu — it is the rarest of the four and the only one that is not
+    // about this account alone — and Settle takes a row of its own on a phone,
+    // because the primary action must never be the one that got squeezed.
+    if (context.isCompact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (balance.hasOutstanding) ...[
+            settle,
+            const SizedBox(height: AppSpacing.sm + 2),
+          ],
+          Row(
+            children: [
+              Expanded(child: credit),
+              const SizedBox(width: AppSpacing.sm + 2),
+              Expanded(child: debit),
+            ],
+          ),
+        ],
+      );
+    }
+
     return Row(
       children: [
         if (balance.hasOutstanding) ...[
-          Expanded(
-            child: _Action(
-              label: 'Settle',
-              icon: AppIcons.settlement,
-              filled: true,
-              onTap: () async {
-                final saved = await showSettleSheet(
-                  context,
-                  ref,
-                  balance: balance,
-                  openTransactions: page.openTransactions,
-                );
-                if (saved && context.mounted) {
-                  showMessage(context, 'Settlement recorded.');
-                }
-              },
-            ),
-          ),
+          Expanded(child: settle),
           const SizedBox(width: AppSpacing.sm + 2),
         ],
-        Expanded(
-          child: _Action(
-            label: 'Credit',
-            icon: AppIcons.payable,
-            tint: palette.payable,
-            onTap: () => _add(context, ref, MoneyFlow.personToOwner),
-          ),
-        ),
+        Expanded(child: credit),
         const SizedBox(width: AppSpacing.sm + 2),
-        Expanded(
-          child: _Action(
-            label: 'Debit',
-            icon: AppIcons.receivable,
-            tint: palette.receivable,
-            onTap: () => _add(context, ref, MoneyFlow.ownerToPerson),
-          ),
-        ),
-        const SizedBox(width: AppSpacing.sm + 2),
-        // Moving money between two of your own accounts is neither of the
-        // above — nothing is owed differently overall, it just sits somewhere
-        // else. Hence its own control rather than a mode of "add".
-        Expanded(
-          child: _Action(
-            label: 'Transfer',
-            icon: AppIcons.forward,
-            onTap: () async {
-              final saved = await showTransferSheet(context, ref, from: page.balance);
-              if (saved && context.mounted) {
-                showMessage(context, 'Transfer recorded. Both accounts updated.');
-              }
-            },
-          ),
-        ),
+        Expanded(child: debit),
       ],
     );
   }
@@ -1147,6 +1171,17 @@ class PersonMenu extends ConsumerWidget {
         final repository = ref.read(ledgerRepositoryProvider);
 
         switch (value) {
+          // Moving money between two of your own accounts is neither a credit
+          // nor a debit — nothing is owed differently overall, it just sits
+          // somewhere else. It lives here rather than in the action row because
+          // it is the rarest of the four and the only one that is not about
+          // this account alone.
+          case 'transfer':
+            final saved = await showTransferSheet(context, ref, from: page.balance);
+            if (saved && context.mounted) {
+              showMessage(context, 'Transfer recorded. Both accounts updated.');
+            }
+
           case 'edit':
             await showPersonSheet(
               context,
@@ -1234,6 +1269,10 @@ class PersonMenu extends ConsumerWidget {
         }
       },
       itemBuilder: (context) => [
+        PopupMenuItem(
+          value: 'transfer',
+          child: item(AppIcons.forward, 'Transfer to another account'),
+        ),
         PopupMenuItem(value: 'edit', child: item(AppIcons.edit, 'Edit details')),
         PopupMenuItem(
           value: person.isArchived ? 'restore' : 'archive',
