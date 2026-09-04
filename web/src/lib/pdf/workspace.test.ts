@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { PDFDocument } from 'pdf-lib';
 
 import { renderWorkspacePdf } from '@/lib/pdf/workspace';
-import type { ExportBundle, ExportEntry, ExportHeader } from '@/lib/export/types';
+import type { ExportEntry, ExportHeader } from '@/lib/export/types';
 
 /**
  * The workspace export, actually rendered (Phase 4).

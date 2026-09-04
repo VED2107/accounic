@@ -27,7 +27,7 @@ import {
   TrendUpIcon,
 } from '@/components/icons';
 import { friendlyDate, greeting } from '@/lib/dates';
-import { balanceTone, formatApprox, formatMoney } from '@/lib/money';
+import { balanceTone, formatMoney } from '@/lib/money';
 import { trendsFromBuckets, type Trend } from '@/lib/series';
 import type {
   CurrencyHalfBreakdown,

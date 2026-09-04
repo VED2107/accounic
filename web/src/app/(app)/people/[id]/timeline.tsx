@@ -110,8 +110,9 @@ export function Timeline({
                 // anything. The label says where it went (lib/transfers.ts).
                 const isTransfer = Boolean(entry.transfer_id);
                 // `money_direction` is the flow of cash; for a transaction the
-                // debt runs the other way, which is what the row is about.
-                const incoming = entry.money_direction === 'in';
+                // debt runs the other way, which is what the row is about — so
+                // the row reads the DEBT direction, and the cash direction is
+                // only consulted where a settlement is being described.
                 const receivable = entryIsReceivable(entry.entry_type);
                 const open = expanded === entry.id;
 

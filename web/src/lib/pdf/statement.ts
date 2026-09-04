@@ -194,8 +194,6 @@ export async function buildPersonStatement(input: StatementInput): Promise<Uint8
   const currency = data.currency ?? me?.currency ?? 'INR';
   const baseCurrency = data.base_currency ?? me?.currency ?? 'INR';
   const person = data.person;
-  const balance = data.balance;
-  const opening = data.opening ?? null;
 
   const doc = await PDFDocument.create();
   doc.registerFontkit(fontkit);

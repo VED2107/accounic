@@ -8,7 +8,7 @@ import {
   rateSentence,
   rateToInput,
 } from '@/lib/currencies';
-import { formatApprox, formatMoney, minorToInput, parseAmountToMinor } from '@/lib/money';
+import { formatMoney, minorToInput, parseAmountToMinor } from '@/lib/money';
 import { rateIsManual } from '@/lib/conversion';
 import { lookupRate, type RateQuote } from '@/lib/actions';
 import { cn } from '@/components/ui/primitives';
