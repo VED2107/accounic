@@ -24,12 +24,38 @@ import { supportsAll } from '@/lib/pdf/typeface';
 export function pdfMoney(
   minor: number,
   currency: string | null | undefined,
-  options: { compactDecimals?: boolean } = {},
+  options: { compactDecimals?: boolean; base?: string | null } = {},
 ): string {
   const withSymbol = formatMoney(minor, currency, options);
   return supportsAll(withSymbol)
     ? withSymbol
     : formatMoney(minor, currency, { ...options, withSymbol: false });
+}
+
+/**
+ * `₹500` — the same figure with the ISO code dropped for the base currency.
+ *
+ * The Activity report states the base currency on its cover and in every other
+ * row, so repeating `INR` after every `₹` is noise. A foreign amount keeps its
+ * code, because there the code is the whole point.
+ */
+export function pdfActivityMoney(
+  minor: number,
+  currency: string | null | undefined,
+  base: string,
+): string {
+  return pdfMoney(minor, currency, { base });
+}
+
+/** `≈ ₹12,962.50` — a conversion is always into the base, so it needs no code. */
+export function pdfActivityApprox(
+  minor: number,
+  currency: string | null | undefined,
+): string {
+  const withSymbol = formatApprox(minor, currency, { withCode: false });
+  return supportsAll(withSymbol)
+    ? withSymbol
+    : `≈ ${formatMoney(minor, currency, { withSymbol: false, compactDecimals: false })}`;
 }
 
 /**

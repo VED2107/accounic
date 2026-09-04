@@ -1096,3 +1096,49 @@ Profile and Administration were not reviewed. Activity was route-checked but not
 visually reviewed. The Flutter binary was driven in dark only, so its light
 theme is unverified, and its keyboard/focus behaviour was not audited. Those
 five are the gate for whatever is cut next. No release was cut.
+
+## 15. Activity export (v1.12.0)
+
+Export from the Activity screen, and one calendar for the whole product.
+
+**The Activity export is a chronological journal, not a ledger report.** That
+distinction is the feature. Profile's export answers "where does each account
+stand?" and groups by person; this one answers "what happened, and when?" and
+groups by day, newest first, exactly as the screen reads. The first attempt
+reused the workspace report and was wrong for precisely this reason — it
+regrouped the feed by account — and was rebuilt rather than patched.
+
+Two independent choices describe an export, and they compose freely:
+
+    DATE      one day · a date range · all activity
+    CATEGORY  Everything · Transactions · Settlements
+
+Both are mappings onto the filter contract `export_entries()` already accepts
+(0025); no migration, no new RPC, no second accounting engine. A category is
+the `kinds` filter the Activity tab already implies; a day is a range whose ends
+are equal. The count above the button is `export_workspace()`'s own count for
+exactly those filters, re-asked whenever either choice moves, so it can never
+disagree with the number of rows in the file.
+
+* `lib/export/activity.ts` / `core/activity_report.dart` — the contract.
+* `lib/export/activity-report.ts` / `core/activity_report.dart` — the day-grouped
+  model, sharing the screen's own labels so document and screen cannot drift.
+* `lib/pdf/activity.ts` / `data/activity_pdf.dart` — the document.
+* `lib/export/activity-csv.ts` / `core/activity_csv.dart` — the same rows,
+  chronological, never regrouped by person.
+
+**Currency, in the document.** The workspace's own currency is written `₹500`,
+because the symbol has already said which currency it is; only a foreign amount
+carries its ISO code, `500 AED`, and a conversion is `≈ ₹12,962.50`. `statementDate`
+is now spelled out in both clients rather than handed to a locale: en-IN renders
+September as "Sept" in the browser and "Sep" in Dart, so the same export carried
+two different dates depending on which client wrote it.
+
+**One calendar.** Every date in the product — both export panels, the transaction,
+transfer, settlement and opening-balance sheets — is now picked from the same
+grid, `components/ui/date-picker.tsx` and `ui/widgets/date_picker.dart`. The
+native `<input type="date">` and Material's picker were each correct and each
+looked like a different application borrowed for a moment. The web panel is
+portalled to the body: the reveal animations set `transform`, which makes a
+stacking context, and a popover inside one paints below the next section
+regardless of its z-index.

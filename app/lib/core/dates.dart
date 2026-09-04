@@ -42,11 +42,33 @@ String friendlyDate(String value) {
 String fullDate(String value) =>
     DateFormat('d MMMM yyyy').format(parseDbDate(value));
 
+const _shortMonths = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
 /// `28 Aug 2026` — the form a statement prints, unambiguous in any locale and
 /// never relative. Twin of `statementDate()` in `web/src/lib/dates.ts`.
+///
+/// Spelled out rather than handed to a locale, because the two clients have to
+/// produce the same string and they do not share a locale database: en-IN
+/// renders September as "Sept" in the browser and "Sep" here, so the same
+/// export carried two different dates depending on which client wrote it.
 String statementDate(String value) {
   if (value.isEmpty) return '';
-  return DateFormat('d MMM yyyy').format(parseDbDate(value));
+  final date = parseDbDate(value);
+  final day = date.day.toString().padLeft(2, '0');
+  return '$day ${_shortMonths[date.month - 1]} ${date.year}';
 }
 
 /// `08:42 PM` — the time of day a row was recorded, from its timestamp.

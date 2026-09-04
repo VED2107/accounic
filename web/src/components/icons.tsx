@@ -246,3 +246,20 @@ export const DownloadIcon = (p: IconProps) => (
     <path d="M12 12v5M9.75 15l2.25 2 2.25-2" />
   </Icon>
 );
+
+/** A sheet of paper with lines on it: the printable report. */
+export const ReportIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M13.5 3.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9z" />
+    <path d="M13.5 3.5V9H19" />
+    <path d="M8.5 13h7M8.5 16.5h4.5" />
+  </Icon>
+);
+
+/** A ruled grid: the spreadsheet. */
+export const TableIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+    <path d="M3.5 9.5h17M9.5 9.5v10" />
+  </Icon>
+);
