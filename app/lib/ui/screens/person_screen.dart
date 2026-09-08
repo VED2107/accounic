@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/dates.dart';
+import '../../core/demo.dart';
 import '../../core/direction.dart';
 import '../../core/failure.dart';
 import '../../core/icons.dart';
@@ -16,6 +17,7 @@ import '../../providers.dart';
 import '../motion.dart';
 import '../sheets/person_sheet.dart';
 import '../sheets/settle_sheet.dart';
+import '../sheets/upgrade_sheet.dart';
 import '../sheets/transfer_sheet.dart';
 import '../widgets/opening_balance_card.dart';
 import '../sheets/sheet_scaffold.dart';
@@ -924,6 +926,13 @@ class _StatementButtonState extends ConsumerState<StatementButton> {
 
   Future<void> _download() async {
     if (_busy) return;
+    // The PDF statement is a report, and reports are the full application's
+    // (docs/demo.md). Gated here rather than by hiding the button: the visitor
+    // should see that Accounic produces a statement, and find out what it is.
+    if (ref.read(demoRestrictedProvider)) {
+      await showUpgradeSheet(context, DemoFeature.reports);
+      return;
+    }
     setState(() => _busy = true);
 
     try {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/dates.dart';
+import '../../core/demo.dart';
 import '../../core/direction.dart';
 import '../../core/icons.dart';
 import '../../core/failure.dart';
@@ -14,6 +15,7 @@ import '../../core/currencies.dart';
 import '../widgets/amount_field.dart';
 import '../widgets/common.dart';
 import '../widgets/currency_field.dart';
+import '../widgets/demo_gate_row.dart';
 import '../../core/layout.dart';
 import '../widgets/forms.dart';
 import 'sheet_scaffold.dart';
@@ -275,6 +277,10 @@ class _TransactionSheetState extends ConsumerState<_TransactionSheet> {
 
   @override
   Widget build(BuildContext context) {
+    // Whether this is the restricted experience — a demo build, or a demo
+    // account signing in anywhere (providers.dart, core/demo.dart).
+    final restricted = ref.watch(demoRestrictedProvider);
+
     final account = _accountCurrency;
     final entry = _entryCurrency ?? _personDefaultCurrency;
 
@@ -322,14 +328,24 @@ class _TransactionSheetState extends ConsumerState<_TransactionSheet> {
               onChanged: (minor) => setState(() => _amount = minor),
             ),
             const SizedBox(height: AppSpacing.md),
-            CurrencyField(
-              label: 'Entered in',
-              value: entry,
-              onChanged: (next) => setState(() => _entryCurrency = next),
-              helper: entry == account
-                  ? 'This account is kept in $account'
-                  : 'Converted into $account when it is saved',
-            ),
+            // Entering in another currency is the multi-currency workflow, and
+            // it is the workflow rather than the arithmetic that the demo holds
+            // back: resolve_conversion() is untouched and still runs for every
+            // entry, it simply never sees two different currencies here.
+            if (restricted)
+              const DemoGateRow(
+                feature: DemoFeature.multiCurrency,
+                label: 'Enter this in another currency, at a recorded rate',
+              )
+            else
+              CurrencyField(
+                label: 'Entered in',
+                value: entry,
+                onChanged: (next) => setState(() => _entryCurrency = next),
+                helper: entry == account
+                    ? 'This account is kept in $account'
+                    : 'Converted into $account when it is saved',
+              ),
             if (entry != account) ...[
               const SizedBox(height: AppSpacing.md),
               ConversionPanel(

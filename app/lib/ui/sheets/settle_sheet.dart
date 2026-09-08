@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/currencies.dart';
+import '../../core/demo.dart';
 import '../../core/dates.dart';
 import '../../core/failure.dart';
 import '../../core/money.dart';
@@ -13,6 +14,7 @@ import '../widgets/amount_field.dart';
 import '../../core/icons.dart';
 import '../../core/layout.dart';
 import '../widgets/currency_field.dart';
+import '../widgets/demo_gate_row.dart';
 import '../widgets/forms.dart';
 import 'sheet_scaffold.dart';
 
@@ -249,6 +251,10 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
 
   @override
   Widget build(BuildContext context) {
+    // Whether this is the restricted experience — a demo build, or a demo
+    // account signing in anywhere (providers.dart, core/demo.dart).
+    final restricted = ref.watch(demoRestrictedProvider);
+
     // The ACCOUNT's currency, not the workspace's.
     //
     // This read `currencyProvider` — the workspace currency — so a settlement
@@ -364,7 +370,18 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
                 ),
               ),
 
-            if (_matching.isNotEmpty) ...[
+            // Choosing WHICH entry a payment pays off is the advanced half of
+            // settlement, and the half the demo holds back. The basic half —
+            // settle the account, in part or in full, oldest first — is right
+            // here and runs through create_settlement() unchanged, which is the
+            // workflow the demo exists to show (docs/demo.md).
+            if (restricted) ...[
+              const SizedBox(height: AppSpacing.md),
+              const DemoGateRow(
+                feature: DemoFeature.settlementAllocation,
+                label: 'Settle a specific transaction instead of the account',
+              ),
+            ] else if (_matching.isNotEmpty) ...[
               const SizedBox(height: AppSpacing.md),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -444,14 +461,20 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
               onChanged: (minor) => setState(() => _amount = minor),
             ),
             const SizedBox(height: AppSpacing.md),
-            CurrencyField(
-              label: 'Settlement currency',
-              value: _entry,
-              onChanged: (next) => setState(() => _entryCurrency = next),
-              helper: _foreign
-                  ? 'Converted into $currency when it is saved'
-                  : 'This account is kept in $currency',
-            ),
+            if (restricted)
+              const DemoGateRow(
+                feature: DemoFeature.multiCurrency,
+                label: 'Settle in another currency, at a recorded rate',
+              )
+            else
+              CurrencyField(
+                label: 'Settlement currency',
+                value: _entry,
+                onChanged: (next) => setState(() => _entryCurrency = next),
+                helper: _foreign
+                    ? 'Converted into $currency when it is saved'
+                    : 'This account is kept in $currency',
+              ),
             if (_foreign) ...[
               const SizedBox(height: AppSpacing.md),
               // Both overrides, because both questions are real: the rate may be

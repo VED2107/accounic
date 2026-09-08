@@ -35,7 +35,24 @@ class ProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
-  static const _currencies = ['INR', 'USD', 'EUR', 'GBP', 'AED', 'AUD', 'CAD', 'SGD'];
+  static const _allCurrencies = ['INR', 'USD', 'EUR', 'GBP', 'AED', 'AUD', 'CAD', 'SGD'];
+
+  /// The demo offers three rather than eight. Not because the other five would
+  /// misbehave — this is a display setting and every one of them works — but
+  /// because a picker of eight invites the question the demo cannot answer,
+  /// which is how an account is KEPT in a currency (core/demo.dart).
+  static const _demoCurrencies = ['INR', 'USD', 'EUR'];
+
+  /// What the picker offers.
+  ///
+  /// The current value is always in the list, whatever the list is. A dropdown
+  /// whose value is not among its items asserts in debug and draws blank in
+  /// release, and a demo account kept in a currency the demo does not offer is
+  /// a perfectly ordinary thing for an administrator to have created.
+  List<String> _currenciesFor(bool restricted) {
+    if (!restricted) return _allCurrencies;
+    return <String>{..._demoCurrencies, _currency}.toList();
+  }
 
   final _name = TextEditingController();
   final _phone = TextEditingController();
@@ -177,9 +194,64 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
+  /// Puts the sample workspace back (docs/demo.md).
+  ///
+  /// `demo_reset()` retracts and removes the visitor's accounts through
+  /// `void_person_history()` and `delete_person()` and re-seeds through
+  /// `demo_seed()` — the production RPCs, all of them. Everything the visitor
+  /// recorded goes; the books come back exactly as they arrived.
+  Future<void> _resetDemo() async {
+    final ok = await confirm(
+      context,
+      icon: AppIcons.refresh,
+      title: 'Reset the demo?',
+      confirmLabel: 'Reset',
+      body: 'Every transaction and settlement you have recorded will be removed '
+          'and the sample accounts restored. This cannot be undone.',
+    );
+    if (!ok) return;
+
+    try {
+      await ref.read(demoRepositoryProvider).reset();
+      ref.invalidate(meProvider);
+      ref.refreshLedger();
+      if (mounted) showMessage(context, 'The demo has been reset.');
+    } on Failure catch (failure) {
+      if (mounted) showMessage(context, failure.message, error: true);
+    }
+  }
+
+  /// Ends the demo session. The router's redirect returns the visitor to the
+  /// door, exactly as signing out does in a real build.
+  Future<void> _leaveDemo() async {
+    final ok = await confirm(
+      context,
+      destructive: false,
+      icon: AppIcons.signOut,
+      title: 'Leave the demo?',
+      confirmLabel: 'Leave',
+      body: 'Your demo workspace is discarded. Entering again starts a fresh '
+          'set of sample books.',
+    );
+    if (!ok) return;
+
+    try {
+      await ref.read(demoRepositoryProvider).leave();
+      ref.invalidate(meProvider);
+    } on Failure catch (failure) {
+      if (mounted) showMessage(context, failure.message, error: true);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final async = ref.watch(meProvider);
+
+    // The demo build, or a demo account signing in anywhere (providers.dart).
+    // This screen is where the difference is most visible: a demo account has
+    // no password to change and no account to sign out of, and it does have a
+    // sample workspace it may want back.
+    final restricted = ref.watch(demoRestrictedProvider);
 
     return async.when(
       loading: () => const AppPage(
@@ -207,7 +279,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           _name.text = me.name;
           _phone.text = me.phone ?? '';
           _business.text = me.businessName ?? '';
-          _currency = _currencies.contains(me.currency) ? me.currency : 'INR';
+          // Against the full list, not the demo's three. A demo account whose
+          // profile is kept in a currency the demo does not offer should keep
+          // showing that currency rather than being silently reset to rupees.
+          _currency = _allCurrencies.contains(me.currency) ? me.currency : 'INR';
           _original = (
             name: me.name,
             phone: me.phone ?? '',
@@ -297,7 +372,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         value: _currency,
                         icon: AppIcons.currency,
                         items: [
-                          for (final code in _currencies)
+                          for (final code in _currenciesFor(restricted))
                             (code, '$code  ·  ${currencySymbol(code).trim()}'),
                         ],
                         onChanged: (value) => setState(() => _currency = value ?? _currency),
@@ -327,6 +402,44 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
             const SizedBox(height: AppSpacing.xxl),
 
+            // A demo visitor has no password to change and no account to sign
+            // out of, so the security group is replaced rather than emptied —
+            // three rows of disabled controls would be worse than none. The
+            // demo's own three take its place, including the way in to
+            // Demo and full on a phone, where the bottom bar has no room for
+            // a fifth destination (docs/demo.md).
+            if (restricted)
+              Reveal(
+                delay: const Duration(milliseconds: 160),
+                child: SettingsGroup(
+                  title: 'Demo',
+                  description: 'You are using Accounic on sample data.',
+                  children: [
+                    SettingsRow(
+                      icon: AppIcons.tiers,
+                      title: 'Demo and full Accounic',
+                      subtitle: 'What this demo covers, and what the full app adds',
+                      onTap: () => context.go('/demo'),
+                      divider: true,
+                    ),
+                    SettingsRow(
+                      icon: AppIcons.refresh,
+                      title: 'Reset demo data',
+                      subtitle: 'Discard your changes and restore the sample books',
+                      onTap: _resetDemo,
+                      divider: true,
+                    ),
+                    SettingsRow(
+                      icon: AppIcons.signOut,
+                      title: 'Leave demo',
+                      subtitle: 'End this session and return to the start',
+                      tone: context.money.payable,
+                      onTap: _leaveDemo,
+                    ),
+                  ],
+                ),
+              )
+            else
             Reveal(
               delay: const Duration(milliseconds: 160),
               child: SettingsGroup(
@@ -352,7 +465,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
             // The rail carries administration on a desktop width; on a phone
             // the bottom bar is full, so this is the way in.
-            if (me.isAdmin) ...[
+            if (!restricted && me.isAdmin) ...[
               const SizedBox(height: AppSpacing.xxl),
               Reveal(
                 delay: const Duration(milliseconds: 200),

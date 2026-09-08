@@ -1142,3 +1142,70 @@ looked like a different application borrowed for a moment. The web panel is
 portalled to the body: the reveal animations set `transform`, which makes a
 stacking context, and a popover inside one paints below the next section
 regardless of its z-index.
+
+---
+
+## 16. The online demo (v1.13.0)
+
+An Accounic anyone can open in a browser and use — the real application, the
+real accounting engine, the real database, and a restricted surface.
+`docs/demo.md` is the runbook; this is what was built and why it is shaped this
+way.
+
+**The constraint that decided everything.** `LedgerRepository` holds no
+arithmetic. Every balance, settlement allocation, activity row and conversion is
+SQL in `db/migrations/`. So a browser demo either reaches the real engine or
+reimplements it, and reimplementing it would have produced the one thing this
+codebase has never had: two answers to the same question about money. The demo
+therefore runs against **the production project**, and a demo account is an
+ordinary account in it carrying `profiles.is_demo`.
+
+**Two flags, deliberately not one.** `AppConfig.demoMode` is compile-time and
+says whether this *deployment* is the demo — it decides which door the visitor
+arrives at. `profiles.is_demo` is runtime and says whether this *account* is a
+demo one — it decides whether the experience is restricted, on every platform.
+`demoRestrictedProvider` is the OR of the two and the only question a gate asks.
+Collapsing them would make an administrator opening the demo build into a demo
+user, and a demo account on Windows into a full customer.
+
+**Isolation is unchanged, and that is the point.** No RLS policy gained a demo
+branch. A demo account is confined by `owner_id = current_owner()`, exactly as
+every paying account is. Anonymous sign-in gives each visitor their own
+`auth.users` row, so each of them gets a private workspace for the same reason
+every customer does. Proven the hard way: reading a demo user's `people` while
+impersonating an administrator returns zero rows, while the `SECURITY DEFINER`
+RPC beside it counts five.
+
+**The seed is not seed data.** `demo_seed()` builds the sample books by calling
+`create_person()`, `create_transaction()` and `create_settlement()` — the real
+`SECURITY INVOKER` RPCs. The figures on the demo dashboard were computed by the
+engine, not written down: Vikram Rao's ₹6,000 is ₹15,000 invoiced less ₹9,000
+settled, and nothing in the migration knows that.
+
+**Gating lives at the door of each sheet**, inside `showExportSheet`,
+`showTransferSheet`, `showOpeningAdjustSheet` and `showOpeningSettleSheet`,
+rather than at the call sites. One condition per capability, which no future
+call site can forget. In-form capabilities — targeted settlement, foreign-entry
+currency, per-account currency, opening balances — collapse to a `DemoGateRow`
+that keeps the shape of the real form and says what the row would have done.
+
+**Demo to real, and never the other way.** `admin_convert_demo_user()` is
+`SECURITY DEFINER` and refuses unless the caller is an administrator, the target
+exists, the target is *currently* a demo account, and the target is not an
+anonymous visitor with no credentials to keep. A real account is refused by name
+rather than quietly ignored. It writes an `admin_events` row — the first
+administrative audit this product has had — and it does not touch the ledger:
+the books built while trying Accounic become the opening state of the real ones.
+
+**Where the service-role key still is.** On the Next.js server, and nowhere
+else. Making a demo account needs it, which is why **Add user → Account type**
+lives in the web admin; clearing the flag needs an administrator and the RPC.
+No client can do either, and the Flutter build carries the publishable key alone.
+
+* `db/migrations/0029_demo.sql` — `demo_seed()`, `demo_reset()`.
+* `db/migrations/0030_demo_users.sql` — `profiles.is_demo`, the admin surface,
+  the conversion, `admin_events`.
+* `core/demo.dart`, `providers.dart` — the two flags and their OR.
+* `ui/sheets/upgrade_sheet.dart`, `ui/widgets/demo_gate_row.dart` — the gate.
+* `ui/screens/demo_screen.dart` — demo against full, side by side.
+* `.github/workflows/demo.yml` — the web build and its Pages deployment.

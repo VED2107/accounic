@@ -1,7 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'core/demo.dart';
 import 'data/auth_repository.dart';
+import 'data/demo_repository.dart';
 import 'data/export_models.dart';
 import 'data/export_repository.dart';
 import 'data/ledger_repository.dart';
@@ -29,6 +31,12 @@ final authRepositoryProvider = Provider<AuthRepository>(
 
 final ledgerRepositoryProvider = Provider<LedgerRepository>(
   (ref) => LedgerRepository(ref.watch(supabaseClientProvider)),
+);
+
+/// The demo's front door (data/demo_repository.dart). Present in every build;
+/// reached only by a build made with --dart-define=DEMO_MODE=on.
+final demoRepositoryProvider = Provider<DemoRepository>(
+  (ref) => DemoRepository(ref.watch(supabaseClientProvider)),
 );
 
 final ratesRepositoryProvider = Provider<RatesRepository>(
@@ -83,6 +91,33 @@ final isSignedInProvider = Provider<bool>((ref) {
 final meProvider = FutureProvider<Me?>((ref) async {
   if (!ref.watch(isSignedInProvider)) return null;
   return ref.watch(ledgerRepositoryProvider).me();
+});
+
+/// Whether the SIGNED-IN ACCOUNT is a demo one — `profiles.is_demo` (0030).
+///
+/// Nothing to do with which build this is. A demo account carries this into the
+/// Windows and Android applications too, which is the point: the restriction
+/// belongs to the account, and it is lifted by an administrator converting the
+/// account, not by the user finding a different binary.
+final isDemoAccountProvider = Provider<bool>((ref) {
+  return ref.watch(meProvider).valueOrNull?.isDemo ?? false;
+});
+
+/// Whether the experience in front of the user is the restricted one.
+///
+/// The OR of the two flags `core/demo.dart` keeps apart, and the ONLY question
+/// a feature gate should ask. Either is enough on its own:
+///
+///   * the demo BUILD restricts whoever is using it, including an administrator
+///     who wants to see what a visitor sees;
+///   * a demo ACCOUNT is restricted wherever it signs in.
+///
+/// Restriction is presentation. Not one of the capabilities behind these gates
+/// is enforced here — administration is refused by `is_admin()` in the
+/// database, and every ledger row by RLS, whatever this provider says.
+final demoRestrictedProvider = Provider<bool>((ref) {
+  if (isDemoBuild) return true;
+  return ref.watch(isDemoAccountProvider);
 });
 
 final currencyProvider = Provider<String>((ref) {
@@ -161,17 +196,25 @@ final searchProvider =
 
 /// Administration. Guarded by `me.isAdmin` in the UI and by `is_admin()` in
 /// every RPC these call, so a forced navigation shows an error, not data.
+/// The account directory's arguments: what was typed, and which accounts are
+/// being asked for — null for everyone, true for the demo ones, false for the
+/// real ones (db/migrations/0030).
+typedef AdminUsersQuery = ({String query, bool? demoOnly});
+
 final adminUsersProvider =
-    FutureProvider.autoDispose.family<AdminUserPage, String>((ref, query) async {
+    FutureProvider.autoDispose.family<AdminUserPage, AdminUsersQuery>((ref, args) async {
   // Same debounce shape as [searchProvider]: while the admin is still typing,
   // each keystroke disposes the previous provider before the delay elapses.
-  if (query.isNotEmpty) {
+  if (args.query.isNotEmpty) {
     var cancelled = false;
     ref.onDispose(() => cancelled = true);
     await Future<void>.delayed(const Duration(milliseconds: 180));
     if (cancelled) return const AdminUserPage(users: [], total: 0);
   }
-  return ref.watch(ledgerRepositoryProvider).adminUsers(query: query);
+  return ref.watch(ledgerRepositoryProvider).adminUsers(
+        query: args.query,
+        demoOnly: args.demoOnly,
+      );
 });
 
 final systemInfoProvider = FutureProvider.autoDispose<SystemInfo>((ref) {

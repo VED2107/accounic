@@ -13,7 +13,14 @@ import '../widgets/common.dart';
 /// Email and password only. No signup link, no social buttons, no self-service
 /// reset — an administrator creates accounts and resets passwords.
 class LoginScreen extends ConsumerStatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({super.key, this.footnote});
+
+  /// What is printed under the card.
+  ///
+  /// Defaults to the administrator note, which is the truth in a real install.
+  /// The demo passes its own, because "contact your administrator" is advice
+  /// nobody visiting a demo can act on (docs/demo.md).
+  final String? footnote;
 
   @override
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
@@ -168,8 +175,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                   const SizedBox(height: 24),
                   Text(
-                    'Accounts are created by your administrator.\n'
-                    'Contact them if you cannot sign in.',
+                    widget.footnote ??
+                        'Accounts are created by your administrator.\n'
+                            'Contact them if you cannot sign in.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 12,

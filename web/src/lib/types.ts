@@ -642,6 +642,10 @@ export interface AdminUser {
   currency: string;
   is_active: boolean;
   is_admin: boolean;
+  /** A demo account — profiles.is_demo (db/migrations/0030). */
+  is_demo: boolean;
+  /** An anonymous demo visitor: no email, no password, and not convertible. */
+  is_anonymous: boolean;
   created_at: string;
   updated_at: string;
   last_sign_in_at: string | null;
@@ -657,6 +661,8 @@ export interface AdminUserList {
 export interface AdminSystemInfo {
   users_total: number;
   users_active: number;
+  /** How many accounts are demo ones (db/migrations/0030). */
+  users_demo: number;
   admins: number;
   people_total: number;
   transactions_total: number;

@@ -58,6 +58,15 @@ export async function adminCreateUser(
       business_name: parsed.data.business_name ?? null,
       currency: parsed.data.currency,
     },
+    // APP metadata, not user metadata, and the difference is the whole point:
+    // a user can edit their own user_metadata and cannot touch this. The
+    // `handle_new_auth_user` trigger reads it and sets profiles.is_demo, which
+    // is where the flag actually lives (db/migrations/0030).
+    //
+    // This is the only place a demo account is ever MADE. There is no client
+    // route to it: setting it needs the service-role key, and the service-role
+    // key exists on this server and nowhere else.
+    app_metadata: { is_demo: parsed.data.is_demo },
   });
 
   if (error) {
@@ -70,6 +79,49 @@ export async function adminCreateUser(
 
   revalidatePath('/admin');
   return ok({ id: data.user.id, email: data.user.email ?? parsed.data.email });
+}
+
+/**
+ * Demo account -> real account (db/migrations/0030).
+ *
+ * Goes through the ANON client on purpose, exactly as adminSetUserActive does:
+ * `admin_convert_demo_user()` is SECURITY DEFINER and checks `is_admin()`
+ * against the calling identity, so it has to see the administrator rather than
+ * the service role. Using the admin client here would work and would be wrong —
+ * it would make the database unable to tell which administrator acted, and the
+ * audit row would name nobody.
+ *
+ * Every rule about when this is allowed lives in the function: administrator,
+ * target exists, target is currently a demo account, target is not an anonymous
+ * visitor. None of them is re-implemented here, so none of them can drift.
+ */
+export async function adminConvertDemoUser(
+  userId: string,
+): Promise<ActionResult<{ id: string; email: string; people_kept: number; transactions_kept: number }>> {
+  const denied = await assertAdmin();
+  if (denied) return denied;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('admin_convert_demo_user', {
+    p_user_id: userId,
+  });
+  if (error) {
+    return fail(error, 'That account could not be converted. Nothing has been changed.');
+  }
+
+  revalidatePath('/admin');
+  const row = (data ?? {}) as {
+    id?: string;
+    email?: string;
+    people_kept?: number;
+    transactions_kept?: number;
+  };
+  return ok({
+    id: row.id ?? userId,
+    email: row.email ?? '',
+    people_kept: row.people_kept ?? 0,
+    transactions_kept: row.transactions_kept ?? 0,
+  });
 }
 
 export async function adminResetPassword(

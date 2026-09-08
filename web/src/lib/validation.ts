@@ -338,6 +338,18 @@ export const adminCreateUserSchema = z.object({
     .toUpperCase()
     .regex(/^[A-Z]{3}$/, 'Use a three letter currency code')
     .default('INR'),
+
+  /**
+   * Whether this account is being created as a demo one (db/migrations/0030).
+   *
+   * A checkbox sends 'on' when ticked and nothing at all when not, so the
+   * absent case has to mean false rather than fail validation. An administrator
+   * who does not think about this gets a real user, which is the right default:
+   * the restricted account is the one you have to ask for.
+   */
+  is_demo: z
+    .union([z.literal('on'), z.literal('true'), z.literal('false'), z.undefined()])
+    .transform((v) => v === 'on' || v === 'true'),
 });
 
 export const adminResetPasswordSchema = z.object({

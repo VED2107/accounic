@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/dates.dart';
+import '../../core/demo.dart';
 import '../../core/currencies.dart';
 import '../../core/direction.dart';
 import '../../core/failure.dart';
@@ -14,6 +15,7 @@ import '../widgets/amount_field.dart';
 import '../widgets/currency_field.dart';
 import '../widgets/forms.dart';
 import 'sheet_scaffold.dart';
+import 'upgrade_sheet.dart';
 
 /// Credit and debit against the opening balance (db/migrations/0022).
 ///
@@ -41,6 +43,11 @@ Future<bool> showOpeningAdjustSheet(
   required String accountCurrency,
   required MoneyFlow flow,
 }) async {
+  if (ref.read(demoRestrictedProvider)) {
+    await showUpgradeSheet(context, DemoFeature.openingBalance);
+    return false;
+  }
+
   final result = await showAppSheet<bool>(
     context,
     (context) => _OpeningAdjustSheet(

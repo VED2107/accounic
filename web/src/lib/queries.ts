@@ -163,12 +163,23 @@ export async function requireAdmin() {
   return me;
 }
 
-export async function getAdminUsers(query = ''): Promise<AdminUserList> {
+/**
+ * The account directory (db/migrations/0030).
+ *
+ * `demoOnly` is a filter on the one list: undefined is everyone, true is the
+ * demo accounts, false is the real ones. Applied by the database, so the count
+ * and the page agree with the filter rather than being narrowed afterwards.
+ */
+export async function getAdminUsers(
+  query = '',
+  demoOnly?: boolean,
+): Promise<AdminUserList> {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc('admin_list_users', {
     p_query: query,
     p_limit: 100,
     p_offset: 0,
+    p_demo_only: demoOnly ?? null,
   });
   if (error) throw error;
   return data as AdminUserList;

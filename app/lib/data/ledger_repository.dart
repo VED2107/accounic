@@ -715,16 +715,56 @@ class LedgerRepository {
   // docs/decisions.md §21. Each RPC re-checks is_admin() server-side, so a user
   // who forces the screen open still sees nothing.
 
-  Future<AdminUserPage> adminUsers({String query = '', int limit = 50, int offset = 0}) async {
+  /// The account directory (db/migrations/0030).
+  ///
+  /// [demoOnly] is a filter on the one list, not a second list: null is
+  /// everyone, true is the demo accounts, false is the real ones. The database
+  /// applies it, so "show me the demo users" is a different query rather than
+  /// the same query with rows dropped afterwards — a page of 50 real accounts
+  /// filtered in Dart would show an empty demo tab while demo accounts sat on
+  /// page two.
+  Future<AdminUserPage> adminUsers({
+    String query = '',
+    int limit = 50,
+    int offset = 0,
+    bool? demoOnly,
+  }) async {
     try {
       final data = await _client.rpc('admin_list_users', params: {
         'p_query': query.trim().isEmpty ? null : query.trim(),
         'p_limit': limit,
         'p_offset': offset,
+        'p_demo_only': demoOnly,
       });
       return AdminUserPage.fromJson(Map<String, dynamic>.from(data as Map));
     } catch (error, stack) {
       throw Failure.from(error, 'The user directory could not be loaded.', stack);
+    }
+  }
+
+  /// Turns a demo account into a real one (db/migrations/0030).
+  ///
+  /// The same person, the same account, the same books — one column changes.
+  /// Every check that makes it safe is in `admin_convert_demo_user()`, not
+  /// here: that the caller is an administrator, that the target exists, that it
+  /// is currently a demo account, and that it is not an anonymous visitor with
+  /// no way back in. This client sends an id and is trusted with nothing.
+  ///
+  /// Notably absent: any way to set `is_demo` back to true. Marking an account
+  /// as a demo is done when it is created, by an administrator holding the
+  /// service-role key on the server; there is no client route to it at all.
+  Future<ConvertedUser> convertDemoUser(String userId) async {
+    try {
+      final data = await _client.rpc('admin_convert_demo_user', params: {
+        'p_user_id': userId,
+      });
+      return ConvertedUser.fromJson(Map<String, dynamic>.from(data as Map));
+    } catch (error, stack) {
+      throw Failure.from(
+        error,
+        'That account could not be converted. Nothing has been changed.',
+        stack,
+      );
     }
   }
 

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/currencies.dart';
 import '../../core/dates.dart';
+import '../../core/demo.dart';
 import '../../core/failure.dart';
 import '../../core/icons.dart';
 import '../../core/layout.dart';
@@ -17,6 +18,7 @@ import '../widgets/amount_field.dart';
 import '../widgets/currency_field.dart';
 import '../widgets/forms.dart';
 import 'sheet_scaffold.dart';
+import 'upgrade_sheet.dart';
 
 /// Move money from one person to another (upgrade 46).
 ///
@@ -40,6 +42,11 @@ Future<bool> showTransferSheet(
   WidgetRef ref, {
   PersonBalance? from,
 }) async {
+  if (ref.read(demoRestrictedProvider)) {
+    await showUpgradeSheet(context, DemoFeature.transfers);
+    return false;
+  }
+
   final result = await showAppSheet<bool>(
     context,
     (context) => _TransferSheet(from: from),
