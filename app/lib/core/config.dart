@@ -37,21 +37,21 @@ class AppConfig {
   /// reachable surfaces, and a seeded sample workspace. It changes nothing
   /// about how a figure is computed.
   ///
-  /// It must only ever be set on a build pointed at the isolated demo Supabase
-  /// project. A demo build against production would put anonymous visitors in
-  /// real workspaces, which is why the value is a build-time constant rather
-  /// than anything the running app can be talked into.
+  /// It points at the SAME Supabase project as production — there is one
+  /// database and one accounting engine (docs/demo.md). What separates a demo
+  /// visitor from a customer is `profiles.is_demo` and RLS, not a second
+  /// backend. This flag only decides which door the visitor arrives at, and it
+  /// is a build-time constant so nothing the running app is told can change it.
   static const bool demoMode =
       String.fromEnvironment('DEMO_MODE', defaultValue: 'off') == 'on';
 
-  /// Where the full application lives, for every call to action the demo makes
-  /// (core/demo.dart).
+  /// Where the full application lives (core/demo.dart).
   ///
   /// One constant, one dart-define, so the product's address is written down
-  /// once. The default is the releases page, which is where an installable
-  /// Accounic actually comes from today; a deployment that fronts the product
-  /// with a site of its own overrides it with
-  /// `--dart-define=FULL_APP_URL=https://…`.
+  /// once. It is what an administrator hands to a user they have just
+  /// converted — NOT a self-serve download for a demo visitor. Nobody reaches
+  /// the full application by following a link; they reach it because an
+  /// administrator enabled their account (db/migrations/0030).
   static const String fullAppUrl = String.fromEnvironment(
     'FULL_APP_URL',
     defaultValue: 'https://github.com/VED2107/accounic/releases/latest',

@@ -768,6 +768,31 @@ class LedgerRepository {
     }
   }
 
+  /// Sets an account's type, in either direction (db/migrations/0031).
+  ///
+  /// The general edit that sits beside [convertDemoUser]. That one is the
+  /// demo-to-real FLOW and refuses anything else on purpose; this is an
+  /// administrator changing their mind, and it changes what the interface
+  /// offers the account and nothing whatever about its ledger.
+  ///
+  /// Every guard is in `admin_set_user_demo()`: administrator, target exists,
+  /// not yourself, and never an anonymous visitor made real.
+  Future<ConvertedUser> setUserDemo(String userId, bool isDemo) async {
+    try {
+      final data = await _client.rpc('admin_set_user_demo', params: {
+        'p_user_id': userId,
+        'p_is_demo': isDemo,
+      });
+      return ConvertedUser.fromJson(Map<String, dynamic>.from(data as Map));
+    } catch (error, stack) {
+      throw Failure.from(
+        error,
+        'That account type could not be changed. Nothing has been changed.',
+        stack,
+      );
+    }
+  }
+
   Future<SystemInfo> systemInfo() async {
     try {
       final data = await _client.rpc('admin_system_info');

@@ -77,6 +77,34 @@ final appUpdateProvider = FutureProvider<AppRelease?>((ref) async {
   }
 });
 
+/// The demo build for the device this is running on, when there is one
+/// (data/update_repository.dart, docs/demo.md).
+///
+/// Null covers every case that is not an offer: no release, no demo asset for
+/// this platform, no network, a platform with nothing to install. None of them
+/// is an error the visitor has to see, so this provider never carries one —
+/// the card simply does not appear.
+final demoDownloadProvider = FutureProvider<DemoDownload?>((ref) async {
+  try {
+    return await ref.watch(updateRepositoryProvider).demoDownload();
+  } catch (_) {
+    return null;
+  }
+});
+
+/// The FULL build for this device, for a user whose account is real.
+///
+/// What a converted demo user is offered: they have the whole product now, and
+/// the next useful thing is the application for the machine they are on. Null
+/// whenever there is nothing to offer, which the card reads as "draw nothing".
+final fullDownloadProvider = FutureProvider<DemoDownload?>((ref) async {
+  try {
+    return await ref.watch(updateRepositoryProvider).fullDownload();
+  } catch (_) {
+    return null;
+  }
+});
+
 final authStateProvider = StreamProvider<AuthState?>((ref) {
   return ref.watch(authRepositoryProvider).changes;
 });

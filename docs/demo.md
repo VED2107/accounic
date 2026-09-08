@@ -95,6 +95,7 @@ rather than inserted beside it. There is no `DemoBalanceCalculator`,
 cd db/tools
 node run-sql.mjs file ../migrations/0029_demo.sql
 node run-sql.mjs file ../migrations/0030_demo_users.sql
+node run-sql.mjs file ../migrations/0031_admin_set_demo.sql
 ```
 
 Both go to the **real** project — that is the point of this architecture. They
@@ -102,6 +103,8 @@ are safe there:
 
 - `0029` adds `demo_seed()` and `demo_reset()`, and both refuse any caller who
   is not a demo one.
+- `0031` adds `admin_set_user_demo()`, the account-type edit in both
+  directions.
 - `0030` adds `profiles.is_demo` (defaulting to **false**, so every existing
   account is a real account), the administration surface, and
   `admin_convert_demo_user()`, which **refuses** a target that is not currently
@@ -173,7 +176,26 @@ Each row shows the name, email, demo status, people and transaction counts, and
 when they were last seen. `Demo · anonymous` marks a visitor who arrived through
 the hosted demo rather than with a password. The summary tile counts them.
 
-## 6. Convert a demo user
+## 6. Edit an account's type
+
+An administrator creates both kinds of account and can change their mind. There
+are two operations, deliberately, because they are two different acts:
+
+| | Direction | Where |
+| --- | --- | --- |
+| **Convert to real user** | demo → real | Offered only on a demo account. Refuses a real one by name, so it cannot be misfired at a customer. Audited as `demo_user_converted`. |
+| **Make it a demo account** | real → demo | Offered only on a real account. Refuses your own account. Audited as `demo_status_changed`. |
+
+Neither touches a ledger row in either direction — not one person, transaction
+or settlement is created, moved, converted or deleted. What changes is what the
+interface offers that account.
+
+Because there is one database, the change **is** the connection: the demo build
+and the production build both read `profiles.is_demo` through `me()`, so an
+account edited in Administration behaves differently the next time its client
+loads its profile. There is no sync, no copy and nothing to keep in step.
+
+## 7. Convert a demo user
 
 Menu → **Convert to real user** → confirm.
 
@@ -197,15 +219,45 @@ administrator, the target, the time, and the counts that came through.
 If you later want *convert and start fresh*, that is a separate operation and it
 has to be designed and asked for by name. This one never discards a ledger.
 
-## 7. Hand over the full application
+## 8. The demo on Android and Windows
+
+The demo is built for all three platforms, not just the web. On a tag push,
+`.github/workflows/demo.yml` builds `DEMO_MODE=on` for Android and Windows and
+attaches them to the release as `accounic-demo-<tag>.apk` and
+`accounic-demo-<tag>-windows.zip`.
+
+The word `demo` in those file names is load-bearing:
+`UpdateRepository.demoDownload()` matches on it, so a production installer can
+never be offered to somebody holding a demo account.
+
+The demo screen resolves the asset for the visitor's **own** platform — from
+`defaultTargetPlatform`, which on the web reports the browser's operating
+system — and offers it as a direct download. No releases page, no list of files
+to guess between. When there is no matching asset, no network, or no release,
+the card simply does not appear.
+
+## 9. Hand over the full application
 
 After a conversion both admin surfaces offer **Copy app link**. The user signs
 in with the same email and password they already had; `is_demo` is now false, so
 the gates are gone. No second account, no second database, no data migration.
 
-The address comes from one constant — `AppConfig.fullAppUrl`, overridable with
-`--dart-define=FULL_APP_URL=…` — read by the gate sheet, the demo screen, the
-masthead and the administrator's confirmation.
+**Access is granted, never taken, and the demo does not pretend otherwise.**
+There is no link a demo visitor can follow that gives them the full product, so
+the demo offers none — no download, and deliberately no mail button either.
+Launching someone's email client throws them out of the product mid-evaluation,
+into an application that may not be configured, and dresses an administrative
+decision up as a purchase form. Instead the demo states, in three numbered
+steps, who grants access and what happens when they do.
+
+**What the converted user gets.** The moment `is_demo` becomes false, Profile
+grows an **Accounic on your devices** group offering the real installer for the
+machine they are on — resolved to the exact release asset, not a page of files.
+Web only, since on Android and Windows they are already holding it, and absent
+entirely while the account is still a demo one.
+
+So the flow ends where it should: they ask, an administrator enables the
+account, and the next screen they look at hands them the application.
 
 ---
 

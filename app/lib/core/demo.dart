@@ -101,13 +101,37 @@ const kFullAccounicPromises = <String>[
   'Full multi-currency accounting with recorded exchange rates',
   'Opening balances, adjustments and transfers between accounts',
   'PDF statements, workspace exports and the activity journal',
-  'The complete application, on Android and Windows as well as the web',
+  'Your own private books, kept for as long as you keep them',
 ];
 
-/// Where a demo visitor goes for the real thing.
+/// How full access is actually obtained, in one sentence.
 ///
-/// ONE constant, read from configuration, used by the gate sheet, the demo
-/// screen, the masthead and the administrator's confirmation — so the address
-/// of the product is written down once and changed once
-/// (`--dart-define=FULL_APP_URL=…`, core/config.dart).
+/// This is the whole flow, and the demo says it everywhere rather than implying
+/// a download: an administrator enables the account, and the account is the one
+/// the visitor is already signed in to.
+const String kAccessGrantedBy =
+    'Full access is enabled by an administrator, on the account you are already '
+    'signed in to. Nothing is re-created and nothing is copied — your books stay '
+    'exactly as you left them.';
+
+/// Where the full application is downloaded from, ONCE an account has been
+/// enabled (`--dart-define=FULL_APP_URL=…`, core/config.dart).
+///
+/// Deliberately not a call to action for a demo visitor. It is what an
+/// administrator hands over after converting someone, which is why the only
+/// screen that offers it is the administrator's own confirmation.
 String get kFullAccounicUrl => AppConfig.fullAppUrl;
+
+/// What a demo visitor is actually asked to do, in the demo's own words.
+///
+/// Deliberately NOT a link, and deliberately not a mail client.
+///
+/// Opening the visitor's email app is the wrong move twice over. It throws them
+/// out of the product mid-evaluation into an application that may not be
+/// configured, on a device that may have no mail account at all — and it dresses
+/// an administrative decision up as a purchase form. The honest thing is to say
+/// who grants access and let them go and ask.
+const String kHowToGetFullAccess =
+    'Ask your Accounic administrator to enable full access for this account. '
+    'They do it from Administration in a couple of clicks, and you carry on in '
+    'the same account with the same books.';

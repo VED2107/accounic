@@ -93,7 +93,9 @@ class DemoBanner extends ConsumerWidget {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    child: const Text('Get full Accounic'),
+                    // Points at the demo screen, which explains how access is
+                    // granted — not at a download the visitor cannot use yet.
+                    child: const Text('About full Accounic'),
                   ),
                 ],
               ),

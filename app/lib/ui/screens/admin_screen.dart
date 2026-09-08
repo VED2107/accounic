@@ -166,6 +166,41 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     if (mounted) showMessage(context, 'The full Accounic link is on your clipboard.');
   }
 
+  /// Marks a real account as a demo one (db/migrations/0031).
+  ///
+  /// The other direction has its own flow, because turning a visitor into a
+  /// customer deserves the confirmation that names their books. This direction
+  /// is the administrator correcting a record, and it says plainly what the
+  /// person on the other end will notice: a narrower application, and not one
+  /// figure moved.
+  Future<void> _markDemo(AdminUser user) async {
+    final name = user.name.isEmpty ? user.email : user.name;
+
+    final ok = await confirm(
+      context,
+      icon: AppIcons.tiers,
+      title: 'Make $name a demo account?',
+      confirmLabel: 'Make it a demo account',
+      body: 'They keep this account, this email, this password and every one of '
+          'their records — the application simply offers them less until an '
+          'administrator changes it back.\n\n'
+          'Reports, transfers, opening balances and multi-currency close for '
+          'them. Nothing in their ledger is deleted, moved or converted.',
+    );
+    if (!ok || !mounted) return;
+
+    try {
+      await ref.read(ledgerRepositoryProvider).setUserDemo(user.id, true);
+      ref.invalidate(adminUsersProvider);
+      ref.invalidate(systemInfoProvider);
+      if (mounted) showMessage(context, '$name is now a demo account.');
+    } on Failure catch (failure) {
+      if (mounted) showMessage(context, failure.message, error: true);
+    } catch (error) {
+      if (mounted) showMessage(context, '$error', error: true);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final me = ref.watch(meProvider).valueOrNull;
@@ -315,6 +350,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                                 divider: index < page.users.length - 1,
                                 onSetActive: (active) => _setActive(user, active),
                                 onConvert: () => _convert(user),
+                                onMarkDemo: () => _markDemo(user),
                               ),
                           ],
                         ),
@@ -529,6 +565,7 @@ class _UserRow extends StatelessWidget {
     required this.divider,
     required this.onSetActive,
     required this.onConvert,
+    required this.onMarkDemo,
   });
 
   final AdminUser user;
@@ -536,6 +573,7 @@ class _UserRow extends StatelessWidget {
   final bool divider;
   final ValueChanged<bool> onSetActive;
   final VoidCallback onConvert;
+  final VoidCallback onMarkDemo;
 
   @override
   Widget build(BuildContext context) {
@@ -648,6 +686,7 @@ class _UserRow extends StatelessWidget {
                     hovered: hovered,
                     onSetActive: onSetActive,
                     onConvert: onConvert,
+                    onMarkDemo: onMarkDemo,
                   ),
               ],
             ),
@@ -666,12 +705,14 @@ class _AccountMenu extends StatelessWidget {
     required this.hovered,
     required this.onSetActive,
     required this.onConvert,
+    required this.onMarkDemo,
   });
 
   final AdminUser user;
   final bool hovered;
   final ValueChanged<bool> onSetActive;
   final VoidCallback onConvert;
+  final VoidCallback onMarkDemo;
 
   @override
   Widget build(BuildContext context) {
@@ -733,6 +774,7 @@ class _AccountMenu extends StatelessWidget {
         'disable' => onSetActive(false),
         'enable' => onSetActive(true),
         'convert' => onConvert(),
+        'mark-demo' => onMarkDemo(),
         _ => null,
       },
       itemBuilder: (context) => [
@@ -752,6 +794,19 @@ class _AccountMenu extends StatelessWidget {
               note: user.isAnonymous
                   ? 'Anonymous visitors have no sign-in to keep'
                   : 'Keeps their account, their password and their books',
+            ),
+          ),
+          const PopupMenuDivider(),
+        ] else ...[
+          // The other direction. An administrator creates both kinds of account
+          // and is allowed to have changed their mind; the ledger is untouched
+          // either way (db/migrations/0031).
+          PopupMenuItem(
+            value: 'mark-demo',
+            child: item(
+              AppIcons.tiers,
+              'Make it a demo account',
+              note: 'Narrows what they can reach. Keeps every record',
             ),
           ),
           const PopupMenuDivider(),

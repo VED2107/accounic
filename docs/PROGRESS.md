@@ -1197,6 +1197,23 @@ rather than quietly ignored. It writes an `admin_events` row — the first
 administrative audit this product has had — and it does not touch the ledger:
 the books built while trying Accounic become the opening state of the real ones.
 
+**Both directions, two operations.** Convert to real user is offered only on a
+demo account and refuses a real one by name; Make it a demo account is offered
+only on a real one and refuses your own. They are separate because they are
+different acts, and both are audited separately for the same reason. Neither
+moves a ledger row. One database is what makes this the whole of the
+integration: the demo and the production builds both read `profiles.is_demo`
+through `me()`, so an edit in Administration is the connection — there is
+nothing to sync.
+
+**Access is granted, never taken.** The demo's calls to action ask an
+administrator to enable the account rather than offering a download, because a
+download cannot help a visitor whose account has not been enabled. The full
+application's address is offered on exactly one screen: the administrator's
+confirmation, after the conversion. The demo itself is published for Android and
+Windows as well as the web, and the demo screen resolves the asset for the
+visitor's own platform and hands it over as a direct link.
+
 **Where the service-role key still is.** On the Next.js server, and nowhere
 else. Making a demo account needs it, which is why **Add user → Account type**
 lives in the web admin; clearing the flag needs an administrator and the RPC.
@@ -1205,6 +1222,7 @@ No client can do either, and the Flutter build carries the publishable key alone
 * `db/migrations/0029_demo.sql` — `demo_seed()`, `demo_reset()`.
 * `db/migrations/0030_demo_users.sql` — `profiles.is_demo`, the admin surface,
   the conversion, `admin_events`.
+* `db/migrations/0031_admin_set_demo.sql` — the account-type edit, both ways.
 * `core/demo.dart`, `providers.dart` — the two flags and their OR.
 * `ui/sheets/upgrade_sheet.dart`, `ui/widgets/demo_gate_row.dart` — the gate.
 * `ui/screens/demo_screen.dart` — demo against full, side by side.

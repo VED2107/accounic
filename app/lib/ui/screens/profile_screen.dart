@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/dates.dart';
 import '../../core/failure.dart';
@@ -16,6 +18,47 @@ import '../widgets/app_page.dart';
 import '../widgets/common.dart';
 import '../sheets/export_sheet.dart';
 import '../widgets/forms.dart';
+
+/// The desktop and Android applications, for a user entitled to them.
+///
+/// Renders nothing at all when there is no matching asset, no release or no
+/// network. A settings group that sometimes contains a broken promise is worse
+/// than one that is sometimes absent.
+class _GetTheApp extends ConsumerWidget {
+  const _GetTheApp();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final download = ref.watch(fullDownloadProvider).valueOrNull;
+    if (download == null) return const SizedBox.shrink();
+
+    return Column(
+      children: [
+        Reveal(
+          delay: const Duration(milliseconds: 140),
+          child: SettingsGroup(
+            title: 'Accounic on your devices',
+            description: 'The same account and the same books, on the machine in '
+                'front of you.',
+            children: [
+              SettingsRow(
+                icon: AppIcons.download,
+                title: 'Download Accounic for ${download.platform}',
+                subtitle: 'Version ${download.version} — signs in with this email '
+                    'and password',
+                onTap: () => launchUrl(
+                  Uri.parse(download.url),
+                  mode: LaunchMode.externalApplication,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xxl),
+      ],
+    );
+  }
+}
 
 /// Profile (context.md §4). Deliberately small: identity, currency, password.
 ///
@@ -385,6 +428,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ),
             ),
             const SizedBox(height: AppSpacing.xxl),
+
+            // The application for the machine they are on.
+            //
+            // This is what a converted demo user sees the moment their account
+            // becomes real: they have been using Accounic in a browser, they
+            // now have the whole product, and the useful next thing is the
+            // installer for the device in front of them — resolved to the exact
+            // asset rather than a page of files to choose between
+            // (data/update_repository.dart).
+            //
+            // Web only. On Android and Windows this is the application, and
+            // offering to download it here would be absurd. It also draws
+            // nothing while the account is still a demo one: the demo has its
+            // own downloads on the Demo and full screen, and they are different
+            // builds.
+            if (kIsWeb && !restricted) const _GetTheApp(),
 
             Reveal(
               delay: const Duration(milliseconds: 150),

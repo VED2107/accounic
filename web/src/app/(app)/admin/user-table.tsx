@@ -27,6 +27,7 @@ import { initials } from '@/lib/names';
 import {
   adminConvertDemoUser,
   adminCreateUser,
+  adminSetUserDemo,
   adminDeleteUser,
   adminResetPassword,
   adminSetUserActive,
@@ -57,7 +58,7 @@ export function UserTable({
   const [resetting, setResetting] = useState<AdminUser | null>(null);
   const [confirming, setConfirming] = useState<{
     user: AdminUser;
-    kind: 'toggle' | 'delete' | 'admin' | 'convert';
+    kind: 'toggle' | 'delete' | 'admin' | 'convert' | 'mark-demo';
   } | null>(
     null,
   );
@@ -244,7 +245,21 @@ export function UserTable({
                               onSelect: () => setConfirming({ user, kind: 'convert' }),
                             },
                           ]
-                        : []),
+                        : [
+                            // The other direction. An administrator creates both
+                            // kinds of account and is allowed to have changed
+                            // their mind; the ledger is untouched either way
+                            // (db/migrations/0031).
+                            {
+                              label: 'Make it a demo account',
+                              description:
+                                user.id === currentUserId
+                                  ? 'You cannot change your own account type.'
+                                  : 'Narrows what they can reach. Keeps every record.',
+                              disabled: user.id === currentUserId,
+                              onSelect: () => setConfirming({ user, kind: 'mark-demo' }),
+                            },
+                          ]),
                       {
                         label: 'Reset password',
                         description: 'Set a new password and hand it over.',
@@ -375,6 +390,20 @@ export function UserTable({
               `${converted.entries === 1 ? 'transaction' : 'transactions'}.`
             : ''
         }
+      />
+
+      <ConfirmDialog
+        open={confirming?.kind === 'mark-demo'}
+        onClose={() => setConfirming(null)}
+        onConfirm={() =>
+          confirming &&
+          run(() => adminSetUserDemo(confirming.user.id, true), 'Account is now a demo account')
+        }
+        pending={pending}
+        tone="danger"
+        confirmLabel="Make it a demo account"
+        title={`Make ${confirming?.user.name || confirming?.user.email} a demo account?`}
+        body="They keep this account, this email, this password and every one of their records — the application simply offers them less until an administrator changes it back. Reports, transfers, opening balances and multi-currency close for them. Nothing in their ledger is deleted, moved or converted."
       />
 
       <ConfirmDialog

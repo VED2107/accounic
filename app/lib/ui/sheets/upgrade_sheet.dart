@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/demo.dart';
 import '../../core/icons.dart';
@@ -36,13 +35,6 @@ class _UpgradeSheet extends StatelessWidget {
 
   final DemoFeature feature;
 
-  Future<void> _open(BuildContext context) async {
-    final uri = Uri.parse(kFullAccounicUrl);
-    final navigator = Navigator.of(context);
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (navigator.canPop()) navigator.pop();
-  }
-
   @override
   Widget build(BuildContext context) {
     final palette = context.money;
@@ -50,9 +42,14 @@ class _UpgradeSheet extends StatelessWidget {
     return SheetScaffold(
       title: feature.title,
       subtitle: feature.blurb,
-      primaryLabel: 'Get full Accounic',
-      cancelLabel: 'Continue demo',
-      onPrimary: () => _open(context),
+      // The panel closes and says nothing else. There is no link to follow and
+      // no form to fill in: the only thing that opens the full application is
+      // an administrator enabling this account, and the body says so. A button
+      // that launched a mail client would throw the visitor out of the product
+      // mid-evaluation, into an application that may not even be configured.
+      primaryLabel: 'Continue demo',
+      cancelLabel: 'Close',
+      onPrimary: () => Navigator.of(context).maybePop(),
       children: [
         // The mark, at the size the login screen uses, over a hairline of the
         // brand ramp. The only decoration in the panel, and it is doing a job:
@@ -118,10 +115,23 @@ class _UpgradeSheet extends StatelessWidget {
             borderRadius: AppRadius.fieldAll,
             border: Border.all(color: palette.line),
           ),
-          child: Text(
-            'Nothing you do in the demo is kept, and nothing here touches a real '
-            'account.',
-            style: TextStyle(fontSize: 12.5, height: 1.5, color: palette.inkFaint),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Getting full access',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: context.colors.onSurface,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                kHowToGetFullAccess,
+                style: TextStyle(fontSize: 12.5, height: 1.5, color: palette.inkFaint),
+              ),
+            ],
           ),
         ),
       ],

@@ -7,6 +7,7 @@ import '../../core/demo.dart';
 import '../../core/icons.dart';
 import '../../core/layout.dart';
 import '../../core/theme.dart';
+import '../../providers.dart';
 import '../widgets/app_page.dart';
 import '../widgets/brand.dart';
 import '../widgets/common.dart';
@@ -76,10 +77,6 @@ class DemoScreen extends ConsumerWidget {
     ),
   ];
 
-  Future<void> _open() async {
-    await launchUrl(Uri.parse(kFullAccounicUrl), mode: LaunchMode.externalApplication);
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final compact = context.isCompact;
@@ -126,7 +123,9 @@ class DemoScreen extends ConsumerWidget {
         ],
 
         const SizedBox(height: AppSpacing.lg),
-        _Cta(onOpen: _open),
+        const _DemoOnYourDevice(),
+        const SizedBox(height: AppSpacing.lg),
+        const _Cta(),
       ],
     );
   }
@@ -411,14 +410,25 @@ class _Side extends StatelessWidget {
   }
 }
 
-/// The one call to action on the screen, and the last thing on it.
-class _Cta extends StatelessWidget {
-  const _Cta({required this.onOpen});
-
-  final VoidCallback onOpen;
+/// The demo, for the device the visitor is actually holding.
+///
+/// The demo is built for all three platforms, so "does this work on my desktop"
+/// is a question it can answer rather than promise. The asset is resolved from
+/// the current release and offered as a DIRECT download — a releases page asks
+/// somebody evaluating a product to read a list of files and guess which one is
+/// theirs, which is a small insult at exactly the wrong moment.
+///
+/// Draws nothing when there is nothing to offer: no release, no demo asset for
+/// this platform, no network. An absent card is a better answer than a button
+/// that goes somewhere unhelpful.
+class _DemoOnYourDevice extends ConsumerWidget {
+  const _DemoOnYourDevice();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final download = ref.watch(demoDownloadProvider).valueOrNull;
+    if (download == null) return const SizedBox.shrink();
+
     final palette = context.money;
 
     return SectionCard(
@@ -426,26 +436,133 @@ class _Cta extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Get full Accounic',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          Text(
+            'Try the demo on ${download.platform}',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            'Your own workspace, the complete accounting engine, and the desktop '
-            'and Android applications.',
+            'The same demo, built for ${download.platform} from the same code as '
+            'this page. It signs in to a demo account exactly as this one does.',
             style: TextStyle(fontSize: 13.5, height: 1.6, color: palette.inkMuted),
           ),
           const SizedBox(height: AppSpacing.xl),
           Align(
             alignment: Alignment.centerLeft,
-            child: FilledButton.icon(
-              onPressed: onOpen,
+            child: OutlinedButton.icon(
+              onPressed: () => launchUrl(
+                Uri.parse(download.url),
+                mode: LaunchMode.externalApplication,
+              ),
               icon: const Icon(AppIcons.download, size: AppIconSize.sm),
-              label: const Text('Get full Accounic'),
-              style: FilledButton.styleFrom(
+              label: Text('Download the ${download.platform} demo '
+                  '(${download.version})'),
+              style: OutlinedButton.styleFrom(
                 minimumSize: const Size(0, 46),
+                side: BorderSide(color: palette.line),
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The one call to action on the screen, and the last thing on it.
+///
+/// It asks rather than offers, because that is how access actually works: an
+/// administrator enables the account (db/migrations/0030), and until they do
+/// there is no download that would help. A button reading "Get full Accounic"
+/// would be promising something this screen cannot deliver.
+class _Cta extends StatelessWidget {
+  const _Cta();
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.money;
+
+    return SectionCard(
+      brandRule: true,
+      padding: context.cardPadding,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Getting the full application',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            kAccessGrantedBy,
+            style: TextStyle(fontSize: 13.5, height: 1.6, color: palette.inkMuted),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+
+          // Three steps and no button, because there is no button that would be
+          // honest here. Nothing this screen can launch grants access: the only
+          // thing that does is an administrator changing one column
+          // (db/migrations/0030), and the useful thing to give the visitor is
+          // therefore the knowledge of who to ask and what happens next.
+          const _Step(1, 'Ask your Accounic administrator for full access.'),
+          const _Step(
+            2,
+            'They enable this account from Administration — the same account, '
+            'the same email and password.',
+          ),
+          const _Step(
+            3,
+            'Everything on this page opens, on the books you have been working '
+            'in. Nothing is copied and nothing is lost.',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One numbered step of how access is granted.
+class _Step extends StatelessWidget {
+  const _Step(this.number, this.text);
+
+  final int number;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.money;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 22,
+            height: 22,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: palette.accentSoft,
+              shape: BoxShape.circle,
+              border: Border.all(color: palette.accentLine),
+            ),
+            child: Text(
+              '$number',
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                color: context.colors.primary,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                text,
+                style: const TextStyle(fontSize: 13.5, height: 1.5),
               ),
             ),
           ),

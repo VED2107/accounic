@@ -235,16 +235,27 @@ const kAccounicCapabilities = <CapabilityGroup>[
 
   CapabilityGroup(
     'Applications',
-    note: 'Three clients, one backend, one database.',
+    note: 'Three clients, one backend, one database — and the demo runs on all '
+        'three. This page is the web demo; the Android and Windows demos are the '
+        'same build for those platforms, and the card above offers the one for '
+        'the device you are on.',
     [
-      Capability('Web application', inDemo: true),
+      Capability('Web application', inDemo: true, detail: 'What you are using now'),
       Capability('Responsive from phone to desktop', inDemo: true),
       Capability('Dark and light interface', inDemo: true),
       Capability('Custom date picker, shared by every form', inDemo: true),
       Capability('Keyboard-aware forms and reduced-motion support', inDemo: true),
       Capability('Real URLs, deep links and platform back behaviour', inDemo: true),
-      Capability('Android application'),
-      Capability('Windows desktop application'),
+      Capability(
+        'Android application',
+        inDemo: true,
+        detail: 'The demo is built for Android too, with the same restrictions',
+      ),
+      Capability(
+        'Windows desktop application',
+        inDemo: true,
+        detail: 'And for Windows, from the same codebase',
+      ),
       Capability('Windows installer and portable build'),
       Capability('In-app update checking against published releases'),
     ],
