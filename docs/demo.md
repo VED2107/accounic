@@ -38,11 +38,35 @@ Every tag publishes both families of build to the same GitHub release:
 | | Real | Demo |
 | --- | --- | --- |
 | Android | `Accounic-<v>.apk` | `Accounic-demo-<v>.apk` |
-| Windows | `Accounic-Setup-<v>-x64.exe`, portable zip | `Accounic-demo-<v>-windows-x64.zip` |
+| Windows | `Accounic-Setup-<v>-x64.exe`, portable zip | `Accounic-Demo-Setup-<v>-x64.exe`, portable zip |
 
 The word `demo` in those names is load-bearing: `UpdateRepository` matches on
 it, so a demo visitor is never offered the production installer and a paying
 user is never offered the demo.
+
+**Installing both is safe, and that is engineered rather than hoped for.** A
+demo build is a different application to the machine it lands on:
+
+| | Real | Demo |
+| --- | --- | --- |
+| Android application ID | `com.accounic.app` | `com.accounic.app.demo` |
+| Android launcher name | Accounic | Accounic Demo |
+| Windows AppId | `8B0E4C2A-…` | `3F7C1D9E-…` |
+| Windows folder | `…\Programs\Accounic` | `…\Programs\Accounic Demo` |
+| Supabase session key | `sb-<ref>-auth-token` | `sb-<ref>-auth-token-demo` |
+
+The session key is the one that is easy to miss. Both builds point at the same
+project, so supabase_flutter derives the same key from the URL — and on Windows
+`getApplicationSupportDirectory()` comes from the executable's CompanyName and
+ProductName, both "Accounic" either way, so the two share one SharedPreferences
+file whatever folder they were installed into. Without the suffix, signing into
+the demo would sign you out of your own ledger. `main.dart` sets it; the Android
+side gets a separate sandbox from the application ID as well.
+
+The Android identity is decided in `android/app/build.gradle.kts`, which reads
+Flutter's `dart-defines` Gradle property to notice `DEMO_MODE=on`. That is what
+keeps the production build command unchanged — no product flavour, no second
+manifest.
 
 ## The demo never becomes the full product
 

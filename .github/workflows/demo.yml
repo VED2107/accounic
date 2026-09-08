@@ -113,20 +113,45 @@ jobs:
             --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} `
             --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
 
-      # A zip rather than an installer. The demo is something a visitor tries
-      # once; asking them to run an installer for that is a bigger favour than
-      # the demo has earned. The production build still ships Inno Setup.
+      # Both, for the same reason the production build ships both: an installer
+      # for somebody who wants Accounic Demo in their Start Menu, and a zip for
+      # somebody who wants to try it without installing anything.
       #
-      # The WHOLE Release directory, not the exe: the engine DLL, the plugin
-      # DLLs and data\ are all required, and the exe alone will not start.
+      # accounic-demo.iss carries its own AppId, folder and name, so installing
+      # the demo beside a real Accounic disturbs neither. The whole Release
+      # directory is packaged either way: the engine DLL, the plugin DLLs and
+      # data\ are all required, and the exe alone will not start.
+      - name: Compile the installer
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          choco install innosetup --no-progress -y
+
+          # Found, not assumed — the same spelling problem release.yml
+          # documents: ${env:ProgramFiles(x86)} is the correct form, and Inno
+          # Setup lands in any of these depending on the install layout.
+          $candidates = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+            "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+          )
+          $iscc = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) { throw "ISCC.exe not found. Looked in: $($candidates -join '; ')" }
+
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          & $iscc app\windows\installer\accounic-demo.iss /DAppVersion=$version
+
       - name: Portable zip
         shell: pwsh
         working-directory: ${{ github.workspace }}
         run: |
           $version = "${{ github.ref_name }}" -replace '^v', ''
+          New-Item -ItemType Directory -Force app\build\installer | Out-Null
           Compress-Archive -Force -Path app\build\windows\x64\runner\Release\* `
-            -DestinationPath "app\Accounic-demo-$version-windows-x64.zip"
+            -DestinationPath "app\build\installer\Accounic-Demo-$version-windows-x64.zip"
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: app/Accounic-demo-*-windows-x64.zip
+          files: |
+            app/build/installer/Accounic-Demo-Setup-*-x64.exe
+            app/build/installer/Accounic-Demo-*-windows-x64.zip

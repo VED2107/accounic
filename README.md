@@ -2,15 +2,17 @@
 
 A small, fast, personal accounting system. Three clients, one backend, one database.
 
-Current release: **[v1.12.0](https://github.com/VED2107/accounic/releases/latest)** —
-Windows installer, Windows portable zip, and an Android APK. The app checks GitHub
-Releases on launch and tells you when a newer one exists. A release is built by CI
-on a tag and left as a draft: the update check only ever offers a *published* one,
-so a person decides when a build reaches the installed clients.
+Current release: **[v1.14.0](https://github.com/VED2107/accounic/releases/latest)** —
+Windows installer, Windows portable zip and an Android APK, plus the same three as a
+**demo** build. The app checks GitHub Releases on launch and tells you when a newer one
+exists. A release is built by CI on a tag and left as a draft: the update check only
+ever offers a *published* one, so a person decides when a build reaches the installed
+clients.
 
-Every push runs three workflows — web (typecheck · tests · production build), Flutter
-(analyze · tests · debug APK) and SQL (every migration and every suite against a
-throwaway Postgres). A green CI means all three passed.
+Every push runs four workflows — web (typecheck · tests · production build), Flutter
+(analyze · tests · debug APK), SQL (every migration and every suite against a throwaway
+Postgres) and, on a tag, demo (the demo installer, zip and APK). A green CI means they
+all passed.
 
 Answers four questions and little else (`context.md` §35):
 
@@ -26,7 +28,25 @@ Answers four questions and little else (`context.md` §35):
 | Windows desktop | the same Flutter codebase | `app/` |
 | Backend | PostgreSQL / Supabase — schema, RLS, accounting engine | `db/` |
 
+There is no Flutter Web build. Flutter targets Android and Windows; the browser client
+is the Next.js application in `web/`.
+
 Design source of truth: [`context.md`](./context.md). Visual map: [`mindmap.md`](./mindmap.md).
+
+### The demo
+
+**Accounic Demo** is the same application with one dart-define — `DEMO_MODE=on` —
+against the same database, with a restricted surface and safe sample books. It ships as
+its own Windows installer, Windows zip and Android APK on every release, installs
+alongside a real Accounic without disturbing it, and keeps its own session.
+
+A demo account is an ordinary account carrying `profiles.is_demo`. Isolation is the RLS
+every account already has; the flag decides only what the interface offers. An
+administrator converts a demo user to a real one from Administration — same account,
+same password, same books — and the demo then points them at the real application
+rather than unlocking itself.
+
+Full runbook: [`docs/demo.md`](./docs/demo.md).
 
 ---
 
@@ -47,9 +67,12 @@ Design source of truth: [`context.md`](./context.md). Visual map: [`mindmap.md`]
               ┌──────────────────┼──────────────────┐
               │                  │                  │
         Next.js web        Flutter Android    Flutter Windows
-       (+ service-role
+       (+ service-role     (real + demo)      (real + demo)
         for admin only)
 ```
+
+A demo build is the same binary and the same engine; `profiles.is_demo` and RLS decide
+what an account may see, and no client is ever trusted with that decision.
 
 **The rule that shapes everything:** the database computes every balance. No client
 adds up a column. `web/src/lib/money.ts` and `app/lib/core/money.dart` format money
@@ -176,6 +199,27 @@ flutter build apk     --release --dart-define=SUPABASE_URL=… --dart-define=SUP
 
 A build without those defines starts and tells you so, rather than failing later
 with a network error.
+
+### 3.4 Demo builds
+
+The same commands with one more define. Nothing else changes — same code, same
+database, same engine:
+
+```bash
+flutter build windows --release --dart-define=DEMO_MODE=on --dart-define=SUPABASE_URL=… --dart-define=SUPABASE_ANON_KEY=…
+flutter build apk     --release --dart-define=DEMO_MODE=on --dart-define=SUPABASE_URL=… --dart-define=SUPABASE_ANON_KEY=…
+
+# Windows installer for the demo (Inno Setup), after the windows build above
+iscc app\windows\installer\accounic-demo.iss /DAppVersion=1.14.0
+```
+
+A demo build is a **different application** to the machine it is installed on:
+`com.accounic.app.demo` on Android, its own AppId and folder on Windows, and its own
+Supabase session key. Install Accounic and Accounic Demo side by side and neither
+touches the other's login or data.
+
+`.github/workflows/demo.yml` does all of this on a tag and attaches the results to the
+same release as the production builds.
 
 ---
 

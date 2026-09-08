@@ -54,7 +54,7 @@ Future<void> main() async {
     // The publishable (anon) key — the only credential a client binary ever
     // holds. Everything it can do is bounded by RLS (context.md §24).
     publishableKey: AppConfig.supabaseAnonKey,
-    authOptions: const FlutterAuthClientOptions(
+    authOptions: FlutterAuthClientOptions(
       // Sessions persist across restarts. Be precise about where:
       // supabase_flutter stores them in plain SharedPreferences on Android
       // (its local_storage.dart) and in the app-data directory on Windows —
@@ -66,6 +66,32 @@ Future<void> main() async {
       // add real at-rest protection and is the next step worth taking; see
       // docs/security.md.
       autoRefreshToken: true,
+
+      // Where the session is kept, and why the demo keeps it somewhere else.
+      //
+      // supabase_flutter derives its storage key from the project URL —
+      // `sb-<project-ref>-auth-token` — and the demo points at the SAME project
+      // as production, so both builds would compute the same key. On Windows
+      // that matters: `getApplicationSupportDirectory()` is built from the
+      // executable's CompanyName and ProductName, both "Accounic" in either
+      // build, so the demo and the real application share one SharedPreferences
+      // file. Signing into the demo would have signed you out of your own
+      // ledger, and vice versa.
+      //
+      // A suffixed key gives them separate sessions in the same file. On
+      // Android the application ID differs too (android/app/build.gradle.kts),
+      // so the sandboxes are already separate and this is simply belt and
+      // braces.
+      //
+      // Production is untouched: null leaves supabase_flutter to compute
+      // exactly the key it always did.
+      localStorage: AppConfig.demoMode
+          ? SharedPreferencesLocalStorage(
+              persistSessionKey:
+                  'sb-${Uri.parse(AppConfig.supabaseUrl).host.split('.').first}'
+                  '-auth-token-demo',
+            )
+          : null,
     ),
   );
 
