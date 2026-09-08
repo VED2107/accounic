@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/dates.dart';
+import '../../core/demo.dart';
+import '../../core/failure.dart';
 import '../../core/icons.dart';
 import '../../core/layout.dart';
 import '../../core/theme.dart';
@@ -37,9 +40,29 @@ class AdminScreen extends ConsumerStatefulWidget {
   ConsumerState<AdminScreen> createState() => _AdminScreenState();
 }
 
+/// Which accounts the directory is showing.
+///
+/// A filter on one list rather than a second screen: administration already has
+/// an account list, and "the demo ones" is a question about that list. The
+/// database applies it (`admin_list_users(p_demo_only)`), so paging and the
+/// count stay honest.
+enum _Audience {
+  all('All accounts', null),
+  demo('Demo', true),
+  real('Real', false);
+
+  const _Audience(this.label, this.demoOnly);
+
+  final String label;
+  final bool? demoOnly;
+}
+
 class _AdminScreenState extends ConsumerState<AdminScreen> {
   final _search = TextEditingController();
   String _query = '';
+  _Audience _audience = _Audience.all;
+
+  AdminUsersQuery get _args => (query: _query, demoOnly: _audience.demoOnly);
 
   @override
   void dispose() {
@@ -73,10 +96,115 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     }
   }
 
+  /// Demo account to real account (db/migrations/0030).
+  ///
+  /// Two steps, deliberately. The first states what will happen and what will
+  /// be kept — including the books, in the counts this account actually holds,
+  /// because "their demo data becomes their real data" is the part an
+  /// administrator must not learn afterwards. The second is the result, with
+  /// the address of the full application to hand on.
+  ///
+  /// Every guard that matters is in the RPC. This dialog is courtesy; the
+  /// database is the rule.
+  Future<void> _convert(AdminUser user) async {
+    final name = user.name.isEmpty ? user.email : user.name;
+
+    final ok = await confirm(
+      context,
+      destructive: false,
+      icon: AppIcons.tiers,
+      title: 'Convert $name to a real account?',
+      confirmLabel: 'Convert to real user',
+      body: 'They keep this account, this email and this password — only their '
+          'demo status changes.\n\n'
+          'This account holds ${user.peopleCount} '
+          '${user.peopleCount == 1 ? 'person' : 'people'} and '
+          '${user.transactionCount} '
+          '${user.transactionCount == 1 ? 'transaction' : 'transactions'}. '
+          'Nothing is deleted: the sample books they built while trying Accounic '
+          'become the opening state of their real books.\n\n'
+          'Demo restrictions are lifted and they can use the full application.',
+    );
+    if (!ok || !mounted) return;
+
+    try {
+      final converted = await ref.read(ledgerRepositoryProvider).convertDemoUser(user.id);
+      ref.invalidate(adminUsersProvider);
+      ref.invalidate(systemInfoProvider);
+      if (!mounted) return;
+      await _converted(converted);
+    } on Failure catch (failure) {
+      if (mounted) showMessage(context, failure.message, error: true);
+    } catch (error) {
+      if (mounted) showMessage(context, '$error', error: true);
+    }
+  }
+
+  /// The result, and the one thing the administrator needs next: the link to
+  /// hand over. Copy rather than open, because an administrator sending this to
+  /// a customer wants it on the clipboard, not in a browser tab of their own.
+  Future<void> _converted(ConvertedUser user) async {
+    final open = await confirm(
+      context,
+      destructive: false,
+      icon: AppIcons.success,
+      title: '${user.name.isEmpty ? user.email : user.name} is a real user',
+      confirmLabel: 'Copy full app link',
+      cancelLabel: 'Done',
+      body: 'They now have the complete application, with the same email and '
+          'password.\n\n'
+          'Their books came through intact: ${user.peopleKept} '
+          '${user.peopleKept == 1 ? 'person' : 'people'} and '
+          '${user.transactionsKept} '
+          '${user.transactionsKept == 1 ? 'transaction' : 'transactions'}.\n\n'
+          '$kFullAccounicUrl',
+    );
+    if (!open || !mounted) return;
+
+    await Clipboard.setData(const ClipboardData(text: ''));
+    await Clipboard.setData(ClipboardData(text: kFullAccounicUrl));
+    if (mounted) showMessage(context, 'The full Accounic link is on your clipboard.');
+  }
+
+  /// Marks a real account as a demo one (db/migrations/0031).
+  ///
+  /// The other direction has its own flow, because turning a visitor into a
+  /// customer deserves the confirmation that names their books. This direction
+  /// is the administrator correcting a record, and it says plainly what the
+  /// person on the other end will notice: a narrower application, and not one
+  /// figure moved.
+  Future<void> _markDemo(AdminUser user) async {
+    final name = user.name.isEmpty ? user.email : user.name;
+
+    final ok = await confirm(
+      context,
+      icon: AppIcons.tiers,
+      title: 'Make $name a demo account?',
+      confirmLabel: 'Make it a demo account',
+      body: 'They keep this account, this email, this password and every one of '
+          'their records — the application simply offers them less until an '
+          'administrator changes it back.\n\n'
+          'Reports, transfers, opening balances and multi-currency close for '
+          'them. Nothing in their ledger is deleted, moved or converted.',
+    );
+    if (!ok || !mounted) return;
+
+    try {
+      await ref.read(ledgerRepositoryProvider).setUserDemo(user.id, true);
+      ref.invalidate(adminUsersProvider);
+      ref.invalidate(systemInfoProvider);
+      if (mounted) showMessage(context, '$name is now a demo account.');
+    } on Failure catch (failure) {
+      if (mounted) showMessage(context, failure.message, error: true);
+    } catch (error) {
+      if (mounted) showMessage(context, '$error', error: true);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final me = ref.watch(meProvider).valueOrNull;
-    final users = ref.watch(adminUsersProvider(_query));
+    final users = ref.watch(adminUsersProvider(_args));
     final info = ref.watch(systemInfoProvider);
 
     // The screen is guarded by the router and by every RPC it calls; this is the
@@ -171,6 +299,25 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                     ),
                   ),
                 ),
+                // Demo accounts are ordinary accounts with a flag, so they live
+                // in the ordinary list behind a filter rather than on a screen
+                // of their own (db/migrations/0030).
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.md,
+                    AppSpacing.sm,
+                    AppSpacing.md,
+                    AppSpacing.md,
+                  ),
+                  child: Segmented<_Audience>(
+                    value: _audience,
+                    segments: [
+                      for (final audience in _Audience.values)
+                        (value: audience, label: audience.label),
+                    ],
+                    onChanged: (audience) => setState(() => _audience = audience),
+                  ),
+                ),
                 users.when(
                   loading: () => const SkeletonList(rows: 4),
                   error: (error, _) => Padding(
@@ -182,10 +329,17 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                     ),
                   ),
                   data: (page) => page.users.isEmpty
-                      ? const EmptyState(
+                      ? EmptyState(
                           icon: AppIcons.noResults,
-                          title: 'No accounts match',
-                          description: 'Try a different name or email address.',
+                          title: switch (_audience) {
+                            _Audience.demo => 'No demo accounts',
+                            _Audience.real => 'No real accounts match',
+                            _Audience.all => 'No accounts match',
+                          },
+                          description: _audience == _Audience.demo && _query.isEmpty
+                              ? 'Demo accounts are created in the web app, and every '
+                                  'anonymous visitor to the online demo becomes one.'
+                              : 'Try a different name or email address.',
                         )
                       : Stagger(
                           children: [
@@ -195,6 +349,8 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                                 isSelf: user.id == me?.id,
                                 divider: index < page.users.length - 1,
                                 onSetActive: (active) => _setActive(user, active),
+                                onConvert: () => _convert(user),
+                                onMarkDemo: () => _markDemo(user),
                               ),
                           ],
                         ),
@@ -245,7 +401,14 @@ class _SystemStats extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final stats = <(String, String, String?)>[
-      ('Users', '${info.usersActive}/${info.usersTotal}', 'active'),
+      // The demo count rides on the users tile rather than taking a seventh.
+      // Six divides evenly into two, three and six; seven leaves an orphan cell
+      // at every width the strip is laid out at.
+      (
+        'Users',
+        '${info.usersActive}/${info.usersTotal}',
+        info.usersDemo == 0 ? 'active' : 'active · ${info.usersDemo} demo',
+      ),
       ('Administrators', '${info.admins}', null),
       ('People', '${info.peopleTotal}', null),
       ('Transactions', '${info.transactionsTotal}', null),
@@ -334,7 +497,18 @@ class _Stat extends StatelessWidget {
               ),
               if (note != null) ...[
                 const SizedBox(width: AppSpacing.xs + 1),
-                Text(note, style: TextStyle(fontSize: 12.5, color: palette.inkFaint)),
+                // Flexible, like the value beside it. The note was a bare Text,
+                // which is fine while every note is one short word and overflows
+                // the tile the moment one is not — as "active · 2 demo" did, by
+                // 56px, in a two-column phone layout.
+                Flexible(
+                  child: Text(
+                    note,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
+                  ),
+                ),
               ],
             ],
           ),
@@ -390,12 +564,16 @@ class _UserRow extends StatelessWidget {
     required this.isSelf,
     required this.divider,
     required this.onSetActive,
+    required this.onConvert,
+    required this.onMarkDemo,
   });
 
   final AdminUser user;
   final bool isSelf;
   final bool divider;
   final ValueChanged<bool> onSetActive;
+  final VoidCallback onConvert;
+  final VoidCallback onMarkDemo;
 
   @override
   Widget build(BuildContext context) {
@@ -449,6 +627,13 @@ class _UserRow extends StatelessWidget {
                             const SizedBox(width: AppSpacing.sm),
                             const StatusChip('Admin', tone: StatusTone.partial),
                           ],
+                          if (user.isDemo) ...[
+                            const SizedBox(width: AppSpacing.sm - 2),
+                            StatusChip(
+                              user.isAnonymous ? 'Demo - anonymous' : 'Demo',
+                              tone: StatusTone.muted,
+                            ),
+                          ],
                           if (!user.isActive) ...[
                             const SizedBox(width: AppSpacing.sm - 2),
                             const StatusChip('Disabled', tone: StatusTone.muted),
@@ -500,6 +685,8 @@ class _UserRow extends StatelessWidget {
                     user: user,
                     hovered: hovered,
                     onSetActive: onSetActive,
+                    onConvert: onConvert,
+                    onMarkDemo: onMarkDemo,
                   ),
               ],
             ),
@@ -517,11 +704,15 @@ class _AccountMenu extends StatelessWidget {
     required this.user,
     required this.hovered,
     required this.onSetActive,
+    required this.onConvert,
+    required this.onMarkDemo,
   });
 
   final AdminUser user;
   final bool hovered;
   final ValueChanged<bool> onSetActive;
+  final VoidCallback onConvert;
+  final VoidCallback onMarkDemo;
 
   @override
   Widget build(BuildContext context) {
@@ -582,9 +773,44 @@ class _AccountMenu extends StatelessWidget {
       onSelected: (value) => switch (value) {
         'disable' => onSetActive(false),
         'enable' => onSetActive(true),
+        'convert' => onConvert(),
+        'mark-demo' => onMarkDemo(),
         _ => null,
       },
       itemBuilder: (context) => [
+        // Offered only on a demo account, and shown-but-disabled on an
+        // anonymous one with the reason - the same rule the administrator role
+        // follows below. An anonymous visitor has no email and no password, so
+        // converting them would produce a real account nobody can sign in to,
+        // and admin_convert_demo_user() refuses it outright.
+        if (user.isDemo) ...[
+          PopupMenuItem(
+            value: 'convert',
+            enabled: !user.isAnonymous,
+            child: item(
+              AppIcons.tiers,
+              'Convert to real user',
+              tone: user.isAnonymous ? palette.inkFaint : palette.receivable,
+              note: user.isAnonymous
+                  ? 'Anonymous visitors have no sign-in to keep'
+                  : 'Keeps their account, their password and their books',
+            ),
+          ),
+          const PopupMenuDivider(),
+        ] else ...[
+          // The other direction. An administrator creates both kinds of account
+          // and is allowed to have changed their mind; the ledger is untouched
+          // either way (db/migrations/0031).
+          PopupMenuItem(
+            value: 'mark-demo',
+            child: item(
+              AppIcons.tiers,
+              'Make it a demo account',
+              note: 'Narrows what they can reach. Keeps every record',
+            ),
+          ),
+          const PopupMenuDivider(),
+        ],
         if (user.isActive)
           PopupMenuItem(
             value: 'disable',

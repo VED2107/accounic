@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/currencies.dart';
+import '../../core/demo.dart';
 import '../../core/failure.dart';
 import '../../core/icons.dart';
 import '../../core/layout.dart';
@@ -10,6 +11,7 @@ import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../providers.dart';
 import '../widgets/currency_field.dart';
+import '../widgets/demo_gate_row.dart';
 import '../widgets/forms.dart';
 import 'sheet_scaffold.dart';
 
@@ -331,6 +333,10 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
 
   @override
   Widget build(BuildContext context) {
+    // Whether this is the restricted experience — a demo build, or a demo
+    // account signing in anywhere (providers.dart, core/demo.dart).
+    final restricted = ref.watch(demoRestrictedProvider);
+
     // Phone and email share a line only where a line is wide enough to hold two
     // fields. On a phone that split leaves roughly 150px each, which is narrower
     // than the values they hold — a number wraps and an address truncates.
@@ -417,9 +423,26 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
           ],
         ),
 
-        FormSection(
-          title: 'Currency',
-          description: _isEdit
+        // Per-account currency and opening balances are both full-application
+        // capabilities, so in the demo the two sections collapse to one row
+        // each. The form keeps its shape and the visitor keeps the account
+        // currency their workspace is kept in (docs/demo.md).
+        if (restricted)
+          FormSection(
+            title: 'Currency',
+            description:
+                'This account is kept in $base, the currency of your workspace.',
+            children: const [
+              DemoGateRow(
+                feature: DemoFeature.multiCurrency,
+                label: 'Keep this account in its own currency',
+              ),
+            ],
+          )
+        else
+          FormSection(
+            title: 'Currency',
+            description: _isEdit
               ? 'This account’s history is denominated in $ledgerCurrency. Changing '
                   'the currency below only changes what new entries default to.'
               : 'What this account is kept in. Entries can still be made in another '
@@ -455,7 +478,20 @@ class _PersonSheetState extends ConsumerState<_PersonSheet> {
           ],
         ),
 
-        FormSection(
+        if (restricted)
+          const FormSection(
+            title: 'Opening balance',
+            description: 'Start an account from what was already owed, rather '
+                'than from zero.',
+            children: [
+              DemoGateRow(
+                feature: DemoFeature.openingBalance,
+                label: 'Open this account with a balance already on it',
+              ),
+            ],
+          )
+        else
+          FormSection(
             title: 'Opening balance',
             description: !_isEdit
                 ? 'Already have an amount to settle with this person? Start from '

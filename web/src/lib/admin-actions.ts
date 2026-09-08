@@ -58,6 +58,15 @@ export async function adminCreateUser(
       business_name: parsed.data.business_name ?? null,
       currency: parsed.data.currency,
     },
+    // APP metadata, not user metadata, and the difference is the whole point:
+    // a user can edit their own user_metadata and cannot touch this. The
+    // `handle_new_auth_user` trigger reads it and sets profiles.is_demo, which
+    // is where the flag actually lives (db/migrations/0030).
+    //
+    // This is the only place a demo account is ever MADE. There is no client
+    // route to it: setting it needs the service-role key, and the service-role
+    // key exists on this server and nowhere else.
+    app_metadata: { is_demo: parsed.data.is_demo },
   });
 
   if (error) {
@@ -68,8 +77,105 @@ export async function adminCreateUser(
   }
   if (!data.user) return { ok: false, error: 'That user could not be created.' };
 
+  // Write the flag explicitly rather than trusting the trigger to have seen it.
+  //
+  // The Admin API creates the auth row and merges `app_metadata` immediately
+  // afterwards, in a second statement — so `handle_new_auth_user()` ran against
+  // metadata that did not yet carry `is_demo`, and an account created as a demo
+  // user arrived in Administration as a real one. 0032 adds an UPDATE trigger
+  // that catches the metadata whenever it lands; this makes the outcome of THIS
+  // call deterministic rather than dependent on the order two statements happen
+  // to run in (db/migrations/0032).
+  if (parsed.data.is_demo) {
+    const flagged = await admin
+      .from('profiles')
+      .update({ is_demo: true })
+      .eq('id', data.user.id);
+    if (flagged.error) {
+      return fail(flagged.error, 'That user was created, but not marked as a demo account.');
+    }
+  }
+
   revalidatePath('/admin');
   return ok({ id: data.user.id, email: data.user.email ?? parsed.data.email });
+}
+
+/**
+ * Demo account -> real account (db/migrations/0030).
+ *
+ * Goes through the ANON client on purpose, exactly as adminSetUserActive does:
+ * `admin_convert_demo_user()` is SECURITY DEFINER and checks `is_admin()`
+ * against the calling identity, so it has to see the administrator rather than
+ * the service role. Using the admin client here would work and would be wrong —
+ * it would make the database unable to tell which administrator acted, and the
+ * audit row would name nobody.
+ *
+ * Every rule about when this is allowed lives in the function: administrator,
+ * target exists, target is currently a demo account, target is not an anonymous
+ * visitor. None of them is re-implemented here, so none of them can drift.
+ */
+export async function adminConvertDemoUser(
+  userId: string,
+): Promise<ActionResult<{ id: string; email: string; people_kept: number; transactions_kept: number }>> {
+  const denied = await assertAdmin();
+  if (denied) return denied;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('admin_convert_demo_user', {
+    p_user_id: userId,
+  });
+  if (error) {
+    return fail(error, 'That account could not be converted. Nothing has been changed.');
+  }
+
+  revalidatePath('/admin');
+  const row = (data ?? {}) as {
+    id?: string;
+    email?: string;
+    people_kept?: number;
+    transactions_kept?: number;
+  };
+  return ok({
+    id: row.id ?? userId,
+    email: row.email ?? '',
+    people_kept: row.people_kept ?? 0,
+    transactions_kept: row.transactions_kept ?? 0,
+  });
+}
+
+/**
+ * Sets an account's type, in either direction (db/migrations/0031).
+ *
+ * The general edit beside `adminConvertDemoUser`. That one is the demo-to-real
+ * FLOW and refuses anything else, because firing it at a paying customer by
+ * accident must be impossible; this is an administrator changing their mind,
+ * which they are entitled to do in both directions.
+ *
+ * Anon client, like every other admin RPC here, so the database sees which
+ * administrator acted and the audit row can name them. Every guard —
+ * administrator, target exists, not yourself, never an anonymous visitor made
+ * real — lives in the function.
+ *
+ * Neither direction touches a ledger row.
+ */
+export async function adminSetUserDemo(
+  userId: string,
+  isDemo: boolean,
+): Promise<ActionResult<null>> {
+  const denied = await assertAdmin();
+  if (denied) return denied;
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('admin_set_user_demo', {
+    p_user_id: userId,
+    p_is_demo: isDemo,
+  });
+  if (error) {
+    return fail(error, 'That account type could not be changed. Nothing has been changed.');
+  }
+
+  revalidatePath('/admin');
+  return ok(null);
 }
 
 export async function adminResetPassword(

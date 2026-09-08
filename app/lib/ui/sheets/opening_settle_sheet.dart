@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/currencies.dart';
 import '../../core/dates.dart';
+import '../../core/demo.dart';
 import '../../core/failure.dart';
 import '../../core/money.dart';
 import '../../core/theme.dart';
@@ -13,6 +14,7 @@ import '../widgets/currency_field.dart';
 import '../widgets/forms.dart';
 import '../../core/layout.dart';
 import 'sheet_scaffold.dart';
+import 'upgrade_sheet.dart';
 
 /// Settling the opening balance — that entry, and nothing else (upgrade 48).
 ///
@@ -30,6 +32,11 @@ Future<bool> showOpeningSettleSheet(
   required PositionSplit position,
   required String currency,
 }) async {
+  if (ref.read(demoRestrictedProvider)) {
+    await showUpgradeSheet(context, DemoFeature.openingBalance);
+    return false;
+  }
+
   final result = await showAppSheet<bool>(
     context,
     (context) => _OpeningSettleSheet(

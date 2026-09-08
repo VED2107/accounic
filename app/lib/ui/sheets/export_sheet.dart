@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/activity_csv.dart';
 import '../../core/activity_report.dart';
 import '../../core/dates.dart';
+import '../../core/demo.dart';
 import '../../core/export_csv.dart';
 import '../../core/export_json.dart';
 import '../../core/icons.dart';
@@ -23,6 +24,7 @@ import '../motion.dart';
 import '../widgets/common.dart';
 import '../widgets/date_picker.dart';
 import 'sheet_scaffold.dart';
+import 'upgrade_sheet.dart';
 
 /// Exporting the workspace (Phase 4 and 5).
 ///
@@ -59,6 +61,11 @@ Future<void> showExportSheet(
   ActivityView view = ActivityView.all,
   String? day,
 }) {
+  // Reports are a full-application capability, and this is where the demo says
+  // so — one test at the door rather than one at each of the four places an
+  // export is offered from, none of which can now forget it (docs/demo.md).
+  if (ref.read(demoRestrictedProvider)) return showUpgradeSheet(context, DemoFeature.reports);
+
   return showAppSheet<void>(
     context,
     (context) => _ExportSheet(

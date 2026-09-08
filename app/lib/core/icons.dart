@@ -75,6 +75,13 @@ abstract final class AppIcons {
   static const IconData date = LucideIcons.calendar;
   static const IconData note = LucideIcons.fileText;
 
+  // ------------------------------------------------------------------ demo
+  //
+  // Tiers, not a padlock. The demo screen compares two versions of one product;
+  // a lock would say the visitor is shut out of something, which is neither
+  // what the screen shows nor the note to end a demo on (core/demo.dart).
+  static const IconData tiers = LucideIcons.layers;
+
   // ------------------------------------------------------------ empty sets
   static const IconData noPeople = LucideIcons.users;
   static const IconData noResults = LucideIcons.searchX;

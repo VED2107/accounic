@@ -22,19 +22,34 @@ export const metadata = { title: 'Admin' };
 export default async function AdminPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; show?: string }>;
 }) {
   const me = await getMe();
   if (!me) redirect('/login');
   if (!me.is_admin) redirect('/');
 
-  const { q } = await searchParams;
+  const { q, show } = await searchParams;
   const query = typeof q === 'string' ? q : '';
 
-  const [users, info] = await Promise.all([getAdminUsers(query), getAdminSystemInfo()]);
+  // Demo accounts are ordinary accounts carrying a flag, so "Demo users" is a
+  // filter on the directory rather than a second screen with a second set of
+  // controls (db/migrations/0030). It lives in the URL so an administrator can
+  // link a colleague straight to it.
+  const audience: 'all' | 'demo' | 'real' =
+    show === 'demo' ? 'demo' : show === 'real' ? 'real' : 'all';
+  const demoOnly = audience === 'all' ? undefined : audience === 'demo';
+
+  const [users, info] = await Promise.all([
+    getAdminUsers(query, demoOnly),
+    getAdminSystemInfo(),
+  ]);
 
   const stats = [
-    { label: 'Users', value: `${info.users_active}/${info.users_total}`, note: 'active' },
+    {
+      label: 'Users',
+      value: `${info.users_active}/${info.users_total}`,
+      note: info.users_demo ? `active · ${info.users_demo} demo` : 'active',
+    },
     { label: 'Administrators', value: String(info.admins) },
     { label: 'People', value: info.people_total.toLocaleString('en-IN') },
     { label: 'Transactions', value: info.transactions_total.toLocaleString('en-IN') },
@@ -81,7 +96,13 @@ export default async function AdminPage({
       </Reveal>
 
       <Reveal delay={80}>
-        <UserTable users={users.users} total={users.total} currentUserId={me.id} query={query} />
+        <UserTable
+          users={users.users}
+          total={users.total}
+          currentUserId={me.id}
+          query={query}
+          audience={audience}
+        />
       </Reveal>
     </div>
   );

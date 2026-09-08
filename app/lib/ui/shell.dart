@@ -11,6 +11,7 @@ import 'screens/search_sheet.dart';
 import 'sheets/transaction_sheet.dart';
 import 'widgets/brand.dart';
 import 'widgets/common.dart';
+import 'widgets/demo_banner.dart';
 import 'widgets/update_banner.dart';
 
 /// Adaptive shell (context.md §29).
@@ -46,6 +47,16 @@ class AppShell extends ConsumerWidget {
     icon: AppIcons.admin,
   );
 
+  /// The demo's own destination, added on the same terms and for the same
+  /// reason as [_adminDestination]: a fifth thumb target beside the primary
+  /// action is more than a phone's bottom bar can carry, so on a phone this is
+  /// reached from the profile screen instead (docs/demo.md).
+  static const _demoDestination = (
+    path: '/demo',
+    label: 'Demo and full',
+    icon: AppIcons.tiers,
+  );
+
   int _indexIn(List<({String path, String label, IconData icon})> list) {
     final match = list.indexWhere(
       (d) => d.path == '/' ? location == '/' : location.startsWith(d.path),
@@ -65,15 +76,26 @@ class AppShell extends ConsumerWidget {
     final wide = context.isWide;
     final me = ref.watch(meProvider).valueOrNull;
 
+    // The demo build, or a demo account signing in anywhere (providers.dart).
+    final restricted = ref.watch(demoRestrictedProvider);
+
     final railDestinations = [
       ..._destinations,
-      if (me?.isAdmin ?? false) _adminDestination,
+      // Administration cannot appear in a demo: `app_admins` is empty in the
+      // demo project, so `me.isAdmin` is false for every visitor. The explicit
+      // test is here anyway, because a destination that depends on remote state
+      // for its absence is one deployment mistake away from being present.
+      if (!restricted && (me?.isAdmin ?? false)) _adminDestination,
+      if (restricted) _demoDestination,
     ];
 
     // A newer release, when there is one. Above everything, on every screen,
     // and nothing at all the rest of the time (widgets/update_banner.dart).
     final body = Column(
       children: [
+        // The demo masthead, above the update strip and above the content, on
+        // every screen. Draws nothing outside a demo build.
+        const DemoBanner(),
         const UpdateBanner(),
         Expanded(child: child),
       ],

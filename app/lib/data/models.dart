@@ -116,6 +116,7 @@ class Me {
     required this.currency,
     required this.isActive,
     required this.isAdmin,
+    required this.isDemo,
     required this.createdAt,
     this.phone,
     this.businessName,
@@ -131,6 +132,18 @@ class Me {
   final String currency;
   final bool isActive;
   final bool isAdmin;
+
+  /// Whether this ACCOUNT is a demo one — `profiles.is_demo` (0030).
+  ///
+  /// Not to be confused with the demo BUILD flag: a demo account keeps this
+  /// wherever it signs in, and an administrator opening the demo build does not
+  /// acquire it. `core/demo.dart` states the distinction in full.
+  ///
+  /// Defaults to false when the key is absent, so a client built against 0030
+  /// talking to a database that has not had it applied treats everyone as a
+  /// full user rather than restricting the whole installation.
+  final bool isDemo;
+
   final String createdAt;
 
   factory Me.fromJson(Map<String, dynamic> json) => Me(
@@ -143,6 +156,7 @@ class Me {
         currency: (json['currency'] as String?) ?? 'INR',
         isActive: json['is_active'] as bool? ?? true,
         isAdmin: json['is_admin'] as bool? ?? false,
+        isDemo: json['is_demo'] as bool? ?? false,
         createdAt: (json['created_at'] as String?) ?? '',
       );
 
@@ -1717,6 +1731,8 @@ class AdminUser {
     required this.currency,
     required this.isActive,
     required this.isAdmin,
+    required this.isDemo,
+    required this.isAnonymous,
     required this.createdAt,
     required this.peopleCount,
     required this.transactionCount,
@@ -1733,6 +1749,16 @@ class AdminUser {
   final String currency;
   final bool isActive;
   final bool isAdmin;
+
+  /// A demo account (0030). Convertible to a real one by an administrator,
+  /// which is the only thing that ever clears it.
+  final bool isDemo;
+
+  /// An anonymous demo visitor: no email, no password, nothing to sign back in
+  /// with. They cannot be converted — there would be no way into the account
+  /// afterwards — and `admin_convert_demo_user()` refuses them for that reason.
+  final bool isAnonymous;
+
   final String createdAt;
   final String? lastSignInAt;
   final int peopleCount;
@@ -1747,6 +1773,8 @@ class AdminUser {
         currency: (json['currency'] as String?) ?? 'INR',
         isActive: json['is_active'] as bool? ?? true,
         isAdmin: json['is_admin'] as bool? ?? false,
+        isDemo: json['is_demo'] as bool? ?? false,
+        isAnonymous: json['is_anonymous'] as bool? ?? false,
         createdAt: (json['created_at'] as String?) ?? '',
         lastSignInAt: _str(json['last_sign_in_at']),
         peopleCount: _int(json['people_count']),
@@ -1769,11 +1797,41 @@ class AdminUserPage {
       );
 }
 
+/// What `admin_convert_demo_user()` reports back (db/migrations/0030).
+///
+/// Carries the two counts the administrator most wants confirmed — that the
+/// account's books came through the conversion — so the confirmation can say
+/// what was kept rather than merely that something happened.
+class ConvertedUser {
+  const ConvertedUser({
+    required this.id,
+    required this.name,
+    required this.email,
+    required this.peopleKept,
+    required this.transactionsKept,
+  });
+
+  final String id;
+  final String name;
+  final String email;
+  final int peopleKept;
+  final int transactionsKept;
+
+  factory ConvertedUser.fromJson(Map<String, dynamic> json) => ConvertedUser(
+        id: (json['id'] as String?) ?? '',
+        name: (json['name'] as String?) ?? '',
+        email: (json['email'] as String?) ?? '',
+        peopleKept: _int(json['people_kept']),
+        transactionsKept: _int(json['transactions_kept']),
+      );
+}
+
 /// public.admin_system_info()
 class SystemInfo {
   const SystemInfo({
     required this.usersTotal,
     required this.usersActive,
+    required this.usersDemo,
     required this.admins,
     required this.peopleTotal,
     required this.transactionsTotal,
@@ -1784,6 +1842,11 @@ class SystemInfo {
 
   final int usersTotal;
   final int usersActive;
+
+  /// How many accounts are demo ones (0030). Zero on a database that has not
+  /// had the migration applied, which reads correctly either way.
+  final int usersDemo;
+
   final int admins;
   final int peopleTotal;
   final int transactionsTotal;
@@ -1794,6 +1857,7 @@ class SystemInfo {
   factory SystemInfo.fromJson(Map<String, dynamic> json) => SystemInfo(
         usersTotal: _int(json['users_total']),
         usersActive: _int(json['users_active']),
+        usersDemo: _int(json['users_demo']),
         admins: _int(json['admins']),
         peopleTotal: _int(json['people_total']),
         transactionsTotal: _int(json['transactions_total']),

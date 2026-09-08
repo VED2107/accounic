@@ -1,6 +1,7 @@
 'use client';
 
 import { useActionState, useEffect, useRef, useState, useTransition } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Modal, ConfirmDialog } from '@/components/ui/modal';
 import {
@@ -24,7 +25,9 @@ import { SubmitRow } from '@/components/ledger/transaction-sheet';
 import { CloseIcon, PlusIcon, ProfileIcon, SearchIcon } from '@/components/icons';
 import { initials } from '@/lib/names';
 import {
+  adminConvertDemoUser,
   adminCreateUser,
+  adminSetUserDemo,
   adminDeleteUser,
   adminResetPassword,
   adminSetUserActive,
@@ -40,11 +43,14 @@ export function UserTable({
   total,
   currentUserId,
   query,
+  audience,
 }: {
   users: AdminUser[];
   total: number;
   currentUserId: string;
   query: string;
+  /** Which slice of the directory is on screen (db/migrations/0030). */
+  audience: 'all' | 'demo' | 'real';
 }) {
   const router = useRouter();
   const [search, setSearch] = useState(query);
@@ -52,8 +58,13 @@ export function UserTable({
   const [resetting, setResetting] = useState<AdminUser | null>(null);
   const [confirming, setConfirming] = useState<{
     user: AdminUser;
-    kind: 'toggle' | 'delete' | 'admin';
+    kind: 'toggle' | 'delete' | 'admin' | 'convert' | 'mark-demo';
   } | null>(
+    null,
+  );
+
+  /** The account an administrator has just converted, and the link to hand on. */
+  const [converted, setConverted] = useState<{ email: string; people: number; entries: number } | null>(
     null,
   );
   const [error, setError] = useState<string | null>(null);
@@ -64,10 +75,13 @@ export function UserTable({
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams();
       if (search.trim()) params.set('q', search.trim());
+      // Typing must not silently drop the audience filter: an administrator who
+      // searches inside "Demo" expects to still be inside it afterwards.
+      if (audience !== 'all') params.set('show', audience);
       router.replace(params.size ? `/admin?${params}` : '/admin', { scroll: false });
     }, 220);
     return () => window.clearTimeout(timer);
-  }, [search, router]);
+  }, [search, router, audience]);
 
   function run(operation: () => Promise<ActionResult<unknown>>, done?: string) {
     setError(null);
@@ -118,6 +132,47 @@ export function UserTable({
         </Button>
       </div>
 
+      {/* Demo accounts are ordinary accounts carrying a flag, so this is a
+          filter on the one directory rather than a second screen with a second
+          set of controls (db/migrations/0030). It lives in the URL, so an
+          administrator can send a colleague straight to the demo users. */}
+      <div className="mb-3 inline-flex rounded-field border border-line bg-sunken p-0.5">
+        {(
+          [
+            ['all', 'All accounts'],
+            ['demo', 'Demo'],
+            ['real', 'Real'],
+          ] as const
+        ).map(([value, label]) => {
+          const href =
+            value === 'all'
+              ? search.trim()
+                ? `/admin?q=${encodeURIComponent(search.trim())}`
+                : '/admin'
+              : search.trim()
+                ? `/admin?q=${encodeURIComponent(search.trim())}&show=${value}`
+                : `/admin?show=${value}`;
+          const active = audience === value;
+          return (
+            <Link
+              key={value}
+              href={href}
+              scroll={false}
+              aria-current={active ? 'page' : undefined}
+              className={cn(
+                'rounded-[calc(var(--radius-field)-2px)] px-3 py-1.5 text-[0.8125rem] font-medium',
+                'transition-[background-color,color] duration-[var(--dur-fast)] ease-[var(--ease)]',
+                active
+                  ? 'bg-surface text-ink shadow-sm'
+                  : 'text-ink-muted hover:text-ink',
+              )}
+            >
+              {label}
+            </Link>
+          );
+        })}
+      </div>
+
       {error ? (
         <div className="mb-3">
           <ErrorNote>{error}</ErrorNote>
@@ -154,6 +209,9 @@ export function UserTable({
                   <p className="flex flex-wrap items-center gap-2 text-[0.875rem] font-medium text-ink">
                     <span className="truncate">{user.name || '—'}</span>
                     {user.is_admin ? <Badge tone="accent">Admin</Badge> : null}
+                    {user.is_demo ? (
+                      <Badge tone="muted">{user.is_anonymous ? 'Demo · anonymous' : 'Demo'}</Badge>
+                    ) : null}
                     {!user.is_active ? <Badge tone="payable">Disabled</Badge> : null}
                     {user.id === currentUserId ? <Badge tone="muted">You</Badge> : null}
                   </p>
@@ -176,6 +234,32 @@ export function UserTable({
                   <Menu
                     label={user.name || user.email}
                     items={[
+                      ...(user.is_demo
+                        ? [
+                            {
+                              label: 'Convert to real user',
+                              description: user.is_anonymous
+                                ? 'Anonymous visitors have no sign-in to keep.'
+                                : 'Keeps their account, their password and their books.',
+                              disabled: user.is_anonymous,
+                              onSelect: () => setConfirming({ user, kind: 'convert' }),
+                            },
+                          ]
+                        : [
+                            // The other direction. An administrator creates both
+                            // kinds of account and is allowed to have changed
+                            // their mind; the ledger is untouched either way
+                            // (db/migrations/0031).
+                            {
+                              label: 'Make it a demo account',
+                              description:
+                                user.id === currentUserId
+                                  ? 'You cannot change your own account type.'
+                                  : 'Narrows what they can reach. Keeps every record.',
+                              disabled: user.id === currentUserId,
+                              onSelect: () => setConfirming({ user, kind: 'mark-demo' }),
+                            },
+                          ]),
                       {
                         label: 'Reset password',
                         description: 'Set a new password and hand it over.',
@@ -231,6 +315,96 @@ export function UserTable({
 
       <CreateUserModal open={createOpen} onClose={() => setCreateOpen(false)} />
       <ResetPasswordModal user={resetting} onClose={() => setResetting(null)} />
+
+      {/* Demo account -> real account (db/migrations/0030).
+
+          Two steps on purpose. The first says what will happen to their BOOKS,
+          in this account's own counts, because "their demo data becomes their
+          real data" is the part an administrator must not discover afterwards.
+          The second hands over the link.
+
+          Every rule is in admin_convert_demo_user(): administrator, target
+          exists, target is a demo account, target is not anonymous. This dialog
+          is courtesy; the database is the rule. */}
+      <ConfirmDialog
+        open={confirming?.kind === 'convert'}
+        onClose={() => setConfirming(null)}
+        onConfirm={() => {
+          if (!confirming) return;
+          const user = confirming.user;
+          setError(null);
+          startTransition(async () => {
+            const result = await adminConvertDemoUser(user.id);
+            if (!result.ok) {
+              setError(result.error);
+              return;
+            }
+            setConfirming(null);
+            router.refresh();
+            setConverted({
+              email: result.data.email || user.email,
+              people: result.data.people_kept,
+              entries: result.data.transactions_kept,
+            });
+          });
+        }}
+        pending={pending}
+        tone="primary"
+        confirmLabel="Convert to real user"
+        title={`Convert ${confirming?.user.name || confirming?.user.email} to a real account?`}
+        body={
+          confirming
+            ? `They keep this account, this email and this password — only their demo status changes. ` +
+              `This account holds ${confirming.user.people_count} ` +
+              `${confirming.user.people_count === 1 ? 'person' : 'people'} and ` +
+              `${confirming.user.transaction_count} ` +
+              `${confirming.user.transaction_count === 1 ? 'transaction' : 'transactions'}. ` +
+              `Nothing is deleted: the sample books they built while trying Accounic become the ` +
+              `opening state of their real books. Demo restrictions are lifted and they can use ` +
+              `the full application.`
+            : ''
+        }
+      />
+
+      <ConfirmDialog
+        open={converted !== null}
+        onClose={() => setConverted(null)}
+        onConfirm={async () => {
+          try {
+            await navigator.clipboard.writeText(window.location.origin);
+            toast.show({ tone: 'success', title: 'Link copied' });
+          } catch {
+            // A browser that refuses clipboard access is not an error worth a
+            // dialog: the address is in the body text above, ready to be read.
+          }
+          setConverted(null);
+        }}
+        tone="primary"
+        confirmLabel="Copy app link"
+        title={`${converted?.email ?? ''} is a real user`}
+        body={
+          converted
+            ? `They now have the complete application, with the same email and password. ` +
+              `Their books came through intact: ${converted.people} ` +
+              `${converted.people === 1 ? 'person' : 'people'} and ${converted.entries} ` +
+              `${converted.entries === 1 ? 'transaction' : 'transactions'}.`
+            : ''
+        }
+      />
+
+      <ConfirmDialog
+        open={confirming?.kind === 'mark-demo'}
+        onClose={() => setConfirming(null)}
+        onConfirm={() =>
+          confirming &&
+          run(() => adminSetUserDemo(confirming.user.id, true), 'Account is now a demo account')
+        }
+        pending={pending}
+        tone="danger"
+        confirmLabel="Make it a demo account"
+        title={`Make ${confirming?.user.name || confirming?.user.email} a demo account?`}
+        body="They keep this account, this email, this password and every one of their records — the application simply offers them less until an administrator changes it back. Reports, transfers, opening balances and multi-currency close for them. Nothing in their ledger is deleted, moved or converted."
+      />
 
       <ConfirmDialog
         open={confirming?.kind === 'toggle'}
@@ -360,6 +534,23 @@ function CreateUserModal({ open, onClose }: { open: boolean; onClose: () => void
             </Select>
           </Field>
         </div>
+
+        {/* Demo or real, chosen deliberately at creation.
+
+            This is the ONLY place a demo account is ever made. Setting the flag
+            needs the service-role key, which lives on this server and nowhere
+            else — no Flutter build and no browser can do it, which is what stops
+            an account promoting itself (db/migrations/0030). */}
+        <Field
+          label="Account type"
+          htmlFor="new-is-demo"
+          hint="A demo account sees the restricted demo experience until an administrator converts it."
+        >
+          <Select id="new-is-demo" name="is_demo" defaultValue="false">
+            <option value="false">Real user — the full application</option>
+            <option value="true">Demo user — the restricted demo</option>
+          </Select>
+        </Field>
 
         <Field
           label="Temporary password"

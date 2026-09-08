@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!--
+    Replaced at build time by --base-href. GitHub Pages serves a project site
+    from /<repo>/, so the demo workflow passes that path; a build with the wrong
+    base href fetches its own bundle from the wrong place and shows a blank
+    page (docs/demo.md).
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="Accounic — know who owes you, who you owe, and what is settled.">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Accounic">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>Accounic</title>
+  <link rel="manifest" href="manifest.json">
+
+  <!--
+    The page behind the app, for the moment before Flutter has painted anything.
+
+    It is the splash's own ground, not white: the product opens on a dark
+    surface, and a white flash before it is the first thing a visitor sees of
+    Accounic. `color-scheme` tells the browser the same thing, so the scrollbars
+    and the overscroll gutter match rather than arriving as bright edges.
+  -->
+  <style>
+    :root { color-scheme: dark; }
+    html, body { margin: 0; padding: 0; height: 100%; background: #0B1220; }
+  </style>
+</head>
+<body>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

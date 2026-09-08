@@ -1,0 +1,208 @@
+# The online demo (docs/demo.md).
+#
+# Builds the SAME Flutter application the Android and Windows releases are cut
+# from, with --dart-define=DEMO_MODE=on, and publishes it to GitHub Pages. There
+# is no second project and no second frontend here — this workflow differs from
+# a release build by three dart-defines and a web target.
+#
+# Two secrets, both belonging to the ISOLATED demo Supabase project:
+#
+#   DEMO_SUPABASE_URL
+#   DEMO_SUPABASE_ANON_KEY
+#
+# The anon key is a publishable credential; it is in the shipped bundle by
+# design, and everything it can do is bounded by RLS. The service-role key has
+# no business in this workflow, is not read by it, and must never be added.
+# Production's URL and key have no business here either — a demo build pointed
+# at production would put anonymous visitors inside real workspaces.
+name: demo
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - '.github/workflows/demo.yml'
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: demo-pages
+  cancel-in-progress: true
+
+permissions:
+  # `contents: write` so the tag builds can attach the demo apk and zip to the
+  # release. The web job needs only read; this is the union across jobs.
+  contents: write
+  pages: write
+  id-token: write
+
+env:
+  # The same pin the flutter workflow uses. A demo built on a toolchain no
+  # release was built with is a demo of something nobody ships.
+  FLUTTER_VERSION: 3.29.3
+
+jobs:
+  build:
+    name: build web
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - run: flutter pub get
+
+      # The demo ships the same code the desktop and phone builds ship, so it
+      # is held to the same bar before it is published.
+      - run: flutter analyze
+      - run: flutter test
+
+      - name: Refuse to build without demo credentials
+        env:
+          URL: ${{ secrets.DEMO_SUPABASE_URL }}
+          KEY: ${{ secrets.DEMO_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$URL" ] || [ -z "$KEY" ]; then
+            echo "DEMO_SUPABASE_URL and DEMO_SUPABASE_ANON_KEY must both be set."
+            echo "See docs/demo.md for how the demo project is provisioned."
+            exit 1
+          fi
+
+      - name: Build
+        env:
+          URL: ${{ secrets.DEMO_SUPABASE_URL }}
+          KEY: ${{ secrets.DEMO_SUPABASE_ANON_KEY }}
+        # --base-href is the repository name, because Pages serves a project
+        # site from /<repo>/ and a Flutter build with the wrong base href loads
+        # its own bundle from the wrong path and shows a blank page.
+        #
+        # UPDATE_CHECK=off: the update banner offers a desktop installer, which
+        # is not what a browser visitor wants and not what the demo is for.
+        run: |
+          flutter build web --release \
+            --dart-define=DEMO_MODE=on \
+            --dart-define=SUPABASE_URL="$URL" \
+            --dart-define=SUPABASE_ANON_KEY="$KEY" \
+            --dart-define=UPDATE_CHECK=off \
+            --base-href="/${GITHUB_REPOSITORY#*/}/"
+
+      # Pages serves 404.html for any path it does not have a file for. Handing
+      # it the app means a deep link — /people, or a reloaded /people/<id> —
+      # boots the router instead of showing GitHub's own not-found page.
+      - run: cp build/web/index.html build/web/404.html
+
+      # Pages' default Jekyll pass ignores files and directories beginning with
+      # an underscore, which is where Flutter's canvaskit assets live.
+      - run: touch build/web/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: app/build/web
+
+  deploy:
+    name: deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  # ---------------------------------------------------------------------------
+  # The demo is not a web-only thing.
+  #
+  # "Does it work on my desktop" is a question a demo should answer rather than
+  # promise, so the same restricted build is produced for Android and Windows
+  # and published on the release. The demo screen resolves the asset for the
+  # visitor's own platform and offers it as a direct download, which is why the
+  # file names carry `demo`: that word is what
+  # `UpdateRepository.demoDownload()` matches on, and a production installer
+  # must never be offered to somebody holding a demo account.
+  #
+  # These run on a tag, because that is when there is a release to attach them
+  # to. The web demo above deploys on every push to main regardless.
+  # ---------------------------------------------------------------------------
+  android:
+    name: demo apk
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+
+      - name: Build
+        env:
+          URL: ${{ secrets.DEMO_SUPABASE_URL }}
+          KEY: ${{ secrets.DEMO_SUPABASE_ANON_KEY }}
+        run: |
+          flutter build apk --release \
+            --dart-define=DEMO_MODE=on \
+            --dart-define=SUPABASE_URL="$URL" \
+            --dart-define=SUPABASE_ANON_KEY="$KEY"
+          mv build/app/outputs/flutter-apk/app-release.apk \
+             build/app/outputs/flutter-apk/accounic-demo-${GITHUB_REF_NAME}.apk
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: app/build/app/outputs/flutter-apk/accounic-demo-*.apk
+
+  windows:
+    name: demo windows
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+
+      - name: Build
+        env:
+          URL: ${{ secrets.DEMO_SUPABASE_URL }}
+          KEY: ${{ secrets.DEMO_SUPABASE_ANON_KEY }}
+        shell: bash
+        run: |
+          flutter build windows --release \
+            --dart-define=DEMO_MODE=on \
+            --dart-define=SUPABASE_URL="$URL" \
+            --dart-define=SUPABASE_ANON_KEY="$KEY"
+
+      # A zip rather than an installer: the demo is something a visitor tries
+      # once, and asking them to run an installer for that is a bigger favour
+      # than the demo has earned. The production build still ships Inno Setup.
+      - name: Package
+        shell: bash
+        run: |
+          cd build/windows/x64/runner/Release
+          7z a "../../../../../accounic-demo-${GITHUB_REF_NAME}-windows.zip" ./*
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: app/accounic-demo-*-windows.zip

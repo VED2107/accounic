@@ -52,6 +52,31 @@ class AppRelease {
   String get openUrl => downloadUrl ?? url;
 }
 
+/// A build a user can install, for the device they are holding.
+///
+/// The demo is not a web-only thing, and "download it from the releases page"
+/// is not an answer — it asks somebody evaluating a product to read a list of
+/// files and guess which one is theirs. This resolves the actual asset: the
+/// installer on Windows, the APK on Android, at the version that is current,
+/// as a direct link.
+class DemoDownload {
+  const DemoDownload({
+    required this.platform,
+    required this.version,
+    required this.url,
+  });
+
+  /// 'Windows' or 'Android', as the button says it.
+  final String platform;
+
+  /// The release this asset came from, so the button can name it.
+  final String version;
+
+  /// The direct asset URL. Already checked against [isTrustedUpdateUrl] before
+  /// it was stored, for exactly the reasons that check exists.
+  final String url;
+}
+
 /// Hosts an update link is allowed to point at.
 ///
 /// Every field of [AppRelease] comes from a remote response, `openUrl`
@@ -102,10 +127,15 @@ class UpdateRepository {
     return info.version;
   }
 
-  /// The newest published release, or null when there is none, when the check
-  /// is switched off, or when anything at all goes wrong.
-  Future<AppRelease?> latestRelease() async {
-    if (!AppConfig.updateCheckEnabled || repo.isEmpty) return null;
+  /// The latest release, as the API returned it, or null for every failure.
+  ///
+  /// Extracted so the update check and the demo download share one request
+  /// shape and one set of failure rules. It deliberately does NOT consult
+  /// `updateCheckEnabled`: that flag governs whether the app nags about
+  /// updates, and a demo build switches it off while still needing to hand a
+  /// visitor the demo for their own device.
+  Future<Map<String, dynamic>?> _latestJson() async {
+    if (repo.isEmpty) return null;
 
     final client = _client ?? http.Client();
     try {
@@ -126,6 +156,96 @@ class UpdateRepository {
       final json = jsonDecode(response.body);
       if (json is! Map<String, dynamic>) return null;
       if (json['draft'] == true || json['prerelease'] == true) return null;
+      return json;
+    } catch (_) {
+      // Network down, DNS gone, rate limited, malformed body — all the same
+      // answer. Neither an update check nor a download offer may ever be the
+      // reason the app misbehaves.
+      return null;
+    } finally {
+      if (_client == null) client.close();
+    }
+  }
+
+  /// The DEMO build for the device this is running on, when the current release
+  /// publishes one (docs/demo.md).
+  ///
+  /// Matched on the asset name carrying `demo` as well as the right extension,
+  /// and there is deliberately no fallback to a non-demo asset: handing someone
+  /// evaluating the product the production installer would be worse than
+  /// offering them nothing, because it is the one build their demo account
+  /// cannot sensibly be used with.
+  ///
+  /// Platform comes from [defaultTargetPlatform], which on the web reports the
+  /// BROWSER's operating system — so a visitor reading the demo on a Windows
+  /// laptop is offered the Windows build, and one on a phone the APK.
+  Future<DemoDownload?> demoDownload() => _platformDownload(demo: true);
+
+  /// The FULL build for the device this is running on.
+  ///
+  /// What a converted user is shown once their account is real
+  /// (db/migrations/0030): they have been using Accounic in a browser, they now
+  /// have the whole product, and the useful next thing is the installer for the
+  /// machine they are sitting at — not a page of files to choose between.
+  ///
+  /// It is the same resolution as [demoDownload] with the `demo` test inverted,
+  /// which is the point of sharing one implementation: the two can never
+  /// disagree about which asset belongs to whom.
+  Future<DemoDownload?> fullDownload() => _platformDownload(demo: false);
+
+  /// Resolves the current release's asset for this platform.
+  ///
+  /// Platform comes from [defaultTargetPlatform], which on the web reports the
+  /// BROWSER's operating system — so someone reading this on a Windows laptop
+  /// is offered the Windows build and someone on a phone the APK.
+  ///
+  /// The `demo` flag selects between the two families of asset by name, and it
+  /// is exclusive in both directions on purpose. A demo visitor must never be
+  /// handed the production installer, and a paying user must never be handed
+  /// the demo — each would be the one build that is useless to them.
+  Future<DemoDownload?> _platformDownload({required bool demo}) async {
+    final json = await _latestJson();
+    if (json == null) return null;
+
+    final tag = (json['tag_name'] as String?)?.trim();
+    if (tag == null || tag.isEmpty) return null;
+
+    final (label, suffixes) = switch (defaultTargetPlatform) {
+      TargetPlatform.android => ('Android', <String>['.apk']),
+      TargetPlatform.windows => ('Windows', <String>['.exe', '.msi', '.msix']),
+      _ => ('', <String>[]),
+    };
+    if (suffixes.isEmpty) return null;
+
+    final assets = json['assets'];
+    if (assets is! List) return null;
+
+    for (final suffix in suffixes) {
+      for (final asset in assets) {
+        if (asset is! Map) continue;
+        final name = (asset['name'] as String?)?.toLowerCase() ?? '';
+        if (name.contains('demo') != demo) continue;
+        if (!name.endsWith(suffix)) continue;
+        final url = asset['browser_download_url'] as String?;
+        if (!isTrustedUpdateUrl(url)) continue;
+        return DemoDownload(
+          platform: label,
+          version: AppVersion.parse(tag).toString(),
+          url: url!,
+        );
+      }
+    }
+    return null;
+  }
+
+  /// The newest published release, or null when there is none, when the check
+  /// is switched off, or when anything at all goes wrong.
+  Future<AppRelease?> latestRelease() async {
+    if (!AppConfig.updateCheckEnabled) return null;
+
+    try {
+      final json = await _latestJson();
+      if (json == null) return null;
 
       final tag = (json['tag_name'] as String?)?.trim();
       if (tag == null || tag.isEmpty) return null;
@@ -149,11 +269,8 @@ class UpdateRepository {
         downloadUrl: isTrustedUpdateUrl(asset) ? asset : null,
       );
     } catch (_) {
-      // Network down, DNS gone, rate limited, malformed body — all the same
-      // answer. An update check may never be the reason the app misbehaves.
+      // Anything malformed in a response that nonetheless arrived.
       return null;
-    } finally {
-      if (_client == null) client.close();
     }
   }
 
