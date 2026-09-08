@@ -77,18 +77,16 @@ final appUpdateProvider = FutureProvider<AppRelease?>((ref) async {
   }
 });
 
-/// The demo build for the device this is running on, when there is one
-/// (data/update_repository.dart, docs/demo.md).
+/// Every full build the current release publishes.
 ///
-/// Null covers every case that is not an offer: no release, no demo asset for
-/// this platform, no network, a platform with nothing to install. None of them
-/// is an error the visitor has to see, so this provider never carries one —
-/// the card simply does not appear.
-final demoDownloadProvider = FutureProvider<DemoDownload?>((ref) async {
+/// What [UpgradedScreen] hands a converted user. Empty whenever there is
+/// nothing to offer — no release, no assets, no network — which that screen
+/// reads as "say where to look instead".
+final fullDownloadsProvider = FutureProvider<List<DemoDownload>>((ref) async {
   try {
-    return await ref.watch(updateRepositoryProvider).demoDownload();
+    return await ref.watch(updateRepositoryProvider).fullDownloads();
   } catch (_) {
-    return null;
+    return const [];
   }
 });
 
@@ -133,30 +131,35 @@ final isDemoAccountProvider = Provider<bool>((ref) {
 
 /// Whether the experience in front of the user is the restricted one.
 ///
-/// The ONLY question a feature gate should ask, and the answer belongs to the
-/// ACCOUNT rather than to the binary:
+/// The ONLY question a feature gate should ask. Either flag is enough:
 ///
-///   * once `me` has loaded, `profiles.is_demo` decides, on every platform. A
-///     demo account is restricted in the Windows build; a real account is NOT
-///     restricted in the demo build.
-///   * before it has loaded — and on the demo build's own door, where nobody is
-///     signed in yet — the build flag stands in, so a demo deployment never
-///     flashes the full product for a frame.
+///   * the demo BUILD is the demo, always and for everyone. Flutter Web ships
+///     as the demo and as nothing else — the real product is the Android and
+///     Windows applications (and the web client in `web/`). So a real account
+///     never gets the full experience here; it gets [UpgradedScreen], which
+///     sends it to the application it is entitled to.
+///   * a demo ACCOUNT is restricted wherever it signs in, including in the
+///     Android and Windows builds.
 ///
-/// That second rule is the whole of what the build flag does here. It used to
-/// win outright, which was wrong in the case the product cares most about: an
-/// administrator converts a visitor to a real user, the visitor reloads the
-/// demo they were already using, and stays locked out of the thing they were
-/// just granted. Their account is real; the page they happen to be on is not a
-/// reason to keep restricting them (docs/demo.md).
-///
-/// Restriction is presentation either way. Not one of the capabilities behind
-/// these gates is enforced here — administration is refused by `is_admin()` in
-/// the database, and every ledger row by RLS, whatever this provider says.
+/// Restriction is presentation. Not one of the capabilities behind these gates
+/// is enforced here — administration is refused by `is_admin()` in the
+/// database, and every ledger row by RLS, whatever this provider says.
 final demoRestrictedProvider = Provider<bool>((ref) {
+  if (isDemoBuild) return true;
+  return ref.watch(isDemoAccountProvider);
+});
+
+/// True when this demo build is being used by an account that is no longer a
+/// demo account.
+///
+/// The moment an administrator converts someone, the demo stops being the right
+/// place for them: they have the whole product now, and the whole product is an
+/// application they install. The shell shows them [UpgradedScreen] instead of
+/// the ledger, with the download for their platform.
+final demoAccountUpgradedProvider = Provider<bool>((ref) {
+  if (!isDemoBuild) return false;
   final me = ref.watch(meProvider).valueOrNull;
-  if (me != null) return me.isDemo;
-  return isDemoBuild;
+  return me != null && !me.isDemo;
 });
 
 final currencyProvider = Provider<String>((ref) {

@@ -1,12 +1,18 @@
-# Accounic Online Demo
+# The Accounic Demo
 
-A hosted Flutter Web build of **the same application** in `app/`, against **the
-same Supabase project** production uses, with a restricted feature surface.
+The **same application** in `app/`, built with `--dart-define=DEMO_MODE=on`,
+against **the same Supabase project** production uses, with a restricted feature
+surface.
 
 It is not a second app, a second frontend, a second database, or a second
-accounting engine. It is `app/` with `--dart-define=DEMO_MODE=on`.
+accounting engine.
 
-## The architecture in one picture
+## There is no Flutter Web build
+
+Not of the demo, and not of anything else. The Flutter codebase targets
+**Android and Windows**; the browser client is the Next.js application in
+`web/`. So the demo is distributed the way the product is — something you
+install:
 
 ```
                        ONE Supabase project
@@ -14,12 +20,12 @@ accounting engine. It is `app/` with `--dart-define=DEMO_MODE=on`.
                        ONE accounting engine
                        ONE set of RLS policies
                                  |
-      +--------------------------+--------------------------+
-      |                          |                          |
- Android / Windows          Web (production)            Web (demo build)
- real accounts              real accounts               DEMO_MODE=on
-      |                          |                          |
-      +--------------------------+--------------------------+
+     +----------------+----------+----------+----------------+
+     |                |                     |                |
+  Android          Windows              Web (web/)      Android + Windows
+  real accounts    real accounts        real accounts   DEMO_MODE=on
+     |                |                     |                |
+     +----------------+---------------------+----------------+
                                  |
                     profiles.is_demo decides what the
                     interface offers this ACCOUNT.
@@ -27,21 +33,43 @@ accounting engine. It is `app/` with `--dart-define=DEMO_MODE=on`.
                     hand over, and does not consult it.
 ```
 
-Real users → real Supabase. Demo users → the same Supabase, with
-`is_demo = true`. An administrator converts one to the other, and the account,
-the password and the books all stay exactly where they are.
+Every tag publishes both families of build to the same GitHub release:
+
+| | Real | Demo |
+| --- | --- | --- |
+| Android | `Accounic-<v>.apk` | `Accounic-demo-<v>.apk` |
+| Windows | `Accounic-Setup-<v>-x64.exe`, portable zip | `Accounic-demo-<v>-windows-x64.zip` |
+
+The word `demo` in those names is load-bearing: `UpdateRepository` matches on
+it, so a demo visitor is never offered the production installer and a paying
+user is never offered the demo.
+
+## The demo never becomes the full product
+
+A demo build is the demo for whoever is holding it. When an administrator
+converts an account, the demo build does **not** quietly unlock — it shows
+`UpgradedScreen` instead of the ledger: *your account is ready*, with the
+direct download for their platform and the other platform beside it.
+
+Letting the demo promote itself in place would leave a paying customer's books
+on the build whose entire purpose is being a sample. Their account is real, so
+they are sent to the application that is real too — same email, same password,
+same books.
 
 ## Two flags, deliberately not one
 
 | | Where it lives | What it decides |
 | --- | --- | --- |
-| **Build mode** | `AppConfig.demoMode`, compile-time, `--dart-define=DEMO_MODE=on` | Which door the visitor arrives at — anonymous sign-in instead of a login form |
-| **Account status** | `profiles.is_demo`, read through `me()` | Whether *this account* gets the restricted experience, on any platform |
+| **Build mode** | `AppConfig.demoMode`, compile-time, `--dart-define=DEMO_MODE=on` | That this build is a demo build: anonymous sign-in instead of a login form, and the restricted surface for everyone using it |
+| **Account status** | `profiles.is_demo`, read through `me()` | Whether *this account* is a demo account, on any platform |
 
-`demoRestrictedProvider` is the OR of the two and is the only question a feature
-gate asks. Collapsing them would get both cases wrong: an administrator opening
-the demo build is not a demo user, and a demo account signing in to the Windows
-application is still a demo account there.
+`demoRestrictedProvider` is the OR of the two. `demoAccountUpgradedProvider` is
+the interesting combination: a demo BUILD holding a real ACCOUNT, which is the
+person an administrator has just converted, and who gets shown the way out.
+
+Collapsing the two flags would get both cases wrong: an administrator opening a
+demo build is not a demo user, and a demo account signing in to the production
+Windows application is still a demo account there.
 
 ## Isolation
 
@@ -142,27 +170,25 @@ books back from **Profile → Reset demo data**, which calls `demo_reset()` —
 `void_person_history()` and `delete_person()` per account, then `demo_seed()`
 again. All production RPCs.
 
-## 4. Deploy the web demo
+## 4. Publish the demo builds
 
-`.github/workflows/demo.yml` builds and publishes to GitHub Pages. Two
-repository secrets, both from the real project:
-
-- `DEMO_SUPABASE_URL`
-- `DEMO_SUPABASE_ANON_KEY`
-
-Optionally `FULL_APP_URL`, if the full application lives somewhere other than
-the releases page. Enable Pages with source "GitHub Actions".
+`.github/workflows/demo.yml` runs on a tag and attaches both demo builds to the
+release the tag created, beside the production ones. It uses the release
+workflow's own secrets — `SUPABASE_URL` and `SUPABASE_ANON_KEY` — because the
+demo points at the same project.
 
 By hand:
 
 ```
-flutter build web --release \
-  --dart-define=DEMO_MODE=on \
-  --dart-define=SUPABASE_URL=https://YOUR-PROJECT.supabase.co \
-  --dart-define=SUPABASE_ANON_KEY=your-anon-key \
-  --dart-define=UPDATE_CHECK=off \
-  --base-href=/accounic/
+flutter build apk --release   --dart-define=DEMO_MODE=on   --dart-define=SUPABASE_URL=https://YOUR-PROJECT.supabase.co   --dart-define=SUPABASE_ANON_KEY=your-anon-key
+
+flutter build windows --release   --dart-define=DEMO_MODE=on   --dart-define=SUPABASE_URL=https://YOUR-PROJECT.supabase.co   --dart-define=SUPABASE_ANON_KEY=your-anon-key
 ```
+
+The Windows job pins `windows-2022`, not `windows-latest`: the newer image ships
+a Visual Studio that Flutter 3.29 does not recognise, so toolchain detection
+falls back to "Visual Studio 16 2019" and CMake fails. `release.yml` already
+knew this; `demo.yml` learned it on v1.13.1.
 
 ## 5. Find demo users in Administration
 
@@ -219,24 +245,7 @@ administrator, the target, the time, and the counts that came through.
 If you later want *convert and start fresh*, that is a separate operation and it
 has to be designed and asked for by name. This one never discards a ledger.
 
-## 8. The demo on Android and Windows
-
-The demo is built for all three platforms, not just the web. On a tag push,
-`.github/workflows/demo.yml` builds `DEMO_MODE=on` for Android and Windows and
-attaches them to the release as `accounic-demo-<tag>.apk` and
-`accounic-demo-<tag>-windows.zip`.
-
-The word `demo` in those file names is load-bearing:
-`UpdateRepository.demoDownload()` matches on it, so a production installer can
-never be offered to somebody holding a demo account.
-
-The demo screen resolves the asset for the visitor's **own** platform — from
-`defaultTargetPlatform`, which on the web reports the browser's operating
-system — and offers it as a direct download. No releases page, no list of files
-to guess between. When there is no matching asset, no network, or no release,
-the card simply does not appear.
-
-## 9. Hand over the full application
+## 8. Hand over the full application
 
 After a conversion both admin surfaces offer **Copy app link**. The user signs
 in with the same email and password they already had; `is_demo` is now false, so
@@ -281,11 +290,11 @@ exists to demonstrate, and it runs through the real `create_settlement()`.
 
 ## What this does not change
 
-The Android and Windows applications behave exactly as before for a real
-account. `AppConfig.demoMode` is false unless the dart-define is passed, so
+The production Android and Windows applications behave exactly as before for a
+real account. `AppConfig.demoMode` is false unless the dart-define is passed, so
 every build-mode branch is dead code the compiler removes;
-`test/demo_mode_test.dart` asserts that default. The release workflow is
-untouched.
+`test/demo_mode_test.dart` asserts the default. `release.yml` is untouched, and
+`web/` — the browser client for real accounts — is untouched.
 
 A demo *account* is restricted on those platforms too, which is intended: the
 restriction belongs to the account, and an administrator lifts it.

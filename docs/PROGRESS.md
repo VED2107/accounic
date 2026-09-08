@@ -1206,13 +1206,19 @@ integration: the demo and the production builds both read `profiles.is_demo`
 through `me()`, so an edit in Administration is the connection — there is
 nothing to sync.
 
+**There is no Flutter Web build**, of the demo or of anything else. The Flutter
+codebase targets Android and Windows; the browser client is the Next.js
+application in `web/`. So the demo is distributed the way the product is — as
+apps, published to the same release beside the production ones, with `demo` in
+the file name because `UpdateRepository` matches on it.
+
 **Access is granted, never taken.** The demo's calls to action ask an
-administrator to enable the account rather than offering a download, because a
-download cannot help a visitor whose account has not been enabled. The full
-application's address is offered on exactly one screen: the administrator's
-confirmation, after the conversion. The demo itself is published for Android and
-Windows as well as the web, and the demo screen resolves the asset for the
-visitor's own platform and hands it over as a direct link.
+administrator to enable the account rather than offering a download or a mail
+client, because neither can help a visitor whose account has not been enabled.
+And a demo build never quietly becomes the full product: a converted account
+gets `UpgradedScreen` instead of the ledger, with the direct download for its
+platform. Letting the demo promote itself in place would leave a paying
+customer's books on the build whose entire purpose is being a sample.
 
 **Where the service-role key still is.** On the Next.js server, and nowhere
 else. Making a demo account needs it, which is why **Add user → Account type**
@@ -1226,4 +1232,5 @@ No client can do either, and the Flutter build carries the publishable key alone
 * `core/demo.dart`, `providers.dart` — the two flags and their OR.
 * `ui/sheets/upgrade_sheet.dart`, `ui/widgets/demo_gate_row.dart` — the gate.
 * `ui/screens/demo_screen.dart` — demo against full, side by side.
-* `.github/workflows/demo.yml` — the web build and its Pages deployment.
+* `.github/workflows/demo.yml` — the Android and Windows demo builds.
+* `ui/screens/upgraded_screen.dart` — the way out, for a converted account.

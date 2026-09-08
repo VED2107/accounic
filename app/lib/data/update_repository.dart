@@ -179,7 +179,62 @@ class UpdateRepository {
   /// Platform comes from [defaultTargetPlatform], which on the web reports the
   /// BROWSER's operating system — so a visitor reading the demo on a Windows
   /// laptop is offered the Windows build, and one on a phone the APK.
-  Future<DemoDownload?> demoDownload() => _platformDownload(demo: true);
+  /// Every FULL build the current release publishes, for every platform.
+  ///
+  /// The list, not just this machine's, because the screen that uses it is
+  /// telling someone their account is ready and the product is an application
+  /// they install — and they may well be reading that on a laptop and
+  /// installing on a phone. Ordered with this platform first, since that is
+  /// still the likeliest answer.
+  Future<List<DemoDownload>> fullDownloads() async {
+    final json = await _latestJson();
+    if (json == null) return const [];
+
+    final tag = (json['tag_name'] as String?)?.trim();
+    if (tag == null || tag.isEmpty) return const [];
+    final version = AppVersion.parse(tag).toString();
+
+    final assets = json['assets'];
+    if (assets is! List) return const [];
+
+    const wanted = <(String, List<String>)>[
+      ('Android', ['.apk']),
+      ('Windows', ['.exe', '.msi', '.msix']),
+    ];
+
+    final found = <DemoDownload>[];
+    for (final (label, suffixes) in wanted) {
+      for (final suffix in suffixes) {
+        final hit = assets.firstWhere(
+          (asset) {
+            if (asset is! Map) return false;
+            final name = (asset['name'] as String?)?.toLowerCase() ?? '';
+            return !name.contains('demo') &&
+                name.endsWith(suffix) &&
+                isTrustedUpdateUrl(asset['browser_download_url'] as String?);
+          },
+          orElse: () => null,
+        );
+        if (hit is Map) {
+          found.add(DemoDownload(
+            platform: label,
+            version: version,
+            url: hit['browser_download_url'] as String,
+          ));
+          break;
+        }
+      }
+    }
+
+    // This machine's platform first.
+    final mine = switch (defaultTargetPlatform) {
+      TargetPlatform.android => 'Android',
+      TargetPlatform.windows => 'Windows',
+      _ => '',
+    };
+    found.sort((a, b) => (b.platform == mine ? 1 : 0) - (a.platform == mine ? 1 : 0));
+    return found;
+  }
 
   /// The FULL build for the device this is running on.
   ///

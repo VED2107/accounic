@@ -8,6 +8,7 @@ import '../core/theme.dart';
 import '../providers.dart';
 import 'motion.dart';
 import 'screens/search_sheet.dart';
+import 'screens/upgraded_screen.dart';
 import 'sheets/transaction_sheet.dart';
 import 'widgets/brand.dart';
 import 'widgets/common.dart';
@@ -71,6 +72,17 @@ class AppShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // An account an administrator has converted, still in the demo build.
+    //
+    // The demo does not quietly become the full product for them: Flutter's
+    // Android and Windows builds ship BOTH ways, and the demo one is the demo
+    // whoever is holding it. They have the whole product now, so they are sent
+    // to install it rather than kept here (screens/upgraded_screen.dart).
+    //
+    // Above the shell entirely — no rail, no bottom bar, no add button — because
+    // this is not a screen inside the application, it is the way out of it.
+    if (ref.watch(demoAccountUpgradedProvider)) return const UpgradedScreen();
+
     // The same threshold the layout system uses, so the rail and the in-page
     // header appear together rather than one width apart.
     final wide = context.isWide;

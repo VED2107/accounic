@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/catalogue.dart';
 import '../../core/demo.dart';
 import '../../core/icons.dart';
 import '../../core/layout.dart';
 import '../../core/theme.dart';
-import '../../providers.dart';
 import '../widgets/app_page.dart';
 import '../widgets/brand.dart';
 import '../widgets/common.dart';
@@ -122,8 +120,6 @@ class DemoScreen extends ConsumerWidget {
           const SizedBox(height: AppSpacing.md),
         ],
 
-        const SizedBox(height: AppSpacing.lg),
-        const _DemoOnYourDevice(),
         const SizedBox(height: AppSpacing.lg),
         const _Cta(),
       ],
@@ -406,66 +402,6 @@ class _Side extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-/// The demo, for the device the visitor is actually holding.
-///
-/// The demo is built for all three platforms, so "does this work on my desktop"
-/// is a question it can answer rather than promise. The asset is resolved from
-/// the current release and offered as a DIRECT download — a releases page asks
-/// somebody evaluating a product to read a list of files and guess which one is
-/// theirs, which is a small insult at exactly the wrong moment.
-///
-/// Draws nothing when there is nothing to offer: no release, no demo asset for
-/// this platform, no network. An absent card is a better answer than a button
-/// that goes somewhere unhelpful.
-class _DemoOnYourDevice extends ConsumerWidget {
-  const _DemoOnYourDevice();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final download = ref.watch(demoDownloadProvider).valueOrNull;
-    if (download == null) return const SizedBox.shrink();
-
-    final palette = context.money;
-
-    return SectionCard(
-      padding: context.cardPadding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Try the demo on ${download.platform}',
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            'The same demo, built for ${download.platform} from the same code as '
-            'this page. It signs in to a demo account exactly as this one does.',
-            style: TextStyle(fontSize: 13.5, height: 1.6, color: palette.inkMuted),
-          ),
-          const SizedBox(height: AppSpacing.xl),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: OutlinedButton.icon(
-              onPressed: () => launchUrl(
-                Uri.parse(download.url),
-                mode: LaunchMode.externalApplication,
-              ),
-              icon: const Icon(AppIcons.download, size: AppIconSize.sm),
-              label: Text('Download the ${download.platform} demo '
-                  '(${download.version})'),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size(0, 46),
-                side: BorderSide(color: palette.line),
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

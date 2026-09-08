@@ -83,9 +83,6 @@ void main() {
     });
 
     test('a signed-out client falls back to the build flag', () async {
-      // Nobody is signed in, so there is no account to ask. On a production
-      // build that means unrestricted; on the demo build the flag stands in so
-      // the door never flashes the full product.
       final container = containerFor(null);
       await container.read(meProvider.future);
 
@@ -93,27 +90,40 @@ void main() {
       expect(container.read(demoRestrictedProvider), isDemoBuild);
     });
 
-    test('the account has the last word over the build', () async {
-      // The case the product cares most about: an administrator converts a
-      // visitor, the visitor reloads the demo they were already using, and the
-      // full application opens in that same tab. Their account is real; the
-      // page they happen to be on is not a reason to keep restricting them.
+    test('a demo build never becomes the full product', () async {
+      // The demo build is the demo for whoever is holding it. A converted
+      // account is not quietly promoted in place — it is sent to install the
+      // application it is now entitled to, which is what
+      // demoAccountUpgradedProvider drives.
       final container = containerFor(user());
       await container.read(meProvider.future);
 
-      expect(
-        container.read(demoRestrictedProvider),
-        isFalse,
-        reason: 'a real account is unrestricted wherever it signs in',
-      );
+      expect(container.read(demoRestrictedProvider), isDemoBuild);
+      expect(container.read(demoAccountUpgradedProvider), isDemoBuild);
+    });
 
-      final demo = containerFor(user(isDemo: true));
-      await demo.read(meProvider.future);
-      expect(
-        demo.read(demoRestrictedProvider),
-        isTrue,
-        reason: 'and a demo account is restricted wherever it signs in',
-      );
+    test('a demo account is never shown the way out', () async {
+      // The upgrade screen is for accounts that have BEEN converted. A demo
+      // account still using the demo is exactly where it belongs.
+      final container = containerFor(user(isDemo: true));
+      await container.read(meProvider.future);
+
+      expect(container.read(demoRestrictedProvider), isTrue);
+      expect(container.read(demoAccountUpgradedProvider), isFalse);
+    });
+
+    test('a production build never shows the way out', () async {
+      // Whatever the account, this provider is a demo-build concern only: the
+      // Android and Windows applications are the destination, not a stop on the
+      // way to it.
+      for (final me in [user(), user(isDemo: true), null]) {
+        final container = containerFor(me);
+        await container.read(meProvider.future);
+        expect(
+          container.read(demoAccountUpgradedProvider),
+          isDemoBuild && me != null && !me.isDemo,
+        );
+      }
     });
 
     test('conversion is what lifts the restriction', () async {
