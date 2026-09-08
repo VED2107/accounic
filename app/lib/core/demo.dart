@@ -31,8 +31,14 @@ import 'config.dart';
 ///
 /// Collapsing the two would get both wrong. An administrator opening the demo
 /// build is not a demo user, and a demo account on a production build is not a
-/// full customer. `demoRestrictedProvider` in providers.dart is the OR of the
-/// two, and is what every gate actually asks.
+/// full customer.
+///
+/// `demoRestrictedProvider` in providers.dart is what every gate actually asks,
+/// and it gives the ACCOUNT the last word: once `me` has loaded, `is_demo`
+/// decides. The build flag only stands in before anyone is signed in, so the
+/// demo's own door does not flash the full product. A visitor an administrator
+/// has just converted therefore gets the full application in the very tab they
+/// were already using, which is the entire point of converting them.
 /// ---------------------------------------------------------------------------
 bool get isDemoBuild => AppConfig.demoMode;
 

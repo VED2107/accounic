@@ -82,12 +82,38 @@ void main() {
       expect(container.read(demoRestrictedProvider), isFalse);
     });
 
-    test('a signed-out client is not restricted, and is not a demo account', () async {
+    test('a signed-out client falls back to the build flag', () async {
+      // Nobody is signed in, so there is no account to ask. On a production
+      // build that means unrestricted; on the demo build the flag stands in so
+      // the door never flashes the full product.
       final container = containerFor(null);
       await container.read(meProvider.future);
 
       expect(container.read(isDemoAccountProvider), isFalse);
-      expect(container.read(demoRestrictedProvider), isFalse);
+      expect(container.read(demoRestrictedProvider), isDemoBuild);
+    });
+
+    test('the account has the last word over the build', () async {
+      // The case the product cares most about: an administrator converts a
+      // visitor, the visitor reloads the demo they were already using, and the
+      // full application opens in that same tab. Their account is real; the
+      // page they happen to be on is not a reason to keep restricting them.
+      final container = containerFor(user());
+      await container.read(meProvider.future);
+
+      expect(
+        container.read(demoRestrictedProvider),
+        isFalse,
+        reason: 'a real account is unrestricted wherever it signs in',
+      );
+
+      final demo = containerFor(user(isDemo: true));
+      await demo.read(meProvider.future);
+      expect(
+        demo.read(demoRestrictedProvider),
+        isTrue,
+        reason: 'and a demo account is restricted wherever it signs in',
+      );
     });
 
     test('conversion is what lifts the restriction', () async {

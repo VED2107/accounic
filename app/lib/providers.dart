@@ -133,19 +133,30 @@ final isDemoAccountProvider = Provider<bool>((ref) {
 
 /// Whether the experience in front of the user is the restricted one.
 ///
-/// The OR of the two flags `core/demo.dart` keeps apart, and the ONLY question
-/// a feature gate should ask. Either is enough on its own:
+/// The ONLY question a feature gate should ask, and the answer belongs to the
+/// ACCOUNT rather than to the binary:
 ///
-///   * the demo BUILD restricts whoever is using it, including an administrator
-///     who wants to see what a visitor sees;
-///   * a demo ACCOUNT is restricted wherever it signs in.
+///   * once `me` has loaded, `profiles.is_demo` decides, on every platform. A
+///     demo account is restricted in the Windows build; a real account is NOT
+///     restricted in the demo build.
+///   * before it has loaded — and on the demo build's own door, where nobody is
+///     signed in yet — the build flag stands in, so a demo deployment never
+///     flashes the full product for a frame.
 ///
-/// Restriction is presentation. Not one of the capabilities behind these gates
-/// is enforced here — administration is refused by `is_admin()` in the
-/// database, and every ledger row by RLS, whatever this provider says.
+/// That second rule is the whole of what the build flag does here. It used to
+/// win outright, which was wrong in the case the product cares most about: an
+/// administrator converts a visitor to a real user, the visitor reloads the
+/// demo they were already using, and stays locked out of the thing they were
+/// just granted. Their account is real; the page they happen to be on is not a
+/// reason to keep restricting them (docs/demo.md).
+///
+/// Restriction is presentation either way. Not one of the capabilities behind
+/// these gates is enforced here — administration is refused by `is_admin()` in
+/// the database, and every ledger row by RLS, whatever this provider says.
 final demoRestrictedProvider = Provider<bool>((ref) {
-  if (isDemoBuild) return true;
-  return ref.watch(isDemoAccountProvider);
+  final me = ref.watch(meProvider).valueOrNull;
+  if (me != null) return me.isDemo;
+  return isDemoBuild;
 });
 
 final currencyProvider = Provider<String>((ref) {

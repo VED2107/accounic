@@ -63,6 +63,11 @@ create table if not exists auth.users (
   raw_app_meta_data  jsonb default '{}'::jsonb,
   raw_user_meta_data jsonb default '{}'::jsonb,
   is_super_admin     boolean,
+  -- Anonymous sign-in (0029-0031). GoTrue adds this when the provider is
+  -- enabled, and the demo's `is_demo_visitor()` reads it: an anonymous user has
+  -- no email and no password, so it can only ever be a demo visitor. Named by
+  -- the migrations, therefore present here.
+  is_anonymous       boolean not null default false,
   created_at         timestamptz default now(),
   updated_at         timestamptz default now(),
   phone              text unique,
