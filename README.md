@@ -2,7 +2,7 @@
 
 A small, fast, personal accounting system. Three clients, one backend, one database.
 
-Current release: **[v1.14.0](https://github.com/VED2107/accounic/releases/latest)** —
+Current release: **[v1.16.0](https://github.com/VED2107/accounic/releases/latest)** —
 Windows installer, Windows portable zip and an Android APK, plus the same three as a
 **demo** build. The app checks GitHub Releases on launch and tells you when a newer one
 exists. A release is built by CI on a tag and left as a draft: the update check only
@@ -32,6 +32,26 @@ There is no Flutter Web build. Flutter targets Android and Windows; the browser 
 is the Next.js application in `web/`.
 
 Design source of truth: [`context.md`](./context.md). Visual map: [`mindmap.md`](./mindmap.md).
+
+### What's new in 1.16
+
+**Counterfoil & Seal — a new face for Android and Windows.** Every account is
+drawn as an instrument of value: the balance certified over a guilloché
+engraving, the opening balance torn off below a perforation as its counterfoil,
+every account and entry carrying its serial, and settlements struck with a
+worn rubber stamp — RECEIVED, PAID, SETTLED, VOID — that lands with a real
+press when money moves. Ink only: neutral carbon by night, paper by day, and
+colour spent on money alone (green owed to you, red you owe). Deletions are
+held, not tapped; Ctrl+1…5 moves between screens on Windows. The full system
+is in [`DESIGN.md`](./DESIGN.md), the product record in
+[`PRODUCT.md`](./PRODUCT.md).
+
+**Person Details and its PDF now count money exactly as the Dashboard does.**
+Nothing is re-priced at today's rate: amounts entered in the workspace currency
+count at the value entered, foreign entries on a rupee account at the rupees
+the ledger booked for them, and today's rate is used only where no historical
+figure was ever recorded — and says so. `db/tools/person-dashboard-parity.mjs`
+proves every person page sums to the dashboard, against the live database.
 
 ### The demo
 

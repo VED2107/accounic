@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../../core/avatar_color.dart';
 import '../../core/failure.dart';
 import '../../core/icons.dart';
 import '../../core/layout.dart';
@@ -307,10 +306,10 @@ class Avatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.money;
     final (background, foreground, border) = switch (tone) {
-      null => () {
-          final identity = AvatarColor.of(name, Theme.of(context).brightness);
-          return (identity.background, identity.foreground, identity.border);
-        }(),
+      // Counterfoil & Seal: an engraved monogram in ink, not a tint. Per-person
+      // hues put blues and violets on every list; the initial is recognition
+      // enough, and colour stays with money.
+      null => (palette.sunken, context.colors.onSurface, palette.lineStrong),
       AvatarTone.receivable => (
           palette.receivableSoft,
           palette.receivable,
@@ -401,7 +400,29 @@ class _SectionCardState extends State<SectionCard> {
         padding: EdgeInsets.fromLTRB(16, widget.brandRule ? 13 : 14, 8, 14),
         child: Row(
           children: [
-            Expanded(child: Text(widget.title!, style: context.display(15))),
+            // Set like the printed heading on an instrument: heavy, tracked, with
+            // an engraved rule running out toward the edge of the form. The
+            // text keeps its own case — capitals made by code read letter by
+            // letter to a screen reader — and yields width before the rule does.
+            Flexible(
+              flex: 5,
+              child: Text(
+                widget.title!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.3,
+                  color: context.colors.onSurface,
+                ),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Container(height: 1, color: palette.line),
+            ),
+            const SizedBox(width: AppSpacing.md),
             if (widget.action != null)
               widget.action!
             else if (widget.collapsible) ...[
@@ -444,15 +465,15 @@ class _SectionCardState extends State<SectionCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (widget.brandRule)
-            const SizedBox(
-              height: 1,
-              child: DecoratedBox(decoration: BoxDecoration(gradient: AccounicColors.brandGradient)),
-            ),
-          if (widget.title != null) ...[
-            header(),
-            if (!collapsed) Divider(height: 1, color: palette.line),
+          // The double rule a security-printed form carries along its top
+          // edge. The brand gradient stays in the mark, where it belongs.
+          if (widget.brandRule) ...[
+            const SizedBox(height: 3),
+            Container(height: 1, color: palette.lineStrong),
+            const SizedBox(height: 2),
+            Container(height: 1, color: palette.line),
           ],
+          if (widget.title != null) header(),
           // Size, not opacity: the card has to give the space back when it
           // closes, and AnimatedSize does that on one implicit controller
           // rather than on a controller per child.
@@ -528,12 +549,17 @@ class EmptyState extends StatelessWidget {
     this.description,
     this.icon,
     this.action,
+    this.mark,
   });
 
   final String title;
   final String? description;
   final IconData? icon;
   final Widget? action;
+
+  /// Shown in place of [icon] when the empty state is itself an outcome worth
+  /// marking — "everything is settled" gets a stamp, not a placeholder glyph.
+  final Widget? mark;
 
   @override
   Widget build(BuildContext context) {
@@ -542,7 +568,10 @@ class EmptyState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (icon != null) ...[
+          if (mark != null) ...[
+            mark!,
+            const SizedBox(height: 14),
+          ] else if (icon != null) ...[
             Container(
               width: 48,
               height: 48,
@@ -997,6 +1026,7 @@ class CurrencyHalfBlock extends StatelessWidget {
     required this.row,
     required this.baseCurrency,
     required this.opening,
+    this.ledgerCurrency,
   });
 
   final CurrencyHalfBreakdown row;
@@ -1004,6 +1034,13 @@ class CurrencyHalfBlock extends StatelessWidget {
 
   /// Labels the net figure "Remaining" for the opening half, "Net" for cash.
   final bool opening;
+
+  /// Set on the person screen: the account's own currency. With it, the
+  /// equivalent line is the figure the ledger BOOKED where one exists
+  /// ([CurrencyHalfBreakdown.baseEquivalent]) and says which it is. Without
+  /// it — the dashboard, summing many accounts — the line is the dashboard's
+  /// own figure, unchanged.
+  final String? ledgerCurrency;
 
   @override
   Widget build(BuildContext context) {
@@ -1094,7 +1131,23 @@ class CurrencyHalfBlock extends StatelessWidget {
               ),
             ),
           ),
-          if (row.showsBaseEquivalent) ...[
+          if (ledgerCurrency != null) ...[
+            if (row.baseEquivalent(ledgerCurrency!) case final it?) ...[
+              const SizedBox(height: 2),
+              Text(
+                it.asBooked
+                    ? '${formatMoney(it.minor.abs(), currency: baseCurrency)} as booked'
+                    : '${formatApprox(it.minor.abs(), currency: baseCurrency)} at today’s rate',
+                style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
+              ),
+            ] else if (row.currency != baseCurrency) ...[
+              const SizedBox(height: 2),
+              Text(
+                'no ${row.currency} → $baseCurrency rate yet',
+                style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
+              ),
+            ],
+          ] else if (row.showsBaseEquivalent) ...[
             const SizedBox(height: 2),
             Text(
               formatApprox(row.netBaseMinor!.abs(), currency: baseCurrency),
@@ -1138,6 +1191,7 @@ class CurrencyBreakdownCard extends StatelessWidget {
     required this.baseCurrency,
     required this.opening,
     this.collapsible = false,
+    this.ledgerCurrency,
   });
 
   final String title;
@@ -1150,6 +1204,9 @@ class CurrencyBreakdownCard extends StatelessWidget {
   /// supporting material behind an Overview tab rather than the answer to the
   /// question the screen was opened with.
   final bool collapsible;
+
+  /// The account's own currency, handed to each [CurrencyHalfBlock].
+  final String? ledgerCurrency;
 
   @override
   Widget build(BuildContext context) {
@@ -1175,7 +1232,12 @@ class CurrencyBreakdownCard extends StatelessWidget {
           ),
           for (final row in ordered) ...[
             Divider(height: 1, color: palette.line),
-            CurrencyHalfBlock(row: row, baseCurrency: baseCurrency, opening: opening),
+            CurrencyHalfBlock(
+              row: row,
+              baseCurrency: baseCurrency,
+              opening: opening,
+              ledgerCurrency: ledgerCurrency,
+            ),
           ],
         ],
       ),

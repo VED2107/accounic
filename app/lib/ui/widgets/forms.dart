@@ -213,6 +213,8 @@ class _AppTextFieldState extends State<AppTextField> {
               : Padding(
                   padding: const EdgeInsets.only(top: AppSpacing.sm - 2, left: 2),
                   child: AnimatedSwitcher(
+                    switchInCurve: Motion.enter,
+                    switchOutCurve: Motion.enter,
                     duration: Motion.fast,
                     child: Row(
                       key: ValueKey(widget.error ?? widget.helper),
@@ -374,8 +376,7 @@ class SaveButton extends StatelessWidget {
           height: 46,
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
           decoration: BoxDecoration(
-            gradient: saved ? null : AccounicColors.actionGradient,
-            color: saved ? context.money.receivableSoft : null,
+            color: saved ? context.money.receivableSoft : context.actionFill,
             borderRadius: AppRadius.fieldAll,
             border: Border.all(
               color: saved ? context.money.receivableLine : Colors.transparent,
@@ -383,7 +384,7 @@ class SaveButton extends StatelessWidget {
             boxShadow: [
               if (hovered && !saved && !busy)
                 BoxShadow(
-                  color: AccounicColors.actionGlow.withValues(alpha: 0.34),
+                  color: Colors.black.withValues(alpha: 0.28),
                   blurRadius: 16,
                   offset: const Offset(0, 4),
                 ),
@@ -391,13 +392,16 @@ class SaveButton extends StatelessWidget {
           ),
           child: Center(
             child: AnimatedSwitcher(
+              transitionBuilder: Motion.blurSwap,
+              switchInCurve: Motion.enter,
+              switchOutCurve: Motion.enter,
               duration: Motion.fast,
               child: switch (state) {
-                SaveState.saving => const SizedBox(
-                    key: ValueKey('saving'),
+                SaveState.saving => SizedBox(
+                    key: const ValueKey('saving'),
                     width: 18,
                     height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    child: CircularProgressIndicator(strokeWidth: 2, color: context.onAction),
                   ),
                 SaveState.saved => Row(
                     key: const ValueKey('saved'),
@@ -418,10 +422,10 @@ class SaveButton extends StatelessWidget {
                 SaveState.idle => Text(
                     label,
                     key: const ValueKey('idle'),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14.5,
                       fontWeight: FontWeight.w600,
-                      color: Colors.white,
+                      color: context.onAction,
                     ),
                   ),
               },

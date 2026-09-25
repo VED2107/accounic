@@ -1065,6 +1065,13 @@ class PersonPage {
   /// The workspace currency, for the equivalent shown beside the position.
   final String baseCurrency;
 
+  /// Cash in hand in [baseCurrency], counted the way the dashboard counts it —
+  /// see [CurrencyHalfBreakdown.workspaceTotal]. Falls back to the figure the
+  /// database served on one that has not run 0024. Null means "no rate yet".
+  int? get regularInBase => regularByCurrency.isEmpty
+      ? regular.positionBaseMinor
+      : CurrencyHalfBreakdown.workspaceTotal(regularByCurrency, currency, baseCurrency);
+
   factory PersonPage.fromJson(Map<String, dynamic> json) => PersonPage(
         person: Person.fromJson(json['person'] as Map<String, dynamic>),
         balance: PersonBalance.fromJson(json['balance'] as Map<String, dynamic>),
@@ -1372,6 +1379,7 @@ class CurrencyHalfBreakdown {
     required this.payable,
     required this.net,
     this.netBaseMinor,
+    this.netLedgerMinor,
     this.today = 0,
     this.todayCount = 0,
     this.entryCount = 0,
@@ -1392,6 +1400,11 @@ class CurrencyHalfBreakdown {
   /// [net] converted to the workspace currency at today's rate. Reference only;
   /// null when no rate is cached.
   final int? netBaseMinor;
+
+  /// [net] in the ACCOUNT's own currency as the ledger booked it — no rate
+  /// applied (db/migrations/0033). Person page only; null on the dashboard and
+  /// on a database older than 0033.
+  final int? netLedgerMinor;
 
   final int today;
   final int todayCount;
@@ -1418,12 +1431,63 @@ class CurrencyHalfBreakdown {
         net: _int(json['net']),
         netBaseMinor:
             json['net_base_minor'] == null ? null : _int(json['net_base_minor']),
+        netLedgerMinor:
+            json['net_ledger_minor'] == null ? null : _int(json['net_ledger_minor']),
         today: _int(json['today']),
         todayCount: _int(json['today_count']),
         entryCount: _int(json['entry_count']),
         peopleCount:
             json['people_count'] == null ? null : _int(json['people_count']),
       );
+
+  /// What this row is worth in [baseCurrency] on an account kept in
+  /// [ledgerCurrency], and whether that figure is the one the ledger BOOKED.
+  ///
+  /// * A row already in the workspace currency has no equivalent — it is one.
+  /// * On an account kept in the workspace currency, the ledger froze every
+  ///   foreign entry at the rate it was entered at; [netLedgerMinor] is that
+  ///   frozen figure, and it is used as booked. Never re-priced.
+  /// * Otherwise no workspace-currency figure was ever recorded, and the only
+  ///   one there is is the dashboard's [netBaseMinor], at today's rate.
+  ({int minor, bool asBooked})? baseEquivalent(String ledgerCurrency) {
+    if (currency == baseCurrency) return null;
+    if (ledgerCurrency == baseCurrency && netLedgerMinor != null) {
+      return (minor: netLedgerMinor!, asBooked: true);
+    }
+    if (netBaseMinor == null) return null;
+    return (minor: netBaseMinor!, asBooked: false);
+  }
+
+  /// The workspace-currency total of [rows] for an account kept in
+  /// [ledgerCurrency]: each row at [baseEquivalent], a workspace-currency row
+  /// at its entered net. Null when a foreign row has no figure — "not known",
+  /// never zero.
+  ///
+  /// This is what the person screen and its statement show as "in INR". It
+  /// replaced a whole-position conversion at today's rate, which re-priced
+  /// rupees that had been entered as rupees (a dirham account holding rupee
+  /// entries came out lakhs off the dashboard for the same money). On an
+  /// account kept in the workspace currency it equals the headline exactly.
+  static int? workspaceTotal(
+    Iterable<CurrencyHalfBreakdown> rows,
+    String ledgerCurrency,
+    String baseCurrency,
+  ) {
+    var total = 0;
+    for (final row in rows) {
+      if (row.currency == baseCurrency) {
+        total += row.net;
+        continue;
+      }
+      final equivalent = row.baseEquivalent(ledgerCurrency);
+      if (equivalent == null) {
+        if (row.net == 0 && row.netLedgerMinor == null) continue;
+        return null;
+      }
+      total += equivalent.minor;
+    }
+    return total;
+  }
 
   /// Base currency first, then alphabetical; currencies with no data dropped.
   static List<CurrencyHalfBreakdown> order(

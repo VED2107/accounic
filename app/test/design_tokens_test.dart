@@ -40,8 +40,8 @@ double _contrast(Color a, Color b) {
 void main() {
   group('secondary text is readable, not merely restrained', () {
     // The ground each scheme's body text actually sits on.
-    const darkGround = Color(0xFF08090C);
-    const lightGround = Color(0xFFF6F7F9);
+    const darkGround = Color(0xFF111111);
+    const lightGround = Color(0xFFECECEA);
 
     for (final (name, palette, ground) in [
       ('dark', AccounicColors.dark, darkGround),

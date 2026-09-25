@@ -12,9 +12,10 @@ import {
   type StatementRow,
 } from '@/lib/pdf/rows';
 import { balanceTone } from '@/lib/money';
+import { baseEquivalent, orderCurrencyRows, workspaceTotal } from '@/lib/currency-breakdown';
 import { currencyLabel } from '@/lib/currencies';
 import { statementDate, timeOfDay } from '@/lib/dates';
-import type { Me, PersonPage } from '@/lib/types';
+import type { CurrencyHalfBreakdown, Me, PersonPage } from '@/lib/types';
 
 /**
  * The PDF's formatter: `lib/money.ts` throughout, with the one adjustment the
@@ -229,6 +230,8 @@ export async function buildPersonStatement(input: StatementInput): Promise<Uint8
   // statement never prints one number that silently contains the other.
   drawPosition(ctx, data, currency, baseCurrency, person.name);
   drawOpening(ctx, data, currency, baseCurrency);
+  drawByCurrency(ctx, 'CASH IN HAND BY CURRENCY', data.regular_by_currency ?? [], currency, baseCurrency);
+  drawByCurrency(ctx, 'OPENING BALANCE BY CURRENCY', data.opening_by_currency ?? [], currency, baseCurrency);
 
   const rows = buildStatementRows(
     data.timeline,
@@ -355,7 +358,11 @@ function drawPosition(
   const regular = regularPosition(data);
   const opening = openingPosition(data);
   const netMinor = regular.position;
-  const netBaseMinor = regular.position_base;
+  // Counted the way the dashboard and the person page count it — see
+  // workspaceTotal. Never the whole position re-converted at today's rate.
+  const netBaseMinor = data.regular_by_currency
+    ? workspaceTotal(data.regular_by_currency, currency, baseCurrency)
+    : regular.position_base;
   const hasOpening =
     (opening.entry_count ?? 0) > 0 || data.balance.opening_minor !== 0;
 
@@ -407,7 +414,7 @@ function drawPosition(
     y -= 12;
     drawLeft(
       ctx,
-      `${pdfApprox(Math.abs(netBaseMinor), baseCurrency)} at today’s rate`,
+      pdfApprox(Math.abs(netBaseMinor), baseCurrency),
       MARGIN + 14,
       y,
       ctx.regular,
@@ -596,6 +603,92 @@ function drawOpening(
  * reader needs beside cash in hand, and neither of which may be mistaken for
  * it. `quiet` marks the account position, which is a sum rather than a side.
  */
+/**
+ * One half of the account per entry currency — the same rows, the same figures
+ * and the same workspace-currency equivalent the person page shows under
+ * "Cash in hand by currency", which are the rows the dashboard sums. Drawn
+ * only when there is something the headline does not already say: more than
+ * one currency, or a single one that is not the account's own.
+ */
+function drawByCurrency(
+  ctx: Ctx,
+  title: string,
+  source: CurrencyHalfBreakdown[],
+  currency: string,
+  baseCurrency: string,
+) {
+  const rows = orderCurrencyRows(source, baseCurrency);
+  if (rows.length === 0) return;
+  if (rows.length === 1 && rows[0]!.currency === currency) return;
+
+  ensure(ctx, 56 + rows.length * 16);
+  drawLeft(ctx, title, MARGIN, ctx.y, ctx.bold, 8, INK_FAINT);
+  ctx.y -= 6;
+  rule(ctx, ctx.y);
+  ctx.y -= 13;
+
+  const cols = [
+    { label: 'Currency', x: MARGIN, right: false },
+    { label: 'Receivable', x: MARGIN + 140, right: true },
+    { label: 'Payable', x: MARGIN + 215, right: true },
+    { label: 'Settled', x: MARGIN + 285, right: true },
+    { label: 'Net', x: MARGIN + 360, right: true },
+    { label: `In ${baseCurrency}`, x: PAGE_WIDTH - MARGIN, right: true },
+  ];
+  for (const col of cols) {
+    if (col.right) drawRight(ctx, col.label, col.x, ctx.y, ctx.bold, 7, INK_FAINT);
+    else drawLeft(ctx, col.label, col.x, ctx.y, ctx.bold, 7, INK_FAINT);
+  }
+  ctx.y -= 14;
+
+  for (const row of rows) {
+    const money = (minor: number) =>
+      pdfMoney(Math.abs(minor), row.currency, { compactDecimals: false });
+    const it = baseEquivalent({ ...row, base_currency: baseCurrency }, currency);
+    const equivalent =
+      row.currency === baseCurrency
+        ? '—'
+        : it === null
+          ? 'no rate yet'
+          : it.asBooked
+            ? `${pdfMoney(Math.abs(it.minor), baseCurrency, { compactDecimals: false })} booked`
+            : `${pdfApprox(Math.abs(it.minor), baseCurrency)} today`;
+    drawLeft(ctx, row.currency, cols[0]!.x, ctx.y, ctx.bold, 9);
+    drawRight(ctx, money(row.receivable), cols[1]!.x, ctx.y, ctx.regular, 9, RECEIVABLE);
+    drawRight(ctx, money(row.payable), cols[2]!.x, ctx.y, ctx.regular, 9, PAYABLE);
+    drawRight(ctx, money(row.settled), cols[3]!.x, ctx.y, ctx.regular, 9, INK_MUTED);
+    drawRight(
+      ctx,
+      money(row.net),
+      cols[4]!.x,
+      ctx.y,
+      ctx.bold,
+      9,
+      row.net > 0 ? RECEIVABLE : row.net < 0 ? PAYABLE : INK_MUTED,
+    );
+    drawRight(ctx, equivalent, cols[5]!.x, ctx.y, ctx.regular, 8.5, INK_FAINT);
+    ctx.y -= 16;
+  }
+
+  const total = workspaceTotal(rows, currency, baseCurrency);
+  rule(ctx, ctx.y + 10);
+  drawLeft(ctx, `Total in ${baseCurrency}`, MARGIN, ctx.y - 2, ctx.bold, 8, INK_MUTED);
+  drawRight(
+    ctx,
+    total === null
+      ? 'no rate yet'
+      : currency === baseCurrency
+        ? pdfMoney(Math.abs(total), baseCurrency, { compactDecimals: false })
+        : pdfApprox(Math.abs(total), baseCurrency),
+    PAGE_WIDTH - MARGIN,
+    ctx.y - 2,
+    ctx.bold,
+    9,
+    INK,
+  );
+  ctx.y -= 26;
+}
+
 function secondaryFigure(
   ctx: Ctx,
   label: string,

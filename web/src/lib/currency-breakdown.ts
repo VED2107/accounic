@@ -45,3 +45,62 @@ export function orderCurrencyRows(
       return a.currency.localeCompare(b.currency);
     });
 }
+
+/**
+ * What `row` is worth in the workspace currency on an account kept in
+ * `ledgerCurrency`, and whether that figure is the one the ledger BOOKED.
+ *
+ * - A row already in the workspace currency has no equivalent — it is one.
+ * - On an account kept in the workspace currency, the ledger froze every
+ *   foreign entry at the rate it was entered at; `net_ledger_minor` is that
+ *   frozen figure (db/migrations/0033), used as booked and never re-priced.
+ * - Otherwise no workspace-currency figure was ever recorded, and the only one
+ *   there is is the dashboard's `net_base_minor`, at today's rate.
+ *
+ * Twin of `CurrencyHalfBreakdown.baseEquivalent` in app/lib/data/models.dart.
+ */
+export function baseEquivalent(
+  row: CurrencyHalfBreakdown,
+  ledgerCurrency: string,
+): { minor: number; asBooked: boolean } | null {
+  if (row.currency === row.base_currency) return null;
+  if (ledgerCurrency === row.base_currency && row.net_ledger_minor != null) {
+    return { minor: row.net_ledger_minor, asBooked: true };
+  }
+  if (row.net_base_minor == null) return null;
+  return { minor: row.net_base_minor, asBooked: false };
+}
+
+/**
+ * The workspace-currency total of `rows` for an account kept in
+ * `ledgerCurrency`: each row at `baseEquivalent`, a workspace-currency row at
+ * its entered net. Null when a foreign row has no figure — "not known", never
+ * zero.
+ *
+ * This is what the person page and its statement show in the workspace
+ * currency. It replaced a whole-position conversion at today's rate, which
+ * re-priced rupees that had been entered as rupees: a dirham account holding
+ * rupee entries came out lakhs away from the dashboard for the same money. On
+ * an account kept in the workspace currency it equals the headline exactly.
+ * Twin of `CurrencyHalfBreakdown.workspaceTotal` in app/lib/data/models.dart.
+ */
+export function workspaceTotal(
+  rows: CurrencyHalfBreakdown[],
+  ledgerCurrency: string,
+  baseCurrency: string,
+): number | null {
+  let total = 0;
+  for (const row of rows) {
+    if (row.currency === baseCurrency) {
+      total += row.net;
+      continue;
+    }
+    const equivalent = baseEquivalent({ ...row, base_currency: baseCurrency }, ledgerCurrency);
+    if (equivalent === null) {
+      if (row.net === 0 && row.net_ledger_minor == null) continue;
+      return null;
+    }
+    total += equivalent.minor;
+  }
+  return total;
+}

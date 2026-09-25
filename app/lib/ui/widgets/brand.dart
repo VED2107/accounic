@@ -142,23 +142,16 @@ class BrandText extends StatelessWidget {
   final int? maxLines;
   final TextOverflow? overflow;
 
+  // Counterfoil & Seal (v1.16): headings are printed in ink, not in the brand
+  // ramp. Gradient text was the loudest thing on the dashboard and said
+  // nothing a heading needs to say; the ramp now lives only in the mark.
   @override
   Widget build(BuildContext context) {
-    return ShaderMask(
-      // srcIn keeps the glyph shapes and replaces only their colour, so the
-      // gradient runs across the word rather than behind it.
-      blendMode: BlendMode.srcIn,
-      shaderCallback: (bounds) => AccounicColors.brandGradient.createShader(
-        Rect.fromLTWH(0, 0, bounds.width, bounds.height),
-      ),
-      child: Text(
-        text,
-        maxLines: maxLines,
-        overflow: overflow,
-        // The mask needs opaque ink underneath it; the colour itself is
-        // discarded by srcIn.
-        style: style.copyWith(color: Colors.white),
-      ),
+    return Text(
+      text,
+      maxLines: maxLines,
+      overflow: overflow,
+      style: style.copyWith(color: style.color ?? Theme.of(context).colorScheme.onSurface),
     );
   }
 }

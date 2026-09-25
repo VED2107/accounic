@@ -110,6 +110,8 @@ class _ActivityChartState extends State<ActivityChart> {
         SizedBox(
           height: 34,
           child: AnimatedSwitcher(
+            switchInCurve: Motion.enter,
+            switchOutCurve: Motion.enter,
             duration: Motion.fast,
             child: shown == null
                 ? Align(
@@ -298,6 +300,7 @@ class _Bar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedOpacity(
+      curve: Curves.ease,
       duration: Motion.fast,
       opacity: active ? 1 : 0.8,
       child: DecoratedBox(

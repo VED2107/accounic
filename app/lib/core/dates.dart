@@ -21,6 +21,11 @@ String todayIso() => DateFormat('yyyy-MM-dd').format(DateTime.now());
 
 String isoDate(DateTime date) => DateFormat('yyyy-MM-dd').format(date);
 
+/// The date struck on a cancellation stamp: `25 SEP`. Short enough for the
+/// stamp's bar; the year is never in doubt on the day money moved.
+String stampDate([DateTime? date]) =>
+    DateFormat('d MMM').format(date ?? DateTime.now()).toUpperCase();
+
 int _dayDiff(DateTime a, DateTime b) =>
     DateTime(a.year, a.month, a.day)
         .difference(DateTime(b.year, b.month, b.day))

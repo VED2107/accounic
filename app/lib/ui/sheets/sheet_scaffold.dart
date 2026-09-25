@@ -4,6 +4,7 @@ import '../../core/icons.dart';
 import '../../core/layout.dart';
 import '../../core/theme.dart';
 import '../motion.dart';
+import '../widgets/instrument.dart';
 import '../widgets/app_page.dart';
 import '../widgets/common.dart';
 
@@ -47,6 +48,12 @@ Future<T?> showAppSheet<T>(
       useSafeArea: true,
       isDismissible: dismissible,
       enableDrag: dismissible,
+      // Opens with weight, leaves quickly: the user watches a sheet arrive but
+      // has already decided by the time it goes.
+      sheetAnimationStyle: AnimationStyle(
+        duration: Motion.sheetIn,
+        reverseDuration: Motion.sheetOut,
+      ),
       builder: builder,
     );
   }
@@ -61,7 +68,11 @@ Future<T?> showAppSheet<T>(
     pageBuilder: (context, _, __) => _CentredPanel(child: Builder(builder: builder)),
     transitionBuilder: (context, animation, _, child) {
       if (Motion.of(context)) return child;
-      final curved = CurvedAnimation(parent: animation, curve: Motion.enter);
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Motion.drawer,
+        reverseCurve: Motion.exit,
+      );
       return FadeTransition(
         opacity: curved,
         // Scale rather than slide: a panel that grows into place reads as
@@ -297,7 +308,11 @@ class SheetScaffold extends StatelessWidget {
                         ),
                     ],
                   ),
-                  const SizedBox(height: AppSpacing.xl),
+                  // A slip, not a dialog: the heading is torn from the form
+                  // along the same perforation every instrument carries.
+                  const SizedBox(height: AppSpacing.lg),
+                  Perforation(color: palette.lineStrong, height: 8),
+                  const SizedBox(height: AppSpacing.lg),
                   ...children,
                 ],
               ),
@@ -362,10 +377,9 @@ class _PrimaryButton extends StatelessWidget {
           curve: Motion.enter,
           height: 48,
           decoration: BoxDecoration(
-            gradient: color == null && enabled ? AccounicColors.actionGradient : null,
             color: color != null
                 ? (enabled ? color : color!.withValues(alpha: 0.45))
-                : (enabled ? null : context.money.sunken),
+                : (enabled ? context.actionFill : context.money.sunken),
             borderRadius: AppRadius.fieldAll,
             border: Border.all(
               color: enabled ? Colors.transparent : context.money.line,
@@ -373,7 +387,7 @@ class _PrimaryButton extends StatelessWidget {
             boxShadow: [
               if (hovered && enabled)
                 BoxShadow(
-                  color: (color ?? AccounicColors.actionGlow).withValues(alpha: 0.34),
+                  color: (color ?? Colors.black).withValues(alpha: 0.28),
                   blurRadius: 16,
                   offset: const Offset(0, 4),
                 ),
@@ -381,13 +395,19 @@ class _PrimaryButton extends StatelessWidget {
           ),
           child: Center(
             child: AnimatedSwitcher(
+              transitionBuilder: Motion.blurSwap,
+              switchInCurve: Motion.enter,
+              switchOutCurve: Motion.enter,
               duration: Motion.fast,
               child: busy
-                  ? const SizedBox(
-                      key: ValueKey('busy'),
+                  ? SizedBox(
+                      key: const ValueKey('busy'),
                       width: 18,
                       height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: color == null ? context.onAction : Colors.white,
+                      ),
                     )
                   : Text(
                       label,
@@ -395,7 +415,9 @@ class _PrimaryButton extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 14.5,
                         fontWeight: FontWeight.w600,
-                        color: enabled ? Colors.white : context.money.inkFaint,
+                        color: enabled
+                            ? (color == null ? context.onAction : Colors.white)
+                            : context.money.inkFaint,
                       ),
                     ),
             ),
@@ -439,7 +461,11 @@ Future<bool> confirm(
     ),
     transitionBuilder: (context, animation, _, child) {
       if (Motion.of(context)) return child;
-      final curved = CurvedAnimation(parent: animation, curve: Motion.enter);
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Motion.enter,
+        reverseCurve: Motion.exit,
+      );
       return FadeTransition(
         opacity: curved,
         child: ScaleTransition(
@@ -526,19 +552,145 @@ class _ConfirmDialog extends StatelessWidget {
                     ),
                     const SizedBox(width: AppSpacing.md),
                     Expanded(
-                      child: _PrimaryButton(
-                        label: confirmLabel,
-                        busy: false,
-                        color: destructive ? palette.payable : null,
-                        onPressed: () {
-                          Haptics.selection();
-                          Navigator.of(context).pop(true);
-                        },
-                      ),
+                      child: destructive
+                          ? _HoldToConfirm(
+                              label: confirmLabel,
+                              color: palette.payable,
+                              onConfirmed: () => Navigator.of(context).pop(true),
+                            )
+                          : _PrimaryButton(
+                              label: confirmLabel,
+                              busy: false,
+                              color: null,
+                              onPressed: () {
+                                Haptics.selection();
+                                Navigator.of(context).pop(true);
+                              },
+                            ),
                     ),
                   ],
                 ),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A destructive confirmation that has to be HELD, not tapped
+/// (improve-animations M2).
+///
+/// Pressing fills the plate from the left over 1.2s, linear — slow, because
+/// this is the moment the user is deciding. Letting go early snaps the fill
+/// back in 200ms ease-out — fast, because the system is only responding. A tap
+/// that is too short says so in the label rather than doing nothing silently.
+/// Keyboard (Enter/Space on focus) and screen-reader activation confirm at
+/// once: a hold is a pointer affordance, never a barrier to anyone else.
+class _HoldToConfirm extends StatefulWidget {
+  const _HoldToConfirm({required this.label, required this.color, required this.onConfirmed});
+
+  final String label;
+  final Color color;
+  final VoidCallback onConfirmed;
+
+  @override
+  State<_HoldToConfirm> createState() => _HoldToConfirmState();
+}
+
+class _HoldToConfirmState extends State<_HoldToConfirm> with SingleTickerProviderStateMixin {
+  late final AnimationController _fill = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1200),
+  )..addStatusListener((status) {
+      if (status == AnimationStatus.completed && !_done) {
+        _done = true;
+        Haptics.warning();
+        widget.onConfirmed();
+      }
+    });
+  bool _done = false;
+  bool _nudge = false;
+
+  void _press() {
+    if (_done) return;
+    setState(() => _nudge = false);
+    _fill.duration = const Duration(milliseconds: 1200);
+    _fill.forward();
+  }
+
+  void _release() {
+    if (_done) return;
+    if (_fill.value < 0.9) {
+      if (_fill.value < 0.15) setState(() => _nudge = true);
+      _fill.animateBack(0, duration: const Duration(milliseconds: 200), curve: Motion.enter);
+    }
+  }
+
+  @override
+  void dispose() {
+    _fill.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final label = _nudge ? 'Keep holding' : 'Hold to ${widget.label.toLowerCase()}';
+    return Semantics(
+      button: true,
+      label: widget.label,
+      onTap: widget.onConfirmed,
+      excludeSemantics: true,
+      child: FocusableActionDetector(
+        mouseCursor: SystemMouseCursors.click,
+        actions: {
+          ActivateIntent: CallbackAction<ActivateIntent>(onInvoke: (_) {
+            widget.onConfirmed();
+            return null;
+          }),
+        },
+        child: Listener(
+          onPointerDown: (_) => _press(),
+          onPointerUp: (_) => _release(),
+          onPointerCancel: (_) => _release(),
+          child: AnimatedBuilder(
+            animation: _fill,
+            builder: (context, _) => Transform.scale(
+              scale: _fill.isAnimating && _fill.status == AnimationStatus.forward ? 0.98 : 1,
+              child: Container(
+                height: 48,
+                decoration: BoxDecoration(
+                  color: widget.color.withValues(alpha: 0.16),
+                  borderRadius: AppRadius.fieldAll,
+                  border: Border.all(color: widget.color.withValues(alpha: 0.55)),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    // The fill: a clip travelling left to right, never a width
+                    // animation, so nothing re-lays out while it moves.
+                    ClipRect(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        widthFactor: _fill.value,
+                        child: ColoredBox(color: widget.color),
+                      ),
+                    ),
+                    Center(
+                      child: Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w600,
+                          color: Color.lerp(widget.color, Colors.white, _fill.value > 0.5 ? 1 : 0),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),

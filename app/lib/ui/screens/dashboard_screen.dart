@@ -15,6 +15,7 @@ import '../widgets/brand.dart';
 import '../sheets/transaction_sheet.dart';
 import '../widgets/activity_chart.dart';
 import '../widgets/common.dart';
+import '../widgets/instrument.dart';
 import '../widgets/currency_field.dart';
 import '../widgets/sparkline.dart';
 import 'search_sheet.dart';
@@ -171,6 +172,14 @@ class DashboardScreen extends ConsumerWidget {
           child: data.peopleWithBalance.isEmpty
               ? EmptyState(
                   icon: data.summary.peopleCount == 0 ? AppIcons.noPeople : AppIcons.success,
+                  mark: data.summary.peopleCount == 0
+                      ? null
+                      : CancellationStamp(
+                          word: 'ALL SETTLED',
+                          size: 72,
+                          seed: 'all-settled',
+                          color: context.money.receivable,
+                        ),
                   title: data.summary.peopleCount == 0
                       ? 'No one is on your ledger yet'
                       : 'Everything is settled',
@@ -270,9 +279,11 @@ class PositionCard extends ConsumerWidget {
     final owed = data.peopleWithBalance.where((p) => p.netBalance > 0).length;
     final owing = data.peopleWithBalance.where((p) => p.netBalance < 0).length;
 
-    return SectionCard(
-      raised: true,
-      brandRule: true,
+    // The workspace's own instrument: the net position certified on a
+    // guilloché field, and the two sides that make it up torn off below a
+    // perforation, because they are read separately and never re-added here.
+    return InstrumentPanel(
+      fieldHeight: context.isCompact ? 150 : 168,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -307,9 +318,10 @@ class PositionCard extends ConsumerWidget {
                           color: color,
                           // The one number this screen is about. One size
                           // token, not a hand-tuned figure per breakpoint.
-                          style: context
-                              .moneyStyle(MoneySize.hero)
-                              .copyWith(fontSize: context.isCompact ? 34 : 40),
+                          style: context.display(
+                            context.isCompact ? 38 : 48,
+                            weight: FontWeight.w600,
+                          ),
                         ),
                       ),
                       const SizedBox(height: AppSpacing.sm - 1),
@@ -360,7 +372,7 @@ class PositionCard extends ConsumerWidget {
               ],
             ),
           ),
-          Divider(height: 1, color: palette.line),
+          Perforation(color: palette.lineStrong),
           IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1062,6 +1074,8 @@ class PersonRow extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                           ),
+                          const SizedBox(height: 1),
+                          SerialText(person.personId, prefix: 'A/C', size: 10),
                           const SizedBox(height: 2),
                           Text(
                             meta,
@@ -1151,6 +1165,7 @@ class ActivityRow extends StatelessWidget {
       children: [
         Hoverable(
           builder: (context, hovered) => AnimatedContainer(
+            curve: Curves.ease,
             duration: Motion.fast,
             color: hovered ? palette.sunken : Colors.transparent,
             child: InkWell(
@@ -1162,16 +1177,11 @@ class ActivityRow extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    Container(
-                      width: 38,
-                      height: 38,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: background,
-                        borderRadius: BorderRadius.circular(11),
-                        border: Border.all(color: border),
-                      ),
-                      child: Icon(icon, size: AppIconSize.sm, color: foreground),
+                    DirectionNode(
+                      icon: icon,
+                      background: background,
+                      foreground: foreground,
+                      border: border,
                     ),
                     const SizedBox(width: AppSpacing.md),
                     Expanded(
@@ -1262,6 +1272,20 @@ class ActivityRow extends StatelessWidget {
                     // a USD 40 entry on a rupee account used to read ₹3,817.11
                     // here — the conversion talking over the fact. The base
                     // equivalent sits under it as what it is: supplementary.
+                    // Settlements are struck as on the account screen —
+                    // RECEIVED or PAID, beside the amount, never under it.
+                    if (item.isSettlement) ...[
+                      Opacity(
+                        opacity: 0.85,
+                        child: CancellationStamp(
+                          word: item.isReceivable ? 'RECEIVED' : 'PAID',
+                          size: 42,
+                          seed: item.id,
+                          color: item.isReceivable ? palette.receivable : palette.payable,
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                    ],
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       mainAxisSize: MainAxisSize.min,

@@ -14,6 +14,7 @@ import '../../data/models.dart';
 import '../../providers.dart';
 import '../motion.dart';
 import '../sheets/person_sheet.dart';
+import '../widgets/instrument.dart';
 import '../widgets/app_page.dart';
 import '../widgets/common.dart';
 
@@ -392,6 +393,7 @@ class _SortMenu extends StatelessWidget {
             ),
         ],
         child: AnimatedContainer(
+          curve: Curves.ease,
           duration: Motion.fast,
           height: 34,
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
@@ -437,6 +439,7 @@ class _ArchivedToggle extends StatelessWidget {
         builder: (context, hovered) => Pressable(
           onTap: onTap,
           child: AnimatedContainer(
+            curve: Curves.ease,
             duration: Motion.fast,
             width: 34,
             height: 34,
@@ -525,6 +528,8 @@ class _PersonTile extends StatelessWidget {
                               ],
                             ],
                           ),
+                          const SizedBox(height: 1),
+                          SerialText(person.personId, prefix: 'A/C', size: 10),
                           if (_metaWhen(person) != null) ...[
                             const SizedBox(height: 2),
                             Text(
@@ -579,13 +584,26 @@ class _PersonTile extends StatelessWidget {
                     const SizedBox(width: AppSpacing.md),
                     // Each account is shown in its own currency; the totals
                     // at the top are the only converted figures here.
-                    NetBadge(
-                      netMinor: person.netBalance,
-                      currency: person.currency,
-                      base: currency,
-                      approxMinor: person.netBalanceBase,
-                      approxCurrency: person.baseCurrency,
-                    ),
+                    // A settled account is struck, not labelled: the stamp is
+                    // the same one its entries carry, seeded by the account so
+                    // it wears the same way every time.
+                    if (person.netBalance == 0 && person.transactionCount > 0)
+                      Opacity(
+                        opacity: 0.8,
+                        child: CancellationStamp(
+                          size: 50,
+                          seed: person.personId,
+                          color: palette.inkMuted,
+                        ),
+                      )
+                    else
+                      NetBadge(
+                        netMinor: person.netBalance,
+                        currency: person.currency,
+                        base: currency,
+                        approxMinor: person.netBalanceBase,
+                        approxCurrency: person.baseCurrency,
+                      ),
                     const SizedBox(width: AppSpacing.xs),
                     HoverSlide(
                       offset: Offset(hovered ? 0.2 : 0, 0),
