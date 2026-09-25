@@ -343,6 +343,13 @@ class UpdateRepository {
   /// The asset a user on this platform actually wants: the Windows installer,
   /// the Android APK. Anything else falls back to the release page, which every
   /// platform can open.
+  ///
+  /// It must be THIS build's family. The release carries the demo's files
+  /// beside the real ones, and GitHub lists assets alphabetically, so
+  /// `Accounic-Demo-Setup-….exe` came before `Accounic-Setup-….exe` and every
+  /// Windows update from 1.15.0 on opened the demo installer. The same
+  /// `demo`-in-the-name rule [_platformDownload] uses, keyed on what this binary
+  /// is, so a real install is only ever offered the real app and the reverse.
   String? _assetFor(Object? assets) {
     if (assets is! List) return null;
 
@@ -357,6 +364,7 @@ class UpdateRepository {
       for (final asset in assets) {
         if (asset is! Map) continue;
         final name = (asset['name'] as String?)?.toLowerCase() ?? '';
+        if (name.contains('demo') != AppConfig.demoMode) continue;
         final url = asset['browser_download_url'] as String?;
         if (url != null && name.endsWith(suffix)) return url;
       }

@@ -2,7 +2,7 @@
 
 A small, fast, personal accounting system. Three clients, one backend, one database.
 
-Current release: **[v1.16.0](https://github.com/VED2107/accounic/releases/latest)** —
+Current release: **[v1.16.1](https://github.com/VED2107/accounic/releases/latest)** —
 Windows installer, Windows portable zip and an Android APK, plus the same three as a
 **demo** build. The app checks GitHub Releases on launch and tells you when a newer one
 exists. A release is built by CI on a tag and left as a draft: the update check only
@@ -34,6 +34,14 @@ is the Next.js application in `web/`.
 Design source of truth: [`context.md`](./context.md). Visual map: [`mindmap.md`](./mindmap.md).
 
 ### What's new in 1.16
+
+**1.16.1** — the in-app update on Windows could open the *demo* installer
+instead of the real one: the release carries both, GitHub lists them
+alphabetically, and the update check took the first `.exe` it saw. It now only
+ever offers the build it belongs to, and the demo's files are named
+`AccounicDemo-…` so they sort after every real file even for older installs.
+Ledger rows also line their stamps and amounts up in fixed columns.
+
 
 **Counterfoil & Seal — a new face for Android and Windows.** Every account is
 drawn as an instrument of value: the balance certified over a guilloché

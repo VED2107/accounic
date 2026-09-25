@@ -639,3 +639,32 @@ class DirectionNode extends StatelessWidget {
     );
   }
 }
+
+/// The fixed columns every ledger row lays its right-hand side out on, so a list
+/// reads as a table: stamps in one column, amounts right-aligned in the next,
+/// whatever each row's figure happens to be. Without them each stamp sat
+/// against its own amount and the column wandered row by row.
+abstract final class LedgerColumns {
+  /// The stamp's slot: reserved on every row, stamped or not.
+  static const double stamp = 48;
+
+  /// The amount column: wide enough for `₹1,30,721.68` and its ≈ line.
+  static double amount(BuildContext context) =>
+      MediaQuery.sizeOf(context).width < 600 ? 104 : 148;
+}
+
+/// A row's stamp, centred in its fixed slot — or the empty slot, so the
+/// amount column never shifts.
+class StampSlot extends StatelessWidget {
+  const StampSlot({super.key, this.stamp});
+
+  final Widget? stamp;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: LedgerColumns.stamp,
+      child: stamp == null ? null : Center(child: Opacity(opacity: 0.85, child: stamp)),
+    );
+  }
+}

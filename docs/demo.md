@@ -38,7 +38,7 @@ Every tag publishes both families of build to the same GitHub release:
 | | Real | Demo |
 | --- | --- | --- |
 | Android | `Accounic-<v>.apk` | `Accounic-demo-<v>.apk` |
-| Windows | `Accounic-Setup-<v>-x64.exe`, portable zip | `Accounic-Demo-Setup-<v>-x64.exe`, portable zip |
+| Windows | `Accounic-Setup-<v>-x64.exe`, portable zip | `AccounicDemo-Setup-<v>-x64.exe`, `AccounicDemo-<v>-windows-x64.zip` (named to sort after every real file — see v1.16.1) |
 
 The word `demo` in those names is load-bearing: `UpdateRepository` matches on
 it, so a demo visitor is never offered the production installer and a paying

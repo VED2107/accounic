@@ -63,7 +63,7 @@ UninstallDisplayName={#AppName}
 UninstallDisplayIcon={app}\{#AppExeName}
 
 OutputDir=..\..\build\installer
-OutputBaseFilename=Accounic-Demo-Setup-{#AppVersion}-x64
+OutputBaseFilename=AccounicDemo-Setup-{#AppVersion}-x64
 SetupIconFile=..\runner\resources\app_icon.ico
 
 Compression=lzma2/max

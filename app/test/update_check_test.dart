@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'dart:convert';
 
 import 'package:accounic/core/version.dart';
@@ -137,6 +138,38 @@ void main() {
         client: MockClient((_) async => throw const _Offline()),
       );
       expect(await repository.latestRelease(), isNull);
+    });
+
+    // v1.16.0: the release carries the demo's files beside the real ones and
+    // GitHub lists them alphabetically, so the demo came FIRST — and every
+    // update on a real install opened the demo installer. The real build must
+    // skip anything named demo, whatever order the assets arrive in.
+    test('a real install is never offered the demo build', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+
+      final demoFirst = jsonEncode({
+        'tag_name': 'v1.16.0',
+        'name': 'Accounic 1.16.0',
+        'html_url': 'https://github.com/VED2107/accounic/releases/tag/v1.16.0',
+        'assets': [
+          {
+            'name': 'Accounic-demo-1.16.0.apk',
+            'browser_download_url':
+                'https://github.com/VED2107/accounic/releases/download/v1.16.0/Accounic-demo-1.16.0.apk',
+          },
+          {
+            'name': 'Accounic-1.16.0.apk',
+            'browser_download_url':
+                'https://github.com/VED2107/accounic/releases/download/v1.16.0/Accounic-1.16.0.apk',
+          },
+        ],
+      });
+
+      final release = await repositoryReturning(() => http.Response(demoFirst, 200))
+          .latestRelease();
+
+      expect(release!.downloadUrl, endsWith('/Accounic-1.16.0.apk'));
     });
 
     test('a tag with no version is ignored', () async {

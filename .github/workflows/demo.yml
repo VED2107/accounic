@@ -148,10 +148,14 @@ jobs:
           $version = "${{ github.ref_name }}" -replace '^v', ''
           New-Item -ItemType Directory -Force app\build\installer | Out-Null
           Compress-Archive -Force -Path app\build\windows\x64\runner\Release\* `
-            -DestinationPath "app\build\installer\Accounic-Demo-$version-windows-x64.zip"
+            -DestinationPath "app\build\installer\AccounicDemo-$version-windows-x64.zip"
 
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            app/build/installer/Accounic-Demo-Setup-*-x64.exe
-            app/build/installer/Accounic-Demo-*-windows-x64.zip
+            # "AccounicDemo", not "Accounic-Demo": GitHub lists a release's
+            # assets alphabetically, and "Accounic-" must sort every real file
+            # ahead of the demo's, so an older client that takes the first .exe
+            # it sees still gets the real installer (v1.16.1).
+            app/build/installer/AccounicDemo-Setup-*-x64.exe
+            app/build/installer/AccounicDemo-*-windows-x64.zip

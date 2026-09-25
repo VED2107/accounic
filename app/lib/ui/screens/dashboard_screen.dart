@@ -1274,23 +1274,27 @@ class ActivityRow extends StatelessWidget {
                     // equivalent sits under it as what it is: supplementary.
                     // Settlements are struck as on the account screen —
                     // RECEIVED or PAID, beside the amount, never under it.
-                    if (item.isSettlement) ...[
-                      Opacity(
-                        opacity: 0.85,
-                        child: CancellationStamp(
-                          word: item.isReceivable ? 'RECEIVED' : 'PAID',
-                          size: 42,
-                          seed: item.id,
-                          color: item.isReceivable ? palette.receivable : palette.payable,
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                    ],
-                    Column(
+                    StampSlot(
+                      stamp: item.isSettlement
+                          ? CancellationStamp(
+                              word: item.isReceivable ? 'RECEIVED' : 'PAID',
+                              size: 42,
+                              seed: item.id,
+                              color: item.isReceivable ? palette.receivable : palette.payable,
+                            )
+                          : null,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    SizedBox(
+                      width: LedgerColumns.amount(context),
+                      child: Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        MoneyText(
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerRight,
+                          child: MoneyText(
                           item.entryAmountMinor,
                           currency: item.entryCurrency,
                           base: currency,
@@ -1301,12 +1305,16 @@ class ActivityRow extends StatelessWidget {
                                   : MoneyTone.payable,
                           style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                         ),
+                        ),
                         if (item.showsBaseEquivalent)
                           Text(
                             formatApprox(item.amountBaseMinor!, currency: item.baseCurrency!),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(fontSize: 11.5, color: palette.inkFaint),
                           ),
                       ],
+                    ),
                     ),
                   ],
                 ),

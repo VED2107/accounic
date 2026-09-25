@@ -1638,19 +1638,18 @@ class _TimelineTileState extends ConsumerState<TimelineTile> {
                       // cancelled, a settlement marked received or paid, a
                       // voided one boxed VOID — beside the amount, never under
                       // it, so the figure stays the clearest thing on the row.
-                      if (_stampFor(entry, palette) case final stamp?) ...[
-                        Opacity(opacity: 0.85, child: stamp),
-                        const SizedBox(width: AppSpacing.sm),
-                      ],
-                      Stack(
-                        clipBehavior: Clip.none,
-                        alignment: Alignment.centerRight,
-                        children: [
-                          Column(
+                      StampSlot(stamp: _stampFor(entry, palette)),
+                      const SizedBox(width: AppSpacing.sm),
+                      SizedBox(
+                        width: LedgerColumns.amount(context),
+                        child: Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          MoneyText(
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerRight,
+                            child: MoneyText(
                             entry.entryAmountMinorOr(widget.currency),
                             currency: entry.entryCurrencyOr(widget.currency),
                             base: widget.currency,
@@ -1662,14 +1661,16 @@ class _TimelineTileState extends ConsumerState<TimelineTile> {
                                     : MoneyTone.payable,
                             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                           ),
+                          ),
                           if (_equivalentOf(entry, widget.currency) case final it?)
                             Text(
                               formatApprox(it.minor, currency: it.currency),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(fontSize: 12, color: palette.inkFaint),
                             ),
                         ],
                       ),
-                        ],
                       ),
                       const SizedBox(width: AppSpacing.sm),
                       AnimatedRotation(
