@@ -307,7 +307,8 @@ class _PersonScreenState extends ConsumerState<PersonScreen> {
             description: 'The original amounts entered for this account, kept '
                 'in their own currency.',
             rows: page.regularByCurrency,
-            baseCurrency: page.currency,
+            baseCurrency: page.baseCurrency,
+            ledgerCurrency: page.currency,
             opening: false,
             collapsible: true,
           ),
@@ -323,7 +324,8 @@ class _PersonScreenState extends ConsumerState<PersonScreen> {
             description: 'What this account was carried in with, per currency, '
                 'less whatever has settled.',
             rows: page.openingByCurrency,
-            baseCurrency: page.currency,
+            baseCurrency: page.baseCurrency,
+            ledgerCurrency: page.currency,
             opening: true,
             collapsible: true,
           ),
@@ -710,9 +712,9 @@ class _PositionCard extends StatelessWidget {
               const SizedBox(height: AppSpacing.xs + 2),
               Center(
                 child: Text(
-                  regular.positionBaseMinor == null
+                  page.regularInBase == null
                       ? 'No ${page.currency} → ${page.baseCurrency} rate yet'
-                      : '${formatApprox(regular.positionBaseMinor!.abs(), currency: page.baseCurrency)} at today\u2019s rate',
+                      : '${formatApprox(page.regularInBase!.abs(), currency: page.baseCurrency)} in ${page.baseCurrency}',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
                 ),

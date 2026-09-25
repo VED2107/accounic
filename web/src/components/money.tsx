@@ -1,6 +1,6 @@
 import { balanceTone, formatApprox, formatMoney } from '@/lib/money';
 import { cn } from '@/components/ui/primitives';
-import { orderCurrencyRows } from '@/lib/currency-breakdown';
+import { baseEquivalent, orderCurrencyRows } from '@/lib/currency-breakdown';
 import type { CurrencyHalfBreakdown } from '@/lib/types';
 
 /**
@@ -238,11 +238,19 @@ export function SplitBar({
 export function CurrencyBreakdown({
   rows,
   baseCurrency,
+  ledgerCurrency,
   kind,
   className,
 }: {
   rows: CurrencyHalfBreakdown[];
   baseCurrency: string;
+  /**
+   * Set on the person page: the account's own currency. With it, each block's
+   * equivalent is the figure the ledger BOOKED where one exists
+   * (`baseEquivalent`) and says which it is. Without it — the dashboard,
+   * summing many accounts — the line is the dashboard's own figure, unchanged.
+   */
+  ledgerCurrency?: string;
   /** 'cash' labels the net figure "Net"; 'opening' labels it "Remaining". */
   kind: 'cash' | 'opening';
   className?: string;
@@ -253,19 +261,40 @@ export function CurrencyBreakdown({
   return (
     <div className={cn('divide-y divide-line', className)}>
       {ordered.map((row) => (
-        <CurrencyBlock key={`${kind}-${row.currency}`} row={row} baseCurrency={baseCurrency} kind={kind} />
+        <CurrencyBlock
+          key={`${kind}-${row.currency}`}
+          row={row}
+          baseCurrency={baseCurrency}
+          ledgerCurrency={ledgerCurrency}
+          kind={kind}
+        />
       ))}
     </div>
   );
 }
 
+/** The person page's equivalent line — see `baseEquivalent`. */
+function personEquivalent(
+  row: CurrencyHalfBreakdown,
+  ledgerCurrency: string,
+  baseCurrency: string,
+): string {
+  const it = baseEquivalent({ ...row, base_currency: baseCurrency }, ledgerCurrency);
+  if (it === null) return `no ${row.currency} → ${baseCurrency} rate yet`;
+  return it.asBooked
+    ? `${formatMoney(Math.abs(it.minor), baseCurrency)} as booked`
+    : `${formatApprox(Math.abs(it.minor), baseCurrency)} at today’s rate`;
+}
+
 function CurrencyBlock({
   row,
   baseCurrency,
+  ledgerCurrency,
   kind,
 }: {
   row: CurrencyHalfBreakdown;
   baseCurrency: string;
+  ledgerCurrency?: string;
   kind: 'cash' | 'opening';
 }) {
   const tone = balanceTone(row.net);
@@ -296,9 +325,11 @@ function CurrencyBlock({
             <p className="tnum mt-1 text-[0.75rem] text-ink-faint">
               {/* formatApprox already carries the ≈; prepending another one
                   printed "≈ ≈ ₹6,515.99" on the dashboard. */}
-              {row.net_base_minor === null
-                ? `no ${row.currency} → ${baseCurrency} rate yet`
-                : formatApprox(Math.abs(row.net_base_minor), baseCurrency)}
+              {ledgerCurrency !== undefined
+                ? personEquivalent(row, ledgerCurrency, baseCurrency)
+                : row.net_base_minor === null
+                  ? `no ${row.currency} → ${baseCurrency} rate yet`
+                  : formatApprox(Math.abs(row.net_base_minor), baseCurrency)}
             </p>
           ) : null}
         </div>

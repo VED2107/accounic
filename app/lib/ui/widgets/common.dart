@@ -997,6 +997,7 @@ class CurrencyHalfBlock extends StatelessWidget {
     required this.row,
     required this.baseCurrency,
     required this.opening,
+    this.ledgerCurrency,
   });
 
   final CurrencyHalfBreakdown row;
@@ -1004,6 +1005,13 @@ class CurrencyHalfBlock extends StatelessWidget {
 
   /// Labels the net figure "Remaining" for the opening half, "Net" for cash.
   final bool opening;
+
+  /// Set on the person screen: the account's own currency. With it, the
+  /// equivalent line is the figure the ledger BOOKED where one exists
+  /// ([CurrencyHalfBreakdown.baseEquivalent]) and says which it is. Without
+  /// it — the dashboard, summing many accounts — the line is the dashboard's
+  /// own figure, unchanged.
+  final String? ledgerCurrency;
 
   @override
   Widget build(BuildContext context) {
@@ -1094,7 +1102,23 @@ class CurrencyHalfBlock extends StatelessWidget {
               ),
             ),
           ),
-          if (row.showsBaseEquivalent) ...[
+          if (ledgerCurrency != null) ...[
+            if (row.baseEquivalent(ledgerCurrency!) case final it?) ...[
+              const SizedBox(height: 2),
+              Text(
+                it.asBooked
+                    ? '${formatMoney(it.minor.abs(), currency: baseCurrency)} as booked'
+                    : '${formatApprox(it.minor.abs(), currency: baseCurrency)} at today’s rate',
+                style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
+              ),
+            ] else if (row.currency != baseCurrency) ...[
+              const SizedBox(height: 2),
+              Text(
+                'no ${row.currency} → $baseCurrency rate yet',
+                style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
+              ),
+            ],
+          ] else if (row.showsBaseEquivalent) ...[
             const SizedBox(height: 2),
             Text(
               formatApprox(row.netBaseMinor!.abs(), currency: baseCurrency),
@@ -1138,6 +1162,7 @@ class CurrencyBreakdownCard extends StatelessWidget {
     required this.baseCurrency,
     required this.opening,
     this.collapsible = false,
+    this.ledgerCurrency,
   });
 
   final String title;
@@ -1150,6 +1175,9 @@ class CurrencyBreakdownCard extends StatelessWidget {
   /// supporting material behind an Overview tab rather than the answer to the
   /// question the screen was opened with.
   final bool collapsible;
+
+  /// The account's own currency, handed to each [CurrencyHalfBlock].
+  final String? ledgerCurrency;
 
   @override
   Widget build(BuildContext context) {
@@ -1175,7 +1203,12 @@ class CurrencyBreakdownCard extends StatelessWidget {
           ),
           for (final row in ordered) ...[
             Divider(height: 1, color: palette.line),
-            CurrencyHalfBlock(row: row, baseCurrency: baseCurrency, opening: opening),
+            CurrencyHalfBlock(
+              row: row,
+              baseCurrency: baseCurrency,
+              opening: opening,
+              ledgerCurrency: ledgerCurrency,
+            ),
           ],
         ],
       ),

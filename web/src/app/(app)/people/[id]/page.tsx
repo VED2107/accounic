@@ -14,6 +14,7 @@ import {
   SEGMENT_GROUP,
 } from '@/components/ui/primitives';
 import { CurrencyBreakdown, Money } from '@/components/money';
+import { workspaceTotal } from '@/lib/currency-breakdown';
 import { CountUp } from '@/components/motion/count-up';
 import { SparklineFigure } from '@/components/charts/sparkline';
 import { Reveal } from '@/components/motion/reveal';
@@ -186,6 +187,12 @@ export default async function PersonPage({
   const openingCurrencyRows = (data.opening_by_currency ?? []).filter(
     (row) => row.credit !== 0 || row.debit !== 0 || row.settled !== 0,
   );
+  // The headline's workspace-currency figure, from the same rows the dashboard
+  // sums (see workspaceTotal). A database older than 0024 has no rows and
+  // falls back to the figure it served.
+  const regularInBase = data.regular_by_currency
+    ? workspaceTotal(data.regular_by_currency, currency, baseCurrency)
+    : regular.position_base;
   const showRegularByCurrency =
     regularCurrencyRows.length > 1 ||
     (regularCurrencyRows.length === 1 && regularCurrencyRows[0]!.currency !== currency);
@@ -306,15 +313,17 @@ export default async function PersonPage({
               {positionCaption}
             </p>
 
-            {/* The same position in the workspace's currency. Shown only when
-                there is another currency to show, and labelled as an
-                approximation at today's rate, because that is what it is —
-                nothing settles against this figure. */}
+            {/* The same position in the workspace's currency, counted the way
+                the dashboard counts it: entries made in the workspace currency
+                at the value they were entered at, other currencies at the
+                figure the dashboard states for them. Never the whole position
+                re-converted at today's rate — that re-priced rupees entered as
+                rupees. Nothing settles against this figure. */}
             {currency !== baseCurrency && regular.position !== 0 ? (
               <p className="mt-1.5 text-[0.8125rem] text-ink-faint">
-                {regular.position_base === null
+                {regularInBase === null
                   ? `No ${currency} → ${baseCurrency} rate yet`
-                  : `${formatApprox(Math.abs(regular.position_base), baseCurrency)} at today’s rate`}
+                  : `${formatApprox(Math.abs(regularInBase), baseCurrency)} in ${baseCurrency}`}
               </p>
             ) : null}
 
@@ -716,7 +725,12 @@ function Overview({
             <p className="border-b border-line px-5 py-3 text-[0.75rem] text-ink-faint">
               The original amounts entered for this account, kept in their own currency.
             </p>
-            <CurrencyBreakdown rows={regularCurrencyRows} baseCurrency={currency} kind="cash" />
+            <CurrencyBreakdown
+              rows={regularCurrencyRows}
+              baseCurrency={baseCurrency}
+              ledgerCurrency={currency}
+              kind="cash"
+            />
           </Disclosure>
         </Reveal>
       ) : null}
@@ -730,7 +744,12 @@ function Overview({
             <p className="border-b border-line px-5 py-3 text-[0.75rem] text-ink-faint">
               What this account was carried in with, per currency, less whatever has settled.
             </p>
-            <CurrencyBreakdown rows={openingCurrencyRows} baseCurrency={currency} kind="opening" />
+            <CurrencyBreakdown
+              rows={openingCurrencyRows}
+              baseCurrency={baseCurrency}
+              ledgerCurrency={currency}
+              kind="opening"
+            />
           </Disclosure>
         </Reveal>
       ) : null}

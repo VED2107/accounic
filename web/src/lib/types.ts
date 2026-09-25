@@ -565,6 +565,11 @@ export interface CurrencyHalfBreakdown {
   net: number;
   /** `net` converted to the workspace currency at today's rate. Reference only; null when no rate. */
   net_base_minor: number | null;
+  /**
+   * `net` in the ACCOUNT's own currency, as the ledger booked it — no rate
+   * applied (db/migrations/0033). Person page only; absent on the dashboard.
+   */
+  net_ledger_minor?: number | null;
   /** Everything entered today in this currency and half. */
   today: number;
   today_count: number;

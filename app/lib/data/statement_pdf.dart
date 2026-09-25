@@ -85,6 +85,8 @@ class PersonStatement {
           _positions(page, regular, opening, currency),
           pw.SizedBox(height: 18),
           ..._openingSection(page, opening, openingRows, currency, base),
+          ..._byCurrency('Cash in hand by currency', page.regularByCurrency, currency, base),
+          ..._byCurrency('Opening balance by currency', page.openingByCurrency, currency, base),
           pw.SizedBox(height: 18),
           _sectionHeading('Regular transactions'),
           pw.SizedBox(height: 2),
@@ -374,6 +376,24 @@ class PersonStatement {
 
     final first = page.person.name.split(' ').first;
 
+    // The same cash in hand in the workspace currency, counted exactly as the
+    // person screen and the dashboard count it (PersonPage.regularInBase).
+    final inBase = page.regularInBase;
+    final cashCaption = regular.positionMinor == 0
+        ? 'Regular activity is settled'
+        : regular.positionMinor > 0
+            ? '$first owes you, on regular activity'
+            : 'You owe $first, on regular activity';
+    final String cashLine;
+    if (currency != page.baseCurrency && regular.positionMinor != 0) {
+      final equivalent = inBase == null
+          ? 'No $currency → ${page.baseCurrency} rate yet'
+          : pdfFormat.approx(inBase.abs(), currency: page.baseCurrency);
+      cashLine = '$cashCaption\n$equivalent';
+    } else {
+      cashLine = cashCaption;
+    }
+
     return pw.Container(
       padding: const pw.EdgeInsets.all(12),
       decoration: pw.BoxDecoration(
@@ -386,11 +406,7 @@ class PersonStatement {
           block(
             'CASH IN HAND',
             regular.positionMinor,
-            regular.positionMinor == 0
-                ? 'Regular activity is settled'
-                : regular.positionMinor > 0
-                    ? '$first owes you, on regular activity'
-                    : 'You owe $first, on regular activity',
+            cashLine,
           ),
           block(
             'OPENING BALANCE',
@@ -412,6 +428,106 @@ class PersonStatement {
         ],
       ),
     );
+  }
+
+  /// One half of the account per entry currency: the same rows, figures and
+  /// workspace-currency equivalents the person screen shows under "Cash in
+  /// hand by currency" — which are the rows the dashboard sums. Drawn only when
+  /// they say something the headline does not.
+  static List<pw.Widget> _byCurrency(
+    String title,
+    List<CurrencyHalfBreakdown> source,
+    String currency,
+    String base,
+  ) {
+    final rows = CurrencyHalfBreakdown.order(source, base);
+    if (rows.isEmpty) return const [];
+    if (rows.length == 1 && rows.first.currency == currency) return const [];
+
+    String money(int minor, String code) =>
+        _money(minor.abs(), code, compactDecimals: false);
+    final total = CurrencyHalfBreakdown.workspaceTotal(rows, currency, base);
+    final head = pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: PdfColors.grey600);
+    pw.Widget cell(String text, {pw.TextStyle? style, bool left = false}) => pw.Padding(
+          padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 3),
+          child: pw.Text(
+            text,
+            textAlign: left ? pw.TextAlign.left : pw.TextAlign.right,
+            style: style ?? const pw.TextStyle(fontSize: 8.5),
+          ),
+        );
+
+    return [
+      _sectionHeading(title),
+      pw.SizedBox(height: 6),
+      pw.Table(
+        border: const pw.TableBorder(
+          horizontalInside: pw.BorderSide(color: PdfColors.grey300, width: 0.5),
+          bottom: pw.BorderSide(color: PdfColors.grey400, width: 0.5),
+        ),
+        columnWidths: const {
+          0: pw.FlexColumnWidth(0.8),
+          1: pw.FlexColumnWidth(1.4),
+          2: pw.FlexColumnWidth(1.4),
+          3: pw.FlexColumnWidth(1.2),
+          4: pw.FlexColumnWidth(1.4),
+          5: pw.FlexColumnWidth(1.6),
+        },
+        children: [
+          pw.TableRow(children: [
+            cell('CURRENCY', style: head, left: true),
+            cell('RECEIVABLE', style: head),
+            cell('PAYABLE', style: head),
+            cell('SETTLED', style: head),
+            cell('NET', style: head),
+            cell('IN $base', style: head),
+          ]),
+          for (final row in rows)
+            pw.TableRow(children: [
+              cell(row.currency,
+                  style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold), left: true),
+              cell(money(row.receivable, row.currency),
+                  style: const pw.TextStyle(fontSize: 8.5, color: PdfColors.green800)),
+              cell(money(row.payable, row.currency),
+                  style: const pw.TextStyle(fontSize: 8.5, color: PdfColors.red800)),
+              cell(money(row.settled, row.currency), style: _muted(8.5)),
+              cell(
+                money(row.net, row.currency),
+                style: pw.TextStyle(
+                  fontSize: 8.5,
+                  fontWeight: pw.FontWeight.bold,
+                  color: _tone(row.net >= 0, row.net == 0),
+                ),
+              ),
+              cell(
+                switch (row.baseEquivalent(currency)) {
+                  _ when row.currency == base => '—',
+                  null => 'no rate yet',
+                  final it when it.asBooked =>
+                    '${_money(it.minor.abs(), base, compactDecimals: false)} booked',
+                  final it => '${pdfFormat.approx(it.minor.abs(), currency: base)} today',
+                },
+                style: _muted(8),
+              ),
+            ]),
+        ],
+      ),
+      pw.SizedBox(height: 4),
+      pw.Row(
+        children: [
+          pw.Expanded(child: pw.Text('TOTAL IN $base', style: _label())),
+          pw.Text(
+            total == null
+                ? 'no rate yet'
+                : currency == base
+                    ? _money(total.abs(), base, compactDecimals: false)
+                    : pdfFormat.approx(total.abs(), currency: base),
+            style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+          ),
+        ],
+      ),
+      pw.SizedBox(height: 18),
+    ];
   }
 
   /// The opening balance: its own block, its own activity, and never a row in
