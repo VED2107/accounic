@@ -1,9 +1,11 @@
+import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
-import '../core/icons.dart';
 import '../core/money.dart';
 import '../core/theme.dart';
 
@@ -44,12 +46,32 @@ class Motion {
   static const slow = major;
   static const emphasized = Duration(milliseconds: 460);
 
-  /// A tightened ease-out. Fast to start, settles rather than stops — the curve
-  /// physical objects follow, without the overshoot of an elastic curve.
-  static const enter = Curves.easeOutCubic;
+  /// A strong ease-out: most of the distance in the first third, then a long
+  /// settle. The built-in `easeOutCubic` it replaced (v1.16) spent too long
+  /// getting going — the first frames are the ones the eye is on, and a curve
+  /// still accelerating there reads as the app hesitating.
+  static const enter = Cubic(0.23, 1, 0.32, 1);
+
+  /// For an animation running in REVERSE (`CurvedAnimation.reverseCurve`, a
+  /// route or dialog closing). Walked backwards from 1 to 0, an ease-in curve
+  /// is steepest at the start of the walk, so the element leaves at once. Never
+  /// used forwards: an ease-in entrance starts slow, exactly when the user is
+  /// watching.
   static const exit = Curves.easeInCubic;
-  static const move = Curves.fastOutSlowIn;
-  static const standard = Curves.easeInOutCubic;
+
+  /// Something already on screen travelling somewhere else — a segment thumb,
+  /// a morph. Leaves decisively, arrives gently.
+  static const move = Cubic(0.77, 0, 0.175, 1);
+  static const standard = Cubic(0.65, 0, 0.35, 1);
+
+  /// iOS's sheet curve (via Ionic): a surface arriving from off-screen with
+  /// weight.
+  static const drawer = Cubic(0.32, 0.72, 0, 1);
+
+  /// A surface opening is watched; a surface closing is not — the user already
+  /// decided. Every modal leaves faster than it arrived.
+  static const sheetIn = Duration(milliseconds: 360);
+  static const sheetOut = Duration(milliseconds: 200);
 
   /// One restrained overshoot, and the vocabulary's rarest member. Reserved for
   /// confirming that money moved: it appears on the settlement tick and nowhere
@@ -85,6 +107,36 @@ class Motion {
       MediaQuery.maybeDisableAnimationsOf(context) == true ||
       MediaQuery.maybeOf(context)?.disableAnimations == true;
 
+  /// Set just before a keyboard-initiated navigation, read (and cleared) by the
+  /// next page transition. A shortcut is pressed dozens of times a day; the
+  /// page it reaches must simply be there (improve-animations plan 1).
+  static bool instantNext = false;
+
+  /// A crossfade for a control whose label changes in place — Save → spinner →
+  /// Saved. Scale from 0.98 and a 2px blur that clears as it lands, so the two
+  /// states read as one control changing, never two labels overlapping.
+  static Widget blurSwap(Widget child, Animation<double> animation) {
+    return AnimatedBuilder(
+      animation: animation,
+      child: child,
+      builder: (context, child) {
+        final t = animation.value;
+        final sigma = (1 - t) * 2;
+        Widget out = Opacity(
+          opacity: t,
+          child: Transform.scale(scale: 0.98 + 0.02 * t, child: child),
+        );
+        if (sigma > 0.05) {
+          out = ImageFiltered(
+            imageFilter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+            child: out,
+          );
+        }
+        return out;
+      },
+    );
+  }
+
   static Duration stagger(int index) =>
       staggerStep * (index > staggerCap ? staggerCap : index);
 }
@@ -95,7 +147,7 @@ class Motion {
 /// individual rows inside a list — [Stagger] handles those, and applying this to
 /// two hundred ledger rows would build two hundred animation controllers.
 class Reveal extends StatelessWidget {
-  const Reveal({super.key, required this.child, this.delay = Duration.zero, this.offset = 10});
+  const Reveal({super.key, required this.child, this.delay = Duration.zero, this.offset = 6});
 
   final Widget child;
   final Duration delay;
@@ -106,12 +158,14 @@ class Reveal extends StatelessWidget {
     if (Motion.of(context)) return child;
     return child
         .animate()
-        .fadeIn(delay: delay, duration: Motion.component, curve: Motion.enter)
+        // 200ms, 6px: a screen here is opened tens of times a day, so its
+        // blocks settle rather than perform.
+        .fadeIn(delay: delay, duration: const Duration(milliseconds: 200), curve: Motion.enter)
         .moveY(
           begin: offset,
           end: 0,
           delay: delay,
-          duration: Motion.component,
+          duration: const Duration(milliseconds: 200),
           curve: Motion.enter,
         );
   }
@@ -175,7 +229,7 @@ class Pressable extends StatefulWidget {
     super.key,
     required this.child,
     required this.onTap,
-    this.scale = 0.98,
+    this.scale = 0.97,
     this.borderRadius,
   });
 
@@ -206,7 +260,10 @@ class _PressableState extends State<Pressable> {
       behavior: HitTestBehavior.opaque,
       child: AnimatedScale(
         scale: _down && !reduced ? widget.scale : 1,
-        duration: Motion.tap,
+        // Asymmetric: the press lands in 100ms so the control answers before
+        // the finger lifts; the release takes longer so it settles back rather
+        // than snapping.
+        duration: _down ? const Duration(milliseconds: 100) : const Duration(milliseconds: 180),
         curve: Motion.enter,
         child: widget.child,
       ),
@@ -246,49 +303,237 @@ class AnimatedMoney extends StatelessWidget {
       return Text(formatMoney(minor, currency: currency, base: currency), style: resolved);
     }
 
-    return TweenAnimationBuilder<double>(
-      // The tween's `begin` is replaced by the current value on rebuild, so the
-      // first build animates from the target to the target — a no-op — and every
-      // later change animates from wherever the figure already was.
-      tween: Tween(begin: minor.toDouble(), end: minor.toDouble()),
-      duration: Motion.major,
-      curve: Motion.standard,
-      builder: (context, value, _) => Text(
-        formatMoney(value.round(), currency: currency, base: currency),
-        style: resolved,
-      ),
+    return _DirectionalMoney(minor: minor, currency: currency, style: resolved);
+  }
+}
+
+/// The counting figure, plus one small physical cue: when the amount changes it
+/// nudges in the direction the money went — up as it grows, down as it shrinks
+/// — and settles. The count carries the value; the nudge carries the direction,
+/// which a count alone makes the eye work out.
+class _DirectionalMoney extends StatefulWidget {
+  const _DirectionalMoney({required this.minor, required this.currency, required this.style});
+
+  final int minor;
+  final String currency;
+  final TextStyle style;
+
+  @override
+  State<_DirectionalMoney> createState() => _DirectionalMoneyState();
+}
+
+class _DirectionalMoneyState extends State<_DirectionalMoney> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller =
+      AnimationController(vsync: this, duration: Motion.major, value: 1);
+  late double _from = widget.minor.toDouble();
+  late double _to = widget.minor.toDouble();
+
+  @override
+  void didUpdateWidget(_DirectionalMoney old) {
+    super.didUpdateWidget(old);
+    if (old.minor != widget.minor) {
+      _from = _current;
+      _to = widget.minor.toDouble();
+      _controller.forward(from: 0);
+    }
+  }
+
+  double get _current {
+    final t = Motion.standard.transform(_controller.value);
+    return _from + (_to - _from) * t;
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final v = _controller.value;
+        final sign = (_to - _from).sign;
+        // A 4px rise or drop that decays to rest over the count.
+        final dy = -sign * 4 * math.sin(v * math.pi) * (1 - v);
+        return Transform.translate(
+          offset: Offset(0, dy),
+          child: Text(
+            formatMoney(_current.round(), currency: widget.currency, base: widget.currency),
+            style: widget.style,
+          ),
+        );
+      },
     );
   }
 }
 
 /// The tick that draws itself when a settlement lands — the one deliberate
-/// flourish in the product, and the only place anything is celebrated.
-class SettledMark extends StatelessWidget {
+/// flourish in the product, beside the stamp.
+///
+/// It used to scale a check glyph into place while this comment claimed it drew
+/// itself. Now it does: the disc arrives (from 0.85, never from nothing), then
+/// the stroke is laid down along its path, short leg then long, the way a hand
+/// makes the mark. 560ms, once, after money moved.
+class SettledMark extends StatefulWidget {
   const SettledMark({super.key, this.size = 64});
 
   final double size;
 
   @override
+  State<SettledMark> createState() => _SettledMarkState();
+}
+
+class _SettledMarkState extends State<SettledMark> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 560));
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (Motion.of(context)) {
+        _controller.value = 1;
+      } else {
+        _controller.forward();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final palette = context.money;
-    final mark = Container(
-      width: size,
-      height: size,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: palette.receivableSoft,
-        shape: BoxShape.circle,
-        border: Border.all(color: palette.receivableLine),
+    final disc = CurvedAnimation(parent: _controller, curve: const Interval(0, 0.45, curve: Motion.enter));
+    final stroke = CurvedAnimation(parent: _controller, curve: const Interval(0.28, 1, curve: Motion.enter));
+
+    return Semantics(
+      label: 'Settled',
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) => Opacity(
+          opacity: disc.value,
+          child: Transform.scale(
+            scale: 0.85 + 0.15 * disc.value,
+            child: Container(
+              width: widget.size,
+              height: widget.size,
+              decoration: BoxDecoration(
+                color: palette.receivableSoft,
+                shape: BoxShape.circle,
+                border: Border.all(color: palette.receivableLine),
+              ),
+              child: CustomPaint(
+                painter: _TickPainter(progress: stroke.value, color: palette.receivable),
+              ),
+            ),
+          ),
+        ),
       ),
-      child: Icon(AppIcons.check, size: size * 0.46, color: palette.receivable),
     );
+  }
+}
 
-    if (Motion.of(context)) return mark;
+class _TickPainter extends CustomPainter {
+  const _TickPainter({required this.progress, required this.color});
 
-    return mark
-        .animate()
-        .scaleXY(begin: 0.7, end: 1, duration: Motion.major, curve: Motion.emphasis)
-        .fadeIn(duration: Motion.component);
+  final double progress;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (progress <= 0) return;
+    final w = size.width;
+    final path = Path()
+      ..moveTo(w * 0.29, w * 0.52)
+      ..lineTo(w * 0.44, w * 0.66)
+      ..lineTo(w * 0.72, w * 0.37);
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = w * 0.075
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    for (final metric in path.computeMetrics()) {
+      canvas.drawPath(metric.extractPath(0, metric.length * progress), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_TickPainter old) => old.progress != progress || old.color != color;
+}
+
+/// Content that changes in place — a tab's body — crossing over in the
+/// direction it came from, so the body travels the same way the segmented
+/// thumb above it just did. On a desktop the crossover passes through a 3px
+/// blur, which stops two layers of text reading as two things overlapping; on
+/// a phone the blur's offscreen layer costs more than it gives.
+class DirectionalSwitcher extends StatefulWidget {
+  const DirectionalSwitcher({super.key, required this.index, required this.child});
+
+  final int index;
+  final Widget child;
+
+  @override
+  State<DirectionalSwitcher> createState() => _DirectionalSwitcherState();
+}
+
+class _DirectionalSwitcherState extends State<DirectionalSwitcher> {
+  int _direction = 1;
+
+  @override
+  void didUpdateWidget(DirectionalSwitcher old) {
+    super.didUpdateWidget(old);
+    if (old.index != widget.index) _direction = widget.index > old.index ? 1 : -1;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (Motion.of(context)) return widget.child;
+    final blur = Motion.pointerHovers;
+    return AnimatedSwitcher(
+      duration: Motion.normal,
+      reverseDuration: Motion.fast,
+      switchInCurve: Motion.enter,
+      switchOutCurve: Motion.enter,
+      layoutBuilder: (current, previous) => Stack(
+        alignment: Alignment.topCenter,
+        children: [...previous, if (current != null) current],
+      ),
+      transitionBuilder: (child, animation) {
+        final incoming = child.key == ValueKey(widget.index);
+        final from = (incoming ? 1 : -1) * _direction * 0.035;
+        Widget out = SlideTransition(
+          position: Tween(begin: Offset(from, 0), end: Offset.zero).animate(animation),
+          child: FadeTransition(opacity: animation, child: child),
+        );
+        if (blur) {
+          final inner = out;
+          out = AnimatedBuilder(
+            animation: animation,
+            builder: (context, _) {
+              final sigma = (1 - animation.value) * 3;
+              return sigma < 0.05
+                  ? inner
+                  : ImageFiltered(
+                      imageFilter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+                      child: inner,
+                    );
+            },
+          );
+        }
+        return out;
+      },
+      child: KeyedSubtree(key: ValueKey(widget.index), child: widget.child),
+    );
   }
 }
 
@@ -298,6 +543,11 @@ class SettledMark extends StatelessWidget {
 Widget fadeThrough(BuildContext context, Animation<double> animation,
     Animation<double> secondary, Widget child) {
   if (Motion.of(context)) return child;
+  // Reached by a keyboard shortcut: no transition at all.
+  if (Motion.instantNext) {
+    if (animation.status == AnimationStatus.completed) Motion.instantNext = false;
+    return child;
+  }
   return FadeTransition(
     opacity: CurvedAnimation(parent: animation, curve: Motion.enter),
     child: SlideTransition(
@@ -361,7 +611,7 @@ class HoverFill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!Motion.pointerHovers) return ColoredBox(color: color, child: child);
-    return AnimatedContainer(duration: Motion.fast, color: color, child: child);
+    return AnimatedContainer(curve: Curves.ease, duration: Motion.fast, color: color, child: child);
   }
 }
 
@@ -421,7 +671,7 @@ Widget drillIn(BuildContext context, Animation<double> animation,
     Animation<double> secondary, Widget child) {
   if (Motion.of(context)) return child;
 
-  final incoming = CurvedAnimation(parent: animation, curve: Motion.enter);
+  final incoming = CurvedAnimation(parent: animation, curve: Motion.drawer, reverseCurve: Motion.exit);
 
   return FadeTransition(
     opacity: incoming,

@@ -10,6 +10,7 @@ import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../providers.dart';
 import '../motion.dart';
+import '../widgets/instrument.dart';
 import '../widgets/amount_field.dart';
 import '../../core/icons.dart';
 import '../../core/layout.dart';
@@ -795,7 +796,26 @@ class _SettlementSuccess extends StatelessWidget {
         Center(
           child: Column(
             children: [
-              const SettledMark(),
+              // The signature moment (Counterfoil & Seal): the instrument is
+              // cancelled. The stamp lands once, in the direction's ink, with
+              // the date the money moved; the drawn tick is inside it.
+              SizedBox(
+                width: 132,
+                height: 132,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    CancellationStamp(
+                      land: true,
+                      seed: '$name$amount',
+                      size: 132,
+                      color: incoming ? palette.receivable : palette.payable,
+                      word: remaining > 0 ? 'PART PAID' : 'SETTLED',
+                      detail: stampDate(),
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(height: 16),
               Text('Settlement recorded', style: context.display(18)),
               const SizedBox(height: 6),

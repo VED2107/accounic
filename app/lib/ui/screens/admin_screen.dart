@@ -755,6 +755,7 @@ class _AccountMenu extends StatelessWidget {
         side: BorderSide(color: palette.lineStrong),
       ),
       icon: AnimatedContainer(
+        curve: Curves.ease,
         duration: Motion.fast,
         width: 32,
         height: 32,

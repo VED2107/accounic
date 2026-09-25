@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -114,7 +115,19 @@ class AppShell extends ConsumerWidget {
     );
 
     if (wide) {
-      return Scaffold(
+      // Keyed addresses: Ctrl+1…N jumps straight to a destination, the way a
+      // desk user moves between books without reaching for the mouse. Ctrl, not
+      // a bare digit, so typing an amount never navigates away.
+      return CallbackShortcuts(
+        bindings: {
+          for (final (i, d) in railDestinations.indexed)
+            if (i < 9)
+              SingleActivator(LogicalKeyboardKey(0x00000000031 + i), control: true): () {
+                Motion.instantNext = true;
+                context.go(d.path);
+              },
+        },
+        child: Scaffold(
         body: Row(
           children: [
             _Rail(
@@ -130,6 +143,7 @@ class AppShell extends ConsumerWidget {
             Expanded(child: body),
           ],
         ),
+      ),
       );
     }
 
@@ -232,17 +246,17 @@ class AddTransactionButton extends StatelessWidget {
           height: 54,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            gradient: AccounicColors.actionGradient,
+            color: context.actionFill,
             borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(
-                color: AccounicColors.actionGlow.withValues(alpha: 0.42),
+                color: Colors.black.withValues(alpha: 0.3),
                 blurRadius: 18,
                 offset: const Offset(0, 6),
               ),
             ],
           ),
-          child: const Icon(AppIcons.add, size: AppIconSize.xl, color: Colors.white),
+          child: Icon(AppIcons.add, size: AppIconSize.xl, color: context.onAction),
         ),
       ),
     );
@@ -378,18 +392,18 @@ class _Rail extends StatelessWidget {
                   height: 44,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    gradient: AccounicColors.actionGradient,
+                    color: context.actionFill,
                     borderRadius: BorderRadius.circular(AppTheme.radiusField),
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(AppIcons.add, size: AppIconSize.md, color: Colors.white),
+                      Icon(AppIcons.add, size: AppIconSize.md, color: context.onAction),
                       SizedBox(width: 8),
                       Text(
                         'Add transaction',
                         style: TextStyle(
-                          color: Colors.white,
+                          color: context.onAction,
                           fontWeight: FontWeight.w600,
                           fontSize: 14,
                         ),
@@ -408,6 +422,7 @@ class _Rail extends StatelessWidget {
                   icon: destination.icon,
                   selected: i == index,
                   onTap: () => onSelect(i),
+                  shortcut: i < 9 ? '${i + 1}' : null,
                 ),
               ),
             const Spacer(),
@@ -460,12 +475,17 @@ class _RailItem extends StatelessWidget {
     required this.icon,
     required this.selected,
     required this.onTap,
+    this.shortcut,
   });
 
   final String label;
   final IconData icon;
   final bool selected;
   final VoidCallback onTap;
+
+  /// The digit that reaches this destination with Ctrl, shown as a quiet
+  /// keycap so the shortcut is discoverable without a help screen.
+  final String? shortcut;
 
   @override
   Widget build(BuildContext context) {
@@ -522,6 +542,28 @@ class _RailItem extends StatelessWidget {
                         ),
                       ),
                     ),
+                    if (shortcut != null)
+                      AnimatedOpacity(
+                        curve: Curves.ease,
+                        duration: Motion.fast,
+                        opacity: hovered || selected ? 1 : 0.55,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: palette.lineStrong),
+                          ),
+                          child: Text(
+                            'Ctrl $shortcut',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: palette.inkFaint,
+                              fontFeatures: const [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),

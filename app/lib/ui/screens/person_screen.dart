@@ -25,6 +25,7 @@ import '../sheets/transaction_sheet.dart';
 import '../widgets/app_page.dart';
 import '../widgets/common.dart';
 import '../widgets/currency_field.dart';
+import '../widgets/instrument.dart';
 
 /// The metadata line under an account's name.
 ///
@@ -193,6 +194,24 @@ class _PersonScreenState extends ConsumerState<PersonScreen> {
 
       const SizedBox(height: AppSpacing.lg),
 
+      DirectionalSwitcher(
+        index: _tab.index,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: _tabBody(context, page, currency, transactions, settlements),
+        ),
+      ),
+    ];
+  }
+
+  List<Widget> _tabBody(
+    BuildContext context,
+    PersonPage page,
+    String currency,
+    List<TimelineEntry> transactions,
+    List<TimelineEntry> settlements,
+  ) {
+    return [
       ...switch (_tab) {
         PersonTab.overview => _overview(context, page, currency),
         PersonTab.transactions => _entries(
@@ -252,6 +271,7 @@ class _PersonScreenState extends ConsumerState<PersonScreen> {
                         page: page,
                         currency: currency,
                         divider: row < page.openingActivity.length - 1,
+                        first: row == 0,
                       ),
                   ],
                 ),
@@ -393,6 +413,7 @@ class _PersonScreenState extends ConsumerState<PersonScreen> {
                   page: page,
                   currency: currency,
                   divider: row < recent.length - 1,
+                  first: row == 0,
                 ),
             ],
           ),
@@ -480,6 +501,7 @@ class _PersonScreenState extends ConsumerState<PersonScreen> {
                           page: page,
                           currency: currency,
                           divider: row < group.items.length - 1,
+                          first: row == 0,
                         ),
                     ],
                   ),
@@ -630,13 +652,14 @@ class _PositionCard extends StatelessWidget {
     final palette = context.money;
     final balance = page.balance;
     // The headline is CASH IN HAND: the regular trading position, with the
-    // opening balance taken out (db/migrations/0022). The opening balance is a
-    // figure of its own, stated below and owned by its own section, and the two
-    // are never added together into one number here.
+    // opening balance taken out (db/migrations/0022). The opening balance is
+    // its own figure on the counterfoil below the perforation, and the two are
+    // never added together here.
     final regular = page.regular;
     final opening = page.openingPosition;
     final tone = balanceTone(regular.positionMinor);
     final first = page.person.name.split(' ').first;
+    final compact = context.isCompact;
 
     final color = switch (tone) {
       BalanceTone.receivable => palette.receivable,
@@ -644,104 +667,176 @@ class _PositionCard extends StatelessWidget {
       BalanceTone.settled => context.colors.onSurface,
     };
 
-    return SectionCard(
-      raised: true,
-      brandRule: true,
-      child: Padding(
-        padding: EdgeInsets.all(context.isCompact ? AppSpacing.lg : AppSpacing.xl),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // The state as a word, not only as a colour (§29). Right-aligned,
-            // where a statement puts it.
-            Row(
+    final pad = compact ? AppSpacing.lg : AppSpacing.xl + 4;
+
+    return InstrumentPanel(
+      fieldHeight: compact ? 172 : 196,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: EdgeInsets.fromLTRB(pad, pad - 2, pad, 0),
+            child: Row(
               children: [
-                Icon(AppIcons.net, size: AppIconSize.xs, color: palette.inkFaint),
-                const SizedBox(width: AppSpacing.xs + 2),
-                Text(
-                  'CASH IN HAND',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.7,
-                    color: palette.inkFaint,
+                Flexible(
+                  child: Text(
+                    'CASH IN HAND',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.statLabel,
                   ),
                 ),
-                const Spacer(),
-                _ToneBadge(tone: tone),
+                const SizedBox(width: AppSpacing.sm),
+                AnimatedSwitcher(
+                  duration: Motion.normal,
+                  switchInCurve: Motion.enter,
+                  child: _ToneBadge(key: ValueKey(tone), tone: tone),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                // Yields first on a narrow phone: the serial is reference, the
+                // label and the state are the reading.
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: SerialText(page.person.id, prefix: 'A/C'),
+                    ),
+                  ),
+                ),
               ],
             ),
+          ),
 
-            const SizedBox(height: AppSpacing.lg),
+          SizedBox(height: compact ? AppSpacing.xl : AppSpacing.xxl),
 
-            // The one figure this screen is about, centred and alone. Everything
-            // that explains it is one tab away rather than one line below.
-            Center(
-              child: FittedBox(
+          // The one figure this instrument certifies, engraved over the field.
+          Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: pad),
+              child: _SettleStrike(
+                settled: tone == BalanceTone.settled && balance.transactionCount > 0,
+                seed: '${page.person.id}-cash',
+                child: FittedBox(
                 fit: BoxFit.scaleDown,
-                // Animates when it changes — which is exactly when a settlement
-                // has just been recorded on this screen.
+                // Travels, and nudges in the direction the money went, when a
+                // settlement is recorded on this screen.
                 child: AnimatedMoney(
                   regular.positionMinor.abs(),
                   currency: currency,
                   color: color,
-                  style: context.display(context.isCompact ? 36 : 44),
+                  style: context.display(compact ? 40 : 52, weight: FontWeight.w600),
                 ),
               ),
+              ),
             ),
-            const SizedBox(height: AppSpacing.sm),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Center(
+            child: Text(
+              switch (tone) {
+                BalanceTone.receivable => '$first owes you',
+                BalanceTone.payable => 'You owe $first',
+                BalanceTone.settled => 'Everything is settled',
+              },
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: tone == BalanceTone.settled ? palette.inkMuted : color,
+              ),
+            ),
+          ),
+
+          // The same position in the workspace's currency, counted the way the
+          // dashboard counts it (CurrencyHalfBreakdown.workspaceTotal).
+          if (page.currency != page.baseCurrency && regular.positionMinor != 0) ...[
+            const SizedBox(height: AppSpacing.xs + 2),
             Center(
               child: Text(
-                switch (tone) {
-                  BalanceTone.receivable => '$first owes you',
-                  BalanceTone.payable => 'You owe $first',
-                  BalanceTone.settled => 'Everything is settled',
-                },
+                page.regularInBase == null
+                    ? 'No ${page.currency} \u2192 ${page.baseCurrency} rate yet'
+                    : '${formatApprox(page.regularInBase!.abs(), currency: page.baseCurrency)} in ${page.baseCurrency}',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: tone == BalanceTone.settled ? palette.inkFaint : color,
-                ),
+                style: TextStyle(fontSize: 12.5, color: palette.inkMuted),
               ),
             ),
-
-            // The same position in the workspace's currency. Context rather
-            // than a figure anything settles against (upgrade §10).
-            if (page.currency != page.baseCurrency && regular.positionMinor != 0) ...[
-              const SizedBox(height: AppSpacing.xs + 2),
-              Center(
-                child: Text(
-                  page.regularInBase == null
-                      ? 'No ${page.currency} → ${page.baseCurrency} rate yet'
-                      : '${formatApprox(page.regularInBase!.abs(), currency: page.baseCurrency)} in ${page.baseCurrency}',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
-                ),
-              ),
-            ],
-
-            // The opening balance in one line, not as a second figure beside
-            // the first. Two large numbers on one card is how this header
-            // started becoming a dashboard; the figures themselves are in the
-            // Overview tab and in the opening book's own section.
-            if (balance.hasOpening) ...[
-              const SizedBox(height: AppSpacing.md),
-              Center(
-                child: Text(
-                  'Opening balance of '
-                  '${formatMoney(opening.positionMinor.abs(), currency: currency, base: currency)} '
-                  'is accounted separately',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 12, height: 1.4, color: palette.inkFaint),
-                ),
-              ),
-            ],
-
-            const SizedBox(height: AppSpacing.lg + 2),
-            _ActionRow(page: page),
           ],
-        ),
+
+          SizedBox(height: compact ? AppSpacing.xl : AppSpacing.xxl),
+
+          // The counterfoil: the opening balance, torn off along a perforation
+          // because it is a separate figure — never a part of the one above.
+          if (balance.hasOpening) ...[
+            Perforation(color: palette.lineStrong),
+            Padding(
+              padding: EdgeInsets.fromLTRB(pad, AppSpacing.md, pad, AppSpacing.md),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('COUNTERFOIL \u00b7 OPENING BALANCE', style: context.statLabel),
+                        const SizedBox(height: 3),
+                        Text(
+                          opening.positionMinor == 0
+                              ? 'Settled in full, kept apart from cash in hand'
+                              : opening.positionMinor > 0
+                                  ? 'Owed to you when the account opened'
+                                  : 'Owed by you when the account opened',
+                          style: TextStyle(fontSize: 12, height: 1.35, color: palette.inkMuted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  if (opening.positionMinor == 0 && opening.settledMinor > 0) ...[
+                    CancellationStamp(
+                      size: 74,
+                      seed: '${page.person.id}-opening',
+                      detail: 'OPENING',
+                      // Inked in the direction the opening balance ran, so a
+                      // settled debt of yours is never stamped in green.
+                      color: (page.opening?.isReceivable ?? true)
+                          ? palette.receivable
+                          : palette.payable,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                  ],
+                  MoneyText(
+                    opening.positionMinor.abs(),
+                    currency: currency,
+                    base: currency,
+                    style: context.moneyStyle(
+                      MoneySize.row,
+                      color: opening.positionMinor > 0
+                          ? palette.receivable
+                          : opening.positionMinor < 0
+                              ? palette.payable
+                              : palette.inkMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          Container(
+            decoration: BoxDecoration(
+              color: palette.sunken.withValues(alpha: 0.6),
+              border: Border(top: BorderSide(color: palette.line)),
+            ),
+            padding: EdgeInsets.fromLTRB(pad, AppSpacing.md + 2, pad, AppSpacing.md + 2),
+            child: _ActionRow(page: page),
+          ),
+          Container(
+            color: palette.sunken.withValues(alpha: 0.6),
+            padding: const EdgeInsets.fromLTRB(AppSpacing.md, 0, AppSpacing.md, 6),
+            child: Microprint('${page.person.name} \u00b7 ${page.currency} \u00b7 Accounic'),
+          ),
+        ],
       ),
     );
   }
@@ -753,7 +848,7 @@ class _PositionCard extends StatelessWidget {
 /// done, partial, none. This one means a direction, and the two must not be
 /// confused by sharing a widget.
 class _ToneBadge extends StatelessWidget {
-  const _ToneBadge({required this.tone});
+  const _ToneBadge({super.key, required this.tone});
 
   final BalanceTone tone;
 
@@ -989,6 +1084,7 @@ class _StatementButtonState extends ConsumerState<StatementButton> {
       builder: (context, hovered) => Pressable(
         onTap: _busy ? null : _download,
         child: AnimatedContainer(
+          curve: Curves.ease,
           duration: Motion.fast,
           height: 34,
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
@@ -1057,9 +1153,9 @@ class _Action extends StatelessWidget {
           height: 46,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            gradient: filled ? AccounicColors.actionGradient : null,
+            gradient: null,
             color: filled
-                ? null
+                ? context.actionFill
                 : hovered
                     ? palette.raised
                     : palette.sunken,
@@ -1074,7 +1170,7 @@ class _Action extends StatelessWidget {
             boxShadow: [
               if (hovered && filled)
                 BoxShadow(
-                  color: AccounicColors.actionGlow.withValues(alpha: 0.34),
+                  color: Colors.black.withValues(alpha: 0.28),
                   blurRadius: 16,
                   offset: const Offset(0, 4),
                 ),
@@ -1086,7 +1182,7 @@ class _Action extends StatelessWidget {
               Icon(
                 icon,
                 size: AppIconSize.sm,
-                color: filled ? Colors.white : tint,
+                color: filled ? context.onAction : tint,
               ),
               const SizedBox(width: AppSpacing.sm),
               Text(
@@ -1094,7 +1190,7 @@ class _Action extends StatelessWidget {
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
                   fontSize: 14,
-                  color: filled ? Colors.white : context.colors.onSurface,
+                  color: filled ? context.onAction : context.colors.onSurface,
                 ),
               ),
             ],
@@ -1333,12 +1429,16 @@ class TimelineTile extends ConsumerStatefulWidget {
     required this.page,
     required this.currency,
     this.divider = true,
+    this.first = false,
   });
 
   final TimelineEntry entry;
   final PersonPage page;
   final String currency;
   final bool divider;
+
+  /// The first stub on its card: the spine starts at this row's node.
+  final bool first;
 
   @override
   ConsumerState<TimelineTile> createState() => _TimelineTileState();
@@ -1438,23 +1538,28 @@ class _TimelineTileState extends ConsumerState<TimelineTile> {
                       : Colors.transparent,
               child: InkWell(
                 onTap: () => setState(() => _open = !_open),
-                child: Padding(
+                // The ledger spine: one engraved rule down the whole list, each
+                // entry a stub hung on it. Painted per row, full height, so the
+                // rows join into one line without a controller or a Stack.
+                child: CustomPaint(
+                  painter: _SpinePainter(
+                    x: AppSpacing.lg + 17,
+                    color: palette.lineStrong,
+                    first: widget.first,
+                    last: !widget.divider,
+                  ),
+                  child: Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.lg,
                     vertical: AppSpacing.md,
                   ),
                   child: Row(
                     children: [
-                      Container(
-                        width: 38,
-                        height: 38,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: background,
-                          borderRadius: BorderRadius.circular(11),
-                          border: Border.all(color: border),
-                        ),
-                        child: Icon(icon, size: AppIconSize.sm, color: foreground),
+                      DirectionNode(
+                        icon: icon,
+                        background: background,
+                        foreground: foreground,
+                        border: border,
                       ),
                       const SizedBox(width: AppSpacing.md),
                       Expanded(
@@ -1500,6 +1605,8 @@ class _TimelineTileState extends ConsumerState<TimelineTile> {
                                 style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
                               ),
                             ],
+                            const SizedBox(height: 2),
+                            SerialText(entry.id, size: 10),
                             // The rate that links the two figures on the right,
                             // and whether a human chose either of them. Third
                             // and quietest: it must not compete with the amount
@@ -1527,7 +1634,19 @@ class _TimelineTileState extends ConsumerState<TimelineTile> {
                       // account, otherwise the workspace-currency figure for an
                       // account kept in a foreign currency. Never both, and
                       // never the equivalent alone (upgrade §44).
-                      Column(
+                      // Struck the way the counter strikes paper: a paid entry
+                      // cancelled, a settlement marked received or paid, a
+                      // voided one boxed VOID — beside the amount, never under
+                      // it, so the figure stays the clearest thing on the row.
+                      if (_stampFor(entry, palette) case final stamp?) ...[
+                        Opacity(opacity: 0.85, child: stamp),
+                        const SizedBox(width: AppSpacing.sm),
+                      ],
+                      Stack(
+                        clipBehavior: Clip.none,
+                        alignment: Alignment.centerRight,
+                        children: [
+                          Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -1550,6 +1669,8 @@ class _TimelineTileState extends ConsumerState<TimelineTile> {
                             ),
                         ],
                       ),
+                        ],
+                      ),
                       const SizedBox(width: AppSpacing.sm),
                       AnimatedRotation(
                         duration: Motion.fast,
@@ -1563,6 +1684,7 @@ class _TimelineTileState extends ConsumerState<TimelineTile> {
                       ),
                     ],
                   ),
+                ),
                 ),
               ),
             ),
@@ -1584,11 +1706,75 @@ class _TimelineTileState extends ConsumerState<TimelineTile> {
           ),
 
           if (widget.divider)
-            Divider(height: 1, color: palette.line, indent: AppSpacing.lg),
+            Divider(height: 1, color: palette.line, indent: AppSpacing.lg + 34 + AppSpacing.md),
         ],
       ),
     );
   }
+}
+
+/// The stamp an entry carries on the spine, or null when it carries none.
+Widget? _stampFor(TimelineEntry entry, AccounicColors palette) {
+  if (entry.isVoid) {
+    return CancellationStamp(
+      word: 'VOID',
+      shape: StampShape.box,
+      size: 24,
+      seed: entry.id,
+      color: palette.payable,
+    );
+  }
+  if (entry.isTransfer) return null;
+  if (entry.isSettlement) {
+    return CancellationStamp(
+      word: entry.isReceivable ? 'RECEIVED' : 'PAID',
+      size: 42,
+      seed: entry.id,
+      color: entry.isReceivable ? palette.receivable : palette.payable,
+    );
+  }
+  if (entry.status == SettlementStatus.settled) {
+    return CancellationStamp(
+      size: 40,
+      seed: entry.id,
+      color: entry.isReceivable ? palette.receivable : palette.payable,
+    );
+  }
+  return null;
+}
+
+/// One row's length of the ledger spine. The first row's segment starts at its
+/// node and the last row's ends there, so the spine begins and ends on an
+/// entry rather than running off the card.
+class _SpinePainter extends CustomPainter {
+  const _SpinePainter({
+    required this.x,
+    required this.color,
+    required this.first,
+    required this.last,
+  });
+
+  final double x;
+  final Color color;
+  final bool first;
+  final bool last;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final mid = size.height / 2;
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1;
+    canvas.drawLine(
+      Offset(x, first ? mid : 0),
+      Offset(x, last ? mid : size.height),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_SpinePainter old) =>
+      old.x != x || old.color != color || old.first != first || old.last != last;
 }
 
 /// What can be done to one entry, revealed under it.
@@ -1749,6 +1935,7 @@ class _RowAction extends StatelessWidget {
       builder: (context, hovered) => Pressable(
         onTap: onTap,
         child: AnimatedContainer(
+          curve: Curves.ease,
           duration: Motion.fast,
           height: 36,
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md + 2),
@@ -1995,6 +2182,7 @@ class ExportButton extends ConsumerWidget {
           button: true,
           label: 'Export ${person.name}',
           child: AnimatedContainer(
+            curve: Curves.ease,
             duration: Motion.fast,
             height: 34,
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
@@ -2022,6 +2210,65 @@ class ExportButton extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The SETTLED strike (improve-animations M1).
+///
+/// An account whose cash in hand is zero carries a quiet SETTLED stamp across
+/// its figure. When it BECOMES zero on this screen — a settlement just cleared
+/// it — the stamp is struck, once: the rarest and best moment in the product,
+/// and the only one that spends the delight budget. Opening an already-settled
+/// account shows the stamp at rest, never replayed.
+class _SettleStrike extends StatefulWidget {
+  const _SettleStrike({required this.settled, required this.seed, required this.child});
+
+  final bool settled;
+  final String seed;
+  final Widget child;
+
+  @override
+  State<_SettleStrike> createState() => _SettleStrikeState();
+}
+
+class _SettleStrikeState extends State<_SettleStrike> {
+  bool _struckNow = false;
+
+  @override
+  void didUpdateWidget(_SettleStrike old) {
+    super.didUpdateWidget(old);
+    if (!old.settled && widget.settled) _struckNow = true;
+    if (!widget.settled) _struckNow = false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      clipBehavior: Clip.none,
+      children: [
+        // Behind the figure and off to its right: it overlaps the way a real
+        // strike does, but never sits on the numerals it certifies.
+        if (widget.settled)
+          Positioned(
+            right: -104,
+            child: IgnorePointer(
+              child: Opacity(
+                opacity: 0.55,
+                child: CancellationStamp(
+                  // Keyed so a fresh strike gets a fresh controller.
+                  key: ValueKey(_struckNow),
+                  land: _struckNow,
+                  size: 88,
+                  seed: widget.seed,
+                  color: context.money.inkMuted,
+                ),
+              ),
+            ),
+          ),
+        widget.child,
+      ],
     );
   }
 }

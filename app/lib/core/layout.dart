@@ -69,9 +69,9 @@ abstract final class AppSpacing {
 /// that present themselves as sheets.
 abstract final class AppRadius {
   static const double chip = 100;
-  static const double field = 10;
-  static const double card = 16;
-  static const double panel = 20;
+  static const double field = 8;
+  static const double card = 12;
+  static const double panel = 16;
 
   static const BorderRadius fieldAll = BorderRadius.all(Radius.circular(field));
   static const BorderRadius cardAll = BorderRadius.all(Radius.circular(card));

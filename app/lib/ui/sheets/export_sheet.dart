@@ -712,6 +712,7 @@ class _Chip extends StatelessWidget {
       onTap: onTap,
       scale: 0.97,
       child: AnimatedContainer(
+        curve: Curves.ease,
         duration: Motion.fast,
         // 44 high: a chip a thumb can hit without aiming.
         constraints: const BoxConstraints(minHeight: 44),
@@ -759,6 +760,7 @@ class _FormatCard extends StatelessWidget {
         onTap: onTap,
         scale: 0.99,
         child: AnimatedContainer(
+          curve: Curves.ease,
           duration: Motion.fast,
           constraints: const BoxConstraints(minHeight: 56),
           padding: const EdgeInsets.symmetric(

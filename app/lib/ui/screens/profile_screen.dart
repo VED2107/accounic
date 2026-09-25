@@ -854,6 +854,7 @@ class _Requirements extends StatelessWidget {
                 ),
                 const SizedBox(width: AppSpacing.sm),
                 AnimatedDefaultTextStyle(
+                  curve: Curves.ease,
                   duration: Motion.fast,
                   style: TextStyle(
                     fontSize: 12.5,

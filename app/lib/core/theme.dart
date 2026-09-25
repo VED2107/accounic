@@ -3,17 +3,19 @@ library;
 
 import 'package:flutter/material.dart';
 
-/// The Accounic visual language, shared with the web client (context.md §18).
+/// The Accounic visual language: COUNTERFOIL & SEAL, printed INK ONLY (v1.16).
 ///
-/// The same tokens as `web/src/app/globals.css`, value for value: near-black
-/// surfaces, clean white type, one brand blue for action, and money coloured
-/// only by direction. Material 3 is the mechanism; the palette is ours. This is
-/// not a stock Material app and it is not meant to look like accounting
-/// software.
+/// Every account is an instrument of value, drawn from the counter where
+/// instruments are issued and stamped: neutral carbon after dark, neutral paper
+/// by day — zero chroma, so nothing reads gold or blue. There is no accent hue. Actions are solid
+/// plates of the same ink the text is printed in, inverting with the scheme;
+/// the only colour on screen is money — green for what you are owed, red for
+/// what you owe — and the stamps struck in those inks. The brand's ramp lives
+/// in the logo mark alone. Material 3 is the mechanism.
 ///
-/// Dark is the product's face. The light scheme exists because a ledger gets
-/// read in whatever light the reader is in, and it is tuned to the same rules
-/// rather than mechanically inverted.
+/// Both schemes are first-class and follow the system — a counter in daylight
+/// and a desk at night are both real scenes for this product. The web client
+/// keeps its own look; parity between the two is behavioural (PRODUCT.md).
 
 /// Everything Material's ColorScheme has no slot for.
 @immutable
@@ -87,18 +89,25 @@ class AccounicColors extends ThemeExtension<AccounicColors> {
 
   /// The primary action's fill: a tonal gradient dark enough at both ends for
   /// white text to clear 4.5:1.
+  ///
+  /// Counterfoil & Seal: solid intaglio blue with only a one-step darkening at
+  /// the foot — an engraved plate, not a glossy button.
   static const actionGradient = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
-    colors: [Color(0xFF2F6BEF), Color(0xFF1D4ED8)],
+    colors: [Color(0xFF161616), Color(0xFF161616)],
   );
+
+  /// Legacy: the light scheme's text-on-plate. Widgets use
+  /// [AccounicTheme.onAction], which inverts with the scheme.
+  static const onAction = Color(0xFFF7F7F5);
 
   /// The gradient's deep end, which is also the colour every hover glow under a
   /// primary action is tinted with. It was written out as a literal in four
   /// separate widgets — the sheet footer, the person screen, the shell's add
   /// button and the settings save button — which is exactly how a palette stops
   /// being a palette.
-  static const actionGlow = Color(0xFF1D4ED8);
+  static const actionGlow = Color(0xFF000000);
 
   @override
   AccounicColors copyWith({
@@ -165,43 +174,43 @@ class AccounicColors extends ThemeExtension<AccounicColors> {
   }
 
   static const light = AccounicColors(
-    receivable: Color(0xFF047857),
-    receivableSoft: Color(0x14047857),
-    receivableLine: Color(0x38047857),
+    receivable: Color(0xFF1B6A45),
+    receivableSoft: Color(0x171B6A45),
+    receivableLine: Color(0x471B6A45),
     receivableInk: Color(0xFFFFFFFF),
-    payable: Color(0xFFBE123C),
-    payableSoft: Color(0x12BE123C),
-    payableLine: Color(0x38BE123C),
+    payable: Color(0xFFB0301C),
+    payableSoft: Color(0x14B0301C),
+    payableLine: Color(0x47B0301C),
     payableInk: Color(0xFFFFFFFF),
-    accentSoft: Color(0x142563EB),
-    accentLine: Color(0x3D2563EB),
-    inkMuted: Color(0xFF4B5565),
-    inkFaint: Color(0xFF646E7E),
-    inkSubtle: Color(0xFF8891A1),
-    line: Color(0xFFE5E8EE),
-    lineStrong: Color(0xFFD2D7E0),
-    sunken: Color(0xFFF1F3F7),
+    accentSoft: Color(0x12161616),
+    accentLine: Color(0x3D161616),
+    inkMuted: Color(0xFF3E3E3C),
+    inkFaint: Color(0xFF565654),
+    inkSubtle: Color(0xFF84847F),
+    line: Color(0xFFD7D7D3),
+    lineStrong: Color(0xFFBEBEBA),
+    sunken: Color(0xFFE3E3E0),
     raised: Color(0xFFFFFFFF),
   );
 
   static const dark = AccounicColors(
-    receivable: Color(0xFF34D399),
-    receivableSoft: Color(0x2134D399),
-    receivableLine: Color(0x4D34D399),
-    receivableInk: Color(0xFF04140E),
-    payable: Color(0xFFFB7185),
-    payableSoft: Color(0x21FB7185),
-    payableLine: Color(0x4DFB7185),
-    payableInk: Color(0xFF2A0A10),
-    accentSoft: Color(0x244D90F8),
-    accentLine: Color(0x574D90F8),
-    inkMuted: Color(0xFFA8B2C2),
-    inkFaint: Color(0xFF8B94A4),
-    inkSubtle: Color(0xFF6A7382),
-    line: Color(0xFF1D212A),
-    lineStrong: Color(0xFF2B313D),
-    sunken: Color(0xFF13161C),
-    raised: Color(0xFF14171E),
+    receivable: Color(0xFF6CD3A0),
+    receivableSoft: Color(0x1F6CD3A0),
+    receivableLine: Color(0x4D6CD3A0),
+    receivableInk: Color(0xFF03150D),
+    payable: Color(0xFFF2795E),
+    payableSoft: Color(0x1FF2795E),
+    payableLine: Color(0x4DF2795E),
+    payableInk: Color(0xFF2A0905),
+    accentSoft: Color(0x17F2F2F0),
+    accentLine: Color(0x42F2F2F0),
+    inkMuted: Color(0xFFC6C6C3),
+    inkFaint: Color(0xFFA2A29F),
+    inkSubtle: Color(0xFF70706D),
+    line: Color(0xFF262626),
+    lineStrong: Color(0xFF383837),
+    sunken: Color(0xFF0B0B0B),
+    raised: Color(0xFF202020),
   );
 }
 
@@ -209,6 +218,13 @@ extension AccounicTheme on BuildContext {
   AccounicColors get money => Theme.of(this).extension<AccounicColors>()!;
   ColorScheme get colors => Theme.of(this).colorScheme;
   TextTheme get text => Theme.of(this).textTheme;
+
+  /// The action plate: solid ink, inverting with the scheme — carbon on kraft
+  /// by day, paper-white on carbon by night.
+  Color get actionFill => colors.primary;
+
+  /// What is printed on [actionFill].
+  Color get onAction => colors.onPrimary;
 
   /// Poppins, for the brand and for headings.
   TextStyle display(double size, {FontWeight weight = FontWeight.w600, Color? color}) => TextStyle(
@@ -274,49 +290,50 @@ class AppTheme {
   const AppTheme._();
 
   /// Corner radii, matching the web's --radius-* scale.
-  static const radiusField = 10.0;
-  static const radiusCard = 16.0;
-  static const radiusPanel = 20.0;
+  static const radiusField = 8.0;
+  static const radiusCard = 12.0;
+  static const radiusPanel = 16.0;
 
   static ThemeData light() => _build(
         brightness: Brightness.light,
         scheme: const ColorScheme.light(
-          primary: Color(0xFF2563EB),
-          onPrimary: Colors.white,
-          primaryContainer: Color(0xFFE7EEFD),
-          onPrimaryContainer: Color(0xFF1D4ED8),
-          surface: Color(0xFFFFFFFF),
-          onSurface: Color(0xFF0B0F17),
-          surfaceContainerLowest: Color(0xFFF6F7F9),
-          surfaceContainerHighest: Color(0xFFF1F3F7),
-          outline: Color(0xFFD2D7E0),
-          outlineVariant: Color(0xFFE5E8EE),
-          error: Color(0xFFBE123C),
+          // INK ONLY: interactive things are printed in the same ink as
+          // everything else; colour is reserved for money and stamps.
+          primary: Color(0xFF161616),
+          onPrimary: Color(0xFFF7F7F5),
+          primaryContainer: Color(0xFFE3E3E0),
+          onPrimaryContainer: Color(0xFF161616),
+          surface: Color(0xFFF7F7F5),
+          onSurface: Color(0xFF161616),
+          surfaceContainerLowest: Color(0xFFECECEA),
+          surfaceContainerHighest: Color(0xFFE3E3E0),
+          outline: Color(0xFFBEBEBA),
+          outlineVariant: Color(0xFFD7D7D3),
+          error: Color(0xFFB0301C),
         ),
         money: AccounicColors.light,
-        scaffold: const Color(0xFFF6F7F9),
+        // Paper: neutral, so the only colour on it is money.
+        scaffold: const Color(0xFFECECEA),
       );
 
   static ThemeData dark() => _build(
         brightness: Brightness.dark,
         scheme: const ColorScheme.dark(
-          // `primary` is the colour of text and icons that mean "interactive".
-          // Filled controls use the darker action gradient instead, because
-          // white on #4D90F8 does not clear contrast.
-          primary: Color(0xFF4D90F8),
-          onPrimary: Color(0xFFFFFFFF),
-          primaryContainer: Color(0xFF17223A),
-          onPrimaryContainer: Color(0xFF4D90F8),
-          surface: Color(0xFF0E1015),
-          onSurface: Color(0xFFF2F5F9),
-          surfaceContainerLowest: Color(0xFF08090C),
-          surfaceContainerHighest: Color(0xFF13161C),
-          outline: Color(0xFF2B313D),
-          outlineVariant: Color(0xFF1D212A),
-          error: Color(0xFFFB7185),
+          primary: Color(0xFFF2F2F0),
+          onPrimary: Color(0xFF111111),
+          primaryContainer: Color(0xFF262626),
+          onPrimaryContainer: Color(0xFFF2F2F0),
+          surface: Color(0xFF181818),
+          onSurface: Color(0xFFF2F2F0),
+          surfaceContainerLowest: Color(0xFF111111),
+          surfaceContainerHighest: Color(0xFF0B0B0B),
+          outline: Color(0xFF383837),
+          outlineVariant: Color(0xFF262626),
+          error: Color(0xFFF2795E),
         ),
         money: AccounicColors.dark,
-        scaffold: const Color(0xFF08090C),
+        // Carbon: neutral black, the ink engraved into it.
+        scaffold: const Color(0xFF111111),
       );
 
   static ThemeData _build({
@@ -337,7 +354,9 @@ class AppTheme {
 
     return base.copyWith(
       extensions: [money],
-      splashFactory: InkSparkle.splashFactory,
+      // A sparkle ripple is a toy on a financial instrument. Presses answer
+      // with an immediate tint (and a scale where the widget owns one).
+      splashFactory: InkRipple.splashFactory,
       textTheme: base.textTheme.copyWith(
         displaySmall: base.textTheme.displaySmall?.copyWith(
           fontFamily: 'Poppins',
@@ -416,6 +435,8 @@ class AppTheme {
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
+          backgroundColor: scheme.primary,
+          foregroundColor: scheme.onPrimary,
           minimumSize: const Size(0, 48),
           padding: const EdgeInsets.symmetric(horizontal: 18),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radiusField)),
@@ -468,9 +489,10 @@ class AppTheme {
         behavior: SnackBarBehavior.floating,
         backgroundColor: money.raised,
         contentTextStyle: TextStyle(color: scheme.onSurface, fontSize: 13.5),
-        elevation: 8,
+        elevation: 6,
+        insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(radiusCard),
+          borderRadius: BorderRadius.circular(radiusField),
           side: BorderSide(color: money.lineStrong),
         ),
       ),

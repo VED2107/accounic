@@ -304,6 +304,7 @@ class _PageButton extends StatelessWidget {
       builder: (context, hovered) => Pressable(
         onTap: onTap,
         child: AnimatedContainer(
+          curve: Curves.ease,
           duration: Motion.fast,
           height: 36,
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg - 2),
