@@ -979,3 +979,34 @@ shape a bug can take: the screenshots were fine and the interactions did not exi
 
 `'unsafe-eval'` is now added in development only. The production bundle evaluates no
 strings, so the deployed policy is unchanged.
+
+## An account's workspace figure is the dashboard's, never a re-sum of its currencies
+
+v1.16.0 gave the person page, and both statements, a workspace-currency figure built by
+re-adding the account's per-currency rows: entries in the workspace currency at face
+value, foreign ones at today's rate. On an account kept in AED that also holds rupee
+entries this is not the sum the ledger keeps. The rupees were booked into the account at
+the rate of their day; re-adding them at face beside dirhams priced today turns the rate
+movement between the two halves into money nobody owes. Live, `dipak aed` and `munnaf`
+— both at exactly zero on the ledger and on the dashboard — read ₹1,63,116.75 and
+₹10,086.40 outstanding, and `sja aed` read ₹44,73,224.16 against the dashboard's
+₹43,46,727.78.
+
+The figure is now `positionInBase` (web) / `PositionSplit.inBaseMinor` (Flutter): the
+account's position on an account kept in the workspace currency, otherwise
+`position_base` — which is `person_balances.cash_in_hand_base` / `opening_net_base`,
+the exact terms the dashboard's net position and "Total in" lines sum. Per-entry
+historical and manual rates are preserved because the ledger already booked every entry
+at them; the only conversion left is a foreign-currency account's balance into the
+workspace currency, which is the one the dashboard makes too, and for which no
+historical rupee figure was ever recorded.
+
+The per-currency rows themselves are unchanged: they are the dashboard's per-currency
+blocks, summed per person. On a foreign-currency account they are what was entered, so
+they do not add up to the total; the statement says so under the total rather than let
+anyone sum the column.
+
+`db/tools/person-dashboard-parity.mjs` checks every account of every workspace against
+the dashboard, `db/tools/smoke-person-parity.mjs` builds the shapes that break a re-sum
+(including an AED account repaid in rupees), and `db/tools/verify-statement-pdfs.mjs`
+reads the figures back out of both clients' statements.

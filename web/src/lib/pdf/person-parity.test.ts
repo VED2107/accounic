@@ -1,59 +1,87 @@
 import { writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { buildPersonStatement } from '@/lib/pdf/statement';
-import { orderCurrencyRows, workspaceTotal } from '@/lib/currency-breakdown';
+import { baseEquivalent, orderCurrencyRows, positionInBase } from '@/lib/currency-breakdown';
 import type { PersonPage } from '@/lib/types';
 
 import aedLedger from '../../../../shared/fixtures/person-page-aed-ledger.json';
 import inrLedger from '../../../../shared/fixtures/person-page-inr-ledger.json';
+import aedSettled from '../../../../shared/fixtures/person-page-aed-settled.json';
+import dashboard from '../../../../shared/fixtures/dashboard-figures.json';
 
 /**
  * Dashboard = Person Details = Person statement.
  *
- * The fixtures are real `person_page()` responses from
- * db/tools/smoke-person-parity.mjs: a workspace in INR whose history was entered
- * at 1 AED = ₹22.50 while today's cached rate is ₹26.32. The dirham account
- * holds ₹1,05,000 entered as rupees and AED 1,000 entered as dirhams.
+ * The fixtures are real `person_page()` responses, and the dashboard's own
+ * per-account figures, from db/tools/smoke-person-parity.mjs: an INR workspace
+ * whose history was entered at 1 AED = ₹22.50 and ₹24.00 while today's cached
+ * rate is ₹26.32.
  *
- * The bug: the person page and its statement printed the whole dirham position
- * re-converted at today's rate (₹96,491.05), re-pricing rupees that had been
- * typed as rupees. The dashboard counts those rupees as the rupees they were;
- * so must everything else.
+ * - Dubai Traders, kept in AED: rupee entries (one manual), a dirham entry, a
+ *   rupee opening balance, a partial settlement paid in rupees, a transfer in.
+ * - Mumbai Supplier, kept in INR: dirham entries at two old rates and one
+ *   manual, a dirham opening balance, a partial settlement, a transfer out.
+ * - Gulf Settled, kept in AED: AED 10,000 owed, repaid as ₹2,25,000 at ₹22.50.
+ *
+ * The bug: v1.16 showed each account in the workspace currency by re-adding its
+ * per-currency rows — rupees at face, dirhams at today's rate. On an account
+ * holding both, that is not the sum the ledger keeps, and it is not the figure
+ * the dashboard counts: Gulf Settled, at zero on the dashboard, read ₹38,157.89.
  */
 const aed = aedLedger as unknown as PersonPage;
 const inr = inrLedger as unknown as PersonPage;
+const settled = aedSettled as unknown as PersonPage;
+const people = dashboard.people as Record<string, { cash_in_hand_base: number; opening_net_base: number }>;
 
-describe('person workspace figure', () => {
-  it('keeps rupees entered as rupees, as the dashboard does', () => {
-    const rows = aed.regular_by_currency;
+const pages = [aed, inr, settled];
+
+describe('person workspace figure = the dashboard’s', () => {
+  for (const page of pages) {
+    it(`${page.person.name}: cash in hand and opening`, () => {
+      const d = people[page.person.name]!;
+      expect(positionInBase(page.regular, page.currency, 'INR')).toBe(d.cash_in_hand_base);
+      expect(positionInBase(page.opening_position, page.currency, 'INR')).toBe(d.opening_net_base);
+    });
+  }
+
+  it('summed over the workspace, is the dashboard’s Total in INR', () => {
+    const cash = pages.reduce((t, p) => t + positionInBase(p.regular, p.currency, 'INR')!, 0);
+    const opening = pages.reduce(
+      (t, p) => t + positionInBase(p.opening_position, p.currency, 'INR')!,
+      0,
+    );
+    expect(cash).toBe(dashboard.cash_in_hand);
+    expect(opening).toBe(dashboard.opening);
+  });
+
+  it('an AED account settled in rupees reads zero, as on the dashboard', () => {
+    expect(settled.regular.position).toBe(0);
+    expect(positionInBase(settled.regular, 'AED', 'INR')).toBe(0);
+    // What v1.16 printed: ₹2,25,000 entered, less AED 10,000 at today's rate.
+    const rows = settled.regular_by_currency;
     const rupees = rows.find((r) => r.currency === 'INR')!;
     const dirhams = rows.find((r) => r.currency === 'AED')!;
-    expect(rupees.net).toBe(10_500_000);
-    expect(workspaceTotal(rows, 'AED', 'INR')).toBe(rupees.net + dirhams.net_base_minor!);
-    expect(workspaceTotal(rows, 'AED', 'INR')).toBe(7_868_421);
+    expect(rupees.net + dirhams.net_base_minor!).toBe(-3_815_789);
   });
 
-  it('is no longer the whole position re-converted at today’s rate', () => {
-    expect(aed.regular.position_base).toBe(9_649_105);
-    expect(workspaceTotal(aed.regular_by_currency, 'AED', 'INR')).not.toBe(aed.regular.position_base);
-  });
-
-  it('is unknown, not zero, when a foreign row has no rate', () => {
-    const rows = aed.regular_by_currency.map((r) =>
-      r.currency === 'AED' ? { ...r, net_base_minor: null } : r,
-    );
-    expect(workspaceTotal(rows, 'AED', 'INR')).toBeNull();
-  });
-
-  it('on a rupee account, uses the rupees the ledger booked — equal to the headline', () => {
-    // A dirham entry booked at ₹22.50 is not re-priced at today's ₹26.32.
-    const rows = inr.regular_by_currency;
-    const dirhams = rows.find((r) => r.currency === 'AED')!;
+  it('a rupee account sums its dirham entries at the rupees booked, never today', () => {
+    const dirhams = inr.regular_by_currency.find((r) => r.currency === 'AED')!;
     expect(dirhams.net_ledger_minor).not.toBe(dirhams.net_base_minor);
-    expect(workspaceTotal(rows, 'INR', 'INR')).toBe(inr.regular.position);
-    expect(workspaceTotal(inr.opening_by_currency, 'INR', 'INR')).toBe(
-      inr.opening_position.position,
-    );
+    expect(positionInBase(inr.regular, 'INR', 'INR')).toBe(inr.regular.position);
+    const booked = inr.regular_by_currency.reduce((t, r) => t + r.net_ledger_minor!, 0);
+    expect(booked).toBe(inr.regular.position);
+    expect(baseEquivalent(dirhams, 'INR')).toEqual({ minor: dirhams.net_ledger_minor, asBooked: true });
+  });
+
+  it('a dirham account’s position is the sum of what each entry booked', () => {
+    const booked = aed.regular_by_currency.reduce((t, r) => t + r.net_ledger_minor!, 0);
+    expect(booked).toBe(aed.regular.position);
+    const manual = aed.timeline.find((t) => t.conversion_mode === 'manual')!;
+    expect(manual.amount_minor).toBe(260_000);
+  });
+
+  it('is unknown, not zero, when there is no rate', () => {
+    expect(positionInBase({ ...aed.regular, position_base: null }, 'AED', 'INR')).toBeNull();
   });
 
   it('orders the workspace currency first, as the page and dashboard do', () => {
@@ -68,6 +96,7 @@ describe('person statement renders over real data', () => {
   for (const [name, page] of [
     ['aed-ledger', aed],
     ['inr-ledger', inr],
+    ['aed-settled', settled],
   ] as const) {
     it(`builds the ${name} statement`, async () => {
       const bytes = await buildPersonStatement({
@@ -77,8 +106,8 @@ describe('person statement renders over real data', () => {
         rowsCovered: page.timeline.length,
       });
       expect(bytes.byteLength).toBeGreaterThan(1000);
-      // Set PARITY_OUT to keep the file, so its text can be read back and
-      // compared with the screen (see docs/currency-parity.md).
+      // Set PARITY_OUT to keep the file; db/tools/verify-statement-pdfs.mjs
+      // reads its text back and checks every figure against the dashboard's.
       if (process.env.PARITY_OUT) {
         writeFileSync(`${process.env.PARITY_OUT}/web-${name}.pdf`, bytes);
       }

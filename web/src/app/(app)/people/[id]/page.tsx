@@ -14,7 +14,7 @@ import {
   SEGMENT_GROUP,
 } from '@/components/ui/primitives';
 import { CurrencyBreakdown, Money } from '@/components/money';
-import { workspaceTotal } from '@/lib/currency-breakdown';
+import { positionInBase } from '@/lib/currency-breakdown';
 import { CountUp } from '@/components/motion/count-up';
 import { SparklineFigure } from '@/components/charts/sparkline';
 import { Reveal } from '@/components/motion/reveal';
@@ -187,12 +187,10 @@ export default async function PersonPage({
   const openingCurrencyRows = (data.opening_by_currency ?? []).filter(
     (row) => row.credit !== 0 || row.debit !== 0 || row.settled !== 0,
   );
-  // The headline's workspace-currency figure, from the same rows the dashboard
-  // sums (see workspaceTotal). A database older than 0024 has no rows and
-  // falls back to the figure it served.
-  const regularInBase = data.regular_by_currency
-    ? workspaceTotal(data.regular_by_currency, currency, baseCurrency)
-    : regular.position_base;
+  // The headline's workspace-currency figure: the one the dashboard counts
+  // for this account, never a re-sum of the per-currency rows (see
+  // positionInBase).
+  const regularInBase = positionInBase(regular, currency, baseCurrency);
   const showRegularByCurrency =
     regularCurrencyRows.length > 1 ||
     (regularCurrencyRows.length === 1 && regularCurrencyRows[0]!.currency !== currency);
@@ -313,12 +311,9 @@ export default async function PersonPage({
               {positionCaption}
             </p>
 
-            {/* The same position in the workspace's currency, counted the way
-                the dashboard counts it: entries made in the workspace currency
-                at the value they were entered at, other currencies at the
-                figure the dashboard states for them. Never the whole position
-                re-converted at today's rate — that re-priced rupees entered as
-                rupees. Nothing settles against this figure. */}
+            {/* The same position in the workspace's currency: the figure the
+                dashboard counts for this account (positionInBase). Nothing
+                settles against it. */}
             {currency !== baseCurrency && regular.position !== 0 ? (
               <p className="mt-1.5 text-[0.8125rem] text-ink-faint">
                 {regularInBase === null

@@ -10,11 +10,13 @@
 //      totals_by_currency[i].cash / .opening — credit, debit, settled,
 //      receivable, payable, net. The person screen and the dashboard read
 //      one set of figures, not two.
-//   2. The workspace-currency figure each person screen now shows
-//      (workspaceTotal over its rows) keeps workspace-currency entries at their
-//      entered value — it is compared with the old whole-position
-//      today's-rate figure and every divergence is printed, so the fix is
-//      visible on real data.
+//   2. Each person's workspace-currency figure — the one the person page and
+//      both statements now print (positionInBase) — is EXACTLY the figure the
+//      dashboard counts for that account (person_balances.cash_in_hand_base /
+//      opening_net_base), and summed over the workspace is the dashboard's
+//      "Total in" line. Every account where v1.16's per-currency re-sum
+//      disagreed with the dashboard is printed, so the fix is visible on real
+//      data.
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
 
@@ -26,16 +28,14 @@ if (owners.length === 0) {
   process.exit(2);
 }
 
-const workspaceTotal = (rows, base) => {
-  let t = 0;
-  for (const r of rows) {
-    if (r.currency === base) t += Number(r.net);
-    else if (Number(r.net) === 0) continue;
-    else if (r.net_base_minor == null) return null;
-    else t += Number(r.net_base_minor);
-  }
-  return t;
-};
+const positionInBase = (split, ledger, base) =>
+  ledger === base ? Number(split.position) : split.position_base == null ? null : Number(split.position_base);
+const oldWorkspaceTotal = (rows, ledger, base) =>
+  rows.reduce(
+    (t, r) =>
+      t + (r.currency === base ? Number(r.net) : ledger === base ? Number(r.net_ledger_minor) : Number(r.net_base_minor)),
+    0,
+  );
 const KEYS = ['credit', 'debit', 'settled', 'receivable', 'payable', 'net'];
 
 let failures = 0;
@@ -55,6 +55,9 @@ for (const owner of owners) {
   const sums = { cash: {}, opening: {} };
   let diverged = 0;
   let checks0 = 0;
+  let checksP = 0;
+  let cashTotal = 0;
+  let openingTotal = 0;
   for (const p of people) {
     const page = (await c.query('select public.person_page($1) j', [p.id])).rows[0].j;
     for (const [half, rows] of [['cash', page.regular_by_currency], ['opening', page.opening_by_currency]]) {
@@ -75,16 +78,40 @@ for (const owner of owners) {
         console.log(`  FAIL ${p.name} ${label}: rows booked ${booked} vs headline ${position}`);
       }
     }
-    if (page.currency !== base && Number(page.regular.position) !== 0) {
-      const now = workspaceTotal(page.regular_by_currency, base);  // ledger != base here: booked figures do not apply
-      const old = page.regular.position_base == null ? null : Number(page.regular.position_base);
-      if (now !== old) {
-        diverged++;
-        console.log(
-          `  ${p.name} (${page.currency}): shown in ${base} was ${old} at today's rate, now ${now}` +
-            ` [rows: ${page.regular_by_currency.map((r) => `${r.currency} ${r.net}`).join(', ')}]`,
-        );
+    const bal = (
+      await c.query(
+        'select cash_in_hand_base, opening_net_base from public.person_balances where person_id = $1',
+        [p.id],
+      )
+    ).rows[0];
+    for (const [label, split, want] of [
+      ['cash', page.regular, bal.cash_in_hand_base],
+      ['opening', page.opening_position, bal.opening_net_base],
+    ]) {
+      const shown = positionInBase(split, page.currency, base);
+      checksP++;
+      if (shown !== (want == null ? null : Number(want))) {
+        failures++;
+        console.log(`  FAIL ${p.name} ${label}: person ${shown} vs dashboard ${want}`);
       }
+      if (label === 'cash') {
+        cashTotal += shown ?? 0;
+        const old = oldWorkspaceTotal(page.regular_by_currency, page.currency, base);
+        if (page.regular_by_currency.length > 0 && old !== shown) {
+          diverged++;
+          console.log(`  ${p.name} (${page.currency}): v1.16 showed ${old}, dashboard and now person ${shown}`);
+        }
+      } else openingTotal += shown ?? 0;
+    }
+  }
+  for (const [label, sum, want] of [
+    ['cash in hand', cashTotal, dash.cash_in_hand.position],
+    ['opening', openingTotal, dash.opening.position],
+  ]) {
+    checksP++;
+    if (sum !== Number(want)) {
+      failures++;
+      console.log(`  FAIL Σ ${label}: persons ${sum} vs dashboard ${want}`);
     }
   }
 
@@ -105,7 +132,8 @@ for (const owner of owners) {
   }
   console.log(
     `${owner}: ${people.length} people, ${checks} dashboard-vs-person checks, ` +
-      `${checks0} booked-vs-headline checks, ${diverged} headline figures corrected`,
+      `${checks0} booked-vs-headline checks, ${checksP} person-vs-dashboard figure checks, ` +
+      `${diverged} v1.16 figures corrected`,
   );
   await c.query('rollback');
 }
@@ -114,4 +142,4 @@ if (failures) {
   console.log(`${failures} FAILED`);
   process.exit(1);
 }
-console.log('OK — person pages sum to the dashboard exactly.');
+console.log('OK — person pages and their workspace figures are exactly the dashboard figures.');

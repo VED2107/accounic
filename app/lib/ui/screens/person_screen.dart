@@ -748,8 +748,8 @@ class _PositionCard extends StatelessWidget {
             ),
           ),
 
-          // The same position in the workspace's currency, counted the way the
-          // dashboard counts it (CurrencyHalfBreakdown.workspaceTotal).
+          // The same position in the workspace's currency: the figure the
+          // dashboard counts for this account (PositionSplit.inBaseMinor).
           if (page.currency != page.baseCurrency && regular.positionMinor != 0) ...[
             const SizedBox(height: AppSpacing.xs + 2),
             Center(

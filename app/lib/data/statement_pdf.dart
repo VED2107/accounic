@@ -85,8 +85,10 @@ class PersonStatement {
           _positions(page, regular, opening, currency),
           pw.SizedBox(height: 18),
           ..._openingSection(page, opening, openingRows, currency, base),
-          ..._byCurrency('Cash in hand by currency', page.regularByCurrency, currency, base),
-          ..._byCurrency('Opening balance by currency', page.openingByCurrency, currency, base),
+          ..._byCurrency('Cash in hand by currency', page.regularByCurrency,
+              page.regularInBase, currency, base),
+          ..._byCurrency('Opening balance by currency', page.openingByCurrency,
+              page.openingInBase, currency, base),
           pw.SizedBox(height: 18),
           _sectionHeading('Regular transactions'),
           pw.SizedBox(height: 2),
@@ -376,8 +378,8 @@ class PersonStatement {
 
     final first = page.person.name.split(' ').first;
 
-    // The same cash in hand in the workspace currency, counted exactly as the
-    // person screen and the dashboard count it (PersonPage.regularInBase).
+    // The same cash in hand in the workspace currency: the figure the person
+    // screen and the dashboard count for this account (PersonPage.regularInBase).
     final inBase = page.regularInBase;
     final cashCaption = regular.positionMinor == 0
         ? 'Regular activity is settled'
@@ -437,6 +439,8 @@ class PersonStatement {
   static List<pw.Widget> _byCurrency(
     String title,
     List<CurrencyHalfBreakdown> source,
+    // This half's position in the workspace currency — the dashboard's figure.
+    int? total,
     String currency,
     String base,
   ) {
@@ -446,7 +450,6 @@ class PersonStatement {
 
     String money(int minor, String code) =>
         _money(minor.abs(), code, compactDecimals: false);
-    final total = CurrencyHalfBreakdown.workspaceTotal(rows, currency, base);
     final head = pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: PdfColors.grey600);
     pw.Widget cell(String text, {pw.TextStyle? style, bool left = false}) => pw.Padding(
           padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 3),
@@ -526,6 +529,16 @@ class PersonStatement {
           ),
         ],
       ),
+      // On an account kept in another currency the rows are what was entered;
+      // the total is the account's own balance, converted once, which is what
+      // the dashboard counts. Said, so nobody adds up the column.
+      if (currency != base && total != null) ...[
+        pw.SizedBox(height: 2),
+        pw.Text(
+          "The account's $currency balance in $base, as the dashboard counts it",
+          style: _muted(7),
+        ),
+      ],
       pw.SizedBox(height: 18),
     ];
   }

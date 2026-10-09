@@ -12,7 +12,7 @@ import {
   type StatementRow,
 } from '@/lib/pdf/rows';
 import { balanceTone } from '@/lib/money';
-import { baseEquivalent, orderCurrencyRows, workspaceTotal } from '@/lib/currency-breakdown';
+import { baseEquivalent, orderCurrencyRows, positionInBase } from '@/lib/currency-breakdown';
 import { currencyLabel } from '@/lib/currencies';
 import { statementDate, timeOfDay } from '@/lib/dates';
 import type { CurrencyHalfBreakdown, Me, PersonPage } from '@/lib/types';
@@ -230,8 +230,22 @@ export async function buildPersonStatement(input: StatementInput): Promise<Uint8
   // statement never prints one number that silently contains the other.
   drawPosition(ctx, data, currency, baseCurrency, person.name);
   drawOpening(ctx, data, currency, baseCurrency);
-  drawByCurrency(ctx, 'CASH IN HAND BY CURRENCY', data.regular_by_currency ?? [], currency, baseCurrency);
-  drawByCurrency(ctx, 'OPENING BALANCE BY CURRENCY', data.opening_by_currency ?? [], currency, baseCurrency);
+  drawByCurrency(
+    ctx,
+    'CASH IN HAND BY CURRENCY',
+    data.regular_by_currency ?? [],
+    positionInBase(regularPosition(data), currency, baseCurrency),
+    currency,
+    baseCurrency,
+  );
+  drawByCurrency(
+    ctx,
+    'OPENING BALANCE BY CURRENCY',
+    data.opening_by_currency ?? [],
+    positionInBase(openingPosition(data), currency, baseCurrency),
+    currency,
+    baseCurrency,
+  );
 
   const rows = buildStatementRows(
     data.timeline,
@@ -358,11 +372,9 @@ function drawPosition(
   const regular = regularPosition(data);
   const opening = openingPosition(data);
   const netMinor = regular.position;
-  // Counted the way the dashboard and the person page count it — see
-  // workspaceTotal. Never the whole position re-converted at today's rate.
-  const netBaseMinor = data.regular_by_currency
-    ? workspaceTotal(data.regular_by_currency, currency, baseCurrency)
-    : regular.position_base;
+  // The figure the dashboard and the person page count for this account —
+  // see positionInBase.
+  const netBaseMinor = positionInBase(regular, currency, baseCurrency);
   const hasOpening =
     (opening.entry_count ?? 0) > 0 || data.balance.opening_minor !== 0;
 
@@ -614,6 +626,8 @@ function drawByCurrency(
   ctx: Ctx,
   title: string,
   source: CurrencyHalfBreakdown[],
+  /** This half's position in the workspace currency — the dashboard's figure. */
+  total: number | null,
   currency: string,
   baseCurrency: string,
 ) {
@@ -621,7 +635,7 @@ function drawByCurrency(
   if (rows.length === 0) return;
   if (rows.length === 1 && rows[0]!.currency === currency) return;
 
-  ensure(ctx, 56 + rows.length * 16);
+  ensure(ctx, 68 + rows.length * 16);
   drawLeft(ctx, title, MARGIN, ctx.y, ctx.bold, 8, INK_FAINT);
   ctx.y -= 6;
   rule(ctx, ctx.y);
@@ -670,7 +684,6 @@ function drawByCurrency(
     ctx.y -= 16;
   }
 
-  const total = workspaceTotal(rows, currency, baseCurrency);
   rule(ctx, ctx.y + 10);
   drawLeft(ctx, `Total in ${baseCurrency}`, MARGIN, ctx.y - 2, ctx.bold, 8, INK_MUTED);
   drawRight(
@@ -686,6 +699,21 @@ function drawByCurrency(
     9,
     INK,
   );
+  if (currency !== baseCurrency && total !== null) {
+    // On an account kept in another currency the rows above are what was
+    // entered; the total is the account's own balance, converted once, which
+    // is what the dashboard counts. Said, so nobody adds up the column.
+    ctx.y -= 12;
+    drawLeft(
+      ctx,
+      `The account's ${currency} balance in ${baseCurrency}, as the dashboard counts it`,
+      MARGIN,
+      ctx.y - 2,
+      ctx.regular,
+      7,
+      INK_FAINT,
+    );
+  }
   ctx.y -= 26;
 }
 

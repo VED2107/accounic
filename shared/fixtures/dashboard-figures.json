@@ -1,0 +1,19 @@
+{
+ "base_currency": "INR",
+ "cash_in_hand": 18961211,
+ "opening": 2979974,
+ "people": {
+  "Dubai Traders": {
+   "cash_in_hand_base": 16491211,
+   "opening_net_base": 3654974
+  },
+  "Mumbai Supplier": {
+   "cash_in_hand_base": 2470000,
+   "opening_net_base": -675000
+  },
+  "Gulf Settled": {
+   "cash_in_hand_base": 0,
+   "opening_net_base": 0
+  }
+ }
+}

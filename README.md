@@ -2,7 +2,7 @@
 
 A small, fast, personal accounting system. Three clients, one backend, one database.
 
-Current release: **[v1.16.1](https://github.com/VED2107/accounic/releases/latest)** —
+Current release: **[v1.16.2](https://github.com/VED2107/accounic/releases/latest)** —
 Windows installer, Windows portable zip and an Android APK, plus the same three as a
 **demo** build. The app checks GitHub Releases on launch and tells you when a newer one
 exists. A release is built by CI on a tag and left as a draft: the update check only
@@ -34,6 +34,13 @@ is the Next.js application in `web/`.
 Design source of truth: [`context.md`](./context.md). Visual map: [`mindmap.md`](./mindmap.md).
 
 ### What's new in 1.16
+
+**1.16.2** — an account's figure in the workspace currency on Person Details and on
+both person statements (web and app) is now exactly the figure the dashboard counts for
+it. 1.16.0 re-added an account's currencies instead — rupees at face value, dirhams at
+today's rate — so an AED account repaid in rupees, at zero on the dashboard, could read
+lakhs outstanding. Every entry still counts at the rate it was recorded at; nothing in
+the database changed.
 
 **1.16.1** — the in-app update on Windows could open the *demo* installer
 instead of the real one: the release carries both, GitHub lists them

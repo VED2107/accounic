@@ -925,6 +925,29 @@ class PositionSplit {
   bool get isReceivable => positionMinor >= 0;
   bool get isEmpty => positionMinor == 0 && entryCount == 0;
 
+  /// This position in [baseCurrency]: EXACTLY the figure the dashboard counts
+  /// for this account. The dashboard's "Total in" line and its net position
+  /// are sums over every account of `person_balances.cash_in_hand_base` /
+  /// `opening_net_base`, which arrive here as [positionBaseMinor].
+  ///
+  /// * On an account kept in the workspace currency it is the position itself:
+  ///   every foreign entry on it already counts at the amount the ledger booked
+  ///   (its historical or manual rate). No rate is applied here.
+  /// * On an account kept in another currency the position is a debt in THAT
+  ///   currency, each entry booked into it at its own historical rate; the one
+  ///   conversion left is the balance into the workspace currency, done by the
+  ///   database exactly as the dashboard does it.
+  ///
+  /// It replaced `CurrencyHalfBreakdown.workspaceTotal`, which re-added the
+  /// per-currency rows instead — workspace-currency entries at face, foreign
+  /// ones at today's rate. On an account holding both, the rate movement
+  /// between the halves became money nobody owed: a dirham account repaid in
+  /// rupees, at zero on the dashboard, read as lakhs outstanding.
+  ///
+  /// Null means "no rate yet". Twin of `positionInBase` in
+  /// web/src/lib/currency-breakdown.ts.
+  int? get inBaseMinor => currency == baseCurrency ? positionMinor : positionBaseMinor;
+
   factory PositionSplit.fromJson(
     Map<String, dynamic> json, {
     required String fallbackCurrency,
@@ -1065,12 +1088,12 @@ class PersonPage {
   /// The workspace currency, for the equivalent shown beside the position.
   final String baseCurrency;
 
-  /// Cash in hand in [baseCurrency], counted the way the dashboard counts it —
-  /// see [CurrencyHalfBreakdown.workspaceTotal]. Falls back to the figure the
-  /// database served on one that has not run 0024. Null means "no rate yet".
-  int? get regularInBase => regularByCurrency.isEmpty
-      ? regular.positionBaseMinor
-      : CurrencyHalfBreakdown.workspaceTotal(regularByCurrency, currency, baseCurrency);
+  /// Cash in hand in [baseCurrency]: the figure the dashboard counts for this
+  /// account — see [PositionSplit.inBaseMinor]. Null means "no rate yet".
+  int? get regularInBase => regular.inBaseMinor;
+
+  /// The opening book in [baseCurrency], likewise.
+  int? get openingInBase => openingPosition.inBaseMinor;
 
   factory PersonPage.fromJson(Map<String, dynamic> json) => PersonPage(
         person: Person.fromJson(json['person'] as Map<String, dynamic>),
@@ -1456,37 +1479,6 @@ class CurrencyHalfBreakdown {
     }
     if (netBaseMinor == null) return null;
     return (minor: netBaseMinor!, asBooked: false);
-  }
-
-  /// The workspace-currency total of [rows] for an account kept in
-  /// [ledgerCurrency]: each row at [baseEquivalent], a workspace-currency row
-  /// at its entered net. Null when a foreign row has no figure — "not known",
-  /// never zero.
-  ///
-  /// This is what the person screen and its statement show as "in INR". It
-  /// replaced a whole-position conversion at today's rate, which re-priced
-  /// rupees that had been entered as rupees (a dirham account holding rupee
-  /// entries came out lakhs off the dashboard for the same money). On an
-  /// account kept in the workspace currency it equals the headline exactly.
-  static int? workspaceTotal(
-    Iterable<CurrencyHalfBreakdown> rows,
-    String ledgerCurrency,
-    String baseCurrency,
-  ) {
-    var total = 0;
-    for (final row in rows) {
-      if (row.currency == baseCurrency) {
-        total += row.net;
-        continue;
-      }
-      final equivalent = row.baseEquivalent(ledgerCurrency);
-      if (equivalent == null) {
-        if (row.net == 0 && row.netLedgerMinor == null) continue;
-        return null;
-      }
-      total += equivalent.minor;
-    }
-    return total;
   }
 
   /// Base currency first, then alphabetical; currencies with no data dropped.

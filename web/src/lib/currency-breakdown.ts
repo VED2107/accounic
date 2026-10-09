@@ -72,35 +72,37 @@ export function baseEquivalent(
 }
 
 /**
- * The workspace-currency total of `rows` for an account kept in
- * `ledgerCurrency`: each row at `baseEquivalent`, a workspace-currency row at
- * its entered net. Null when a foreign row has no figure — "not known", never
- * zero.
+ * One half of an account (cash in hand or the opening book) in the workspace
+ * currency: EXACTLY the figure the dashboard counts for this account.
  *
- * This is what the person page and its statement show in the workspace
- * currency. It replaced a whole-position conversion at today's rate, which
- * re-priced rupees that had been entered as rupees: a dirham account holding
- * rupee entries came out lakhs away from the dashboard for the same money. On
- * an account kept in the workspace currency it equals the headline exactly.
- * Twin of `CurrencyHalfBreakdown.workspaceTotal` in app/lib/data/models.dart.
+ * The dashboard's "Total in" line and its net position are sums, over every
+ * account, of `person_balances.cash_in_hand_base` / `opening_net_base` — which
+ * the person page receives as `regular.position_base` /
+ * `opening_position.position_base`. So this returns that figure, untouched:
+ *
+ * - On an account kept in the workspace currency it is the position itself.
+ *   Every foreign entry on it is already summed at the amount the ledger
+ *   booked for it (its historical or manual rate) — no rate is applied here.
+ * - On an account kept in another currency, the position is a debt in THAT
+ *   currency. Its entries were booked into it at their own historical rates;
+ *   the one conversion left is the account's balance into the workspace
+ *   currency, done by the database exactly as the dashboard does it.
+ *
+ * It replaced `workspaceTotal`, which added the per-entry-currency nets
+ * together instead — workspace-currency entries at face value plus foreign
+ * ones at today's rate. On an account holding both, that is a different sum
+ * from the one the ledger keeps: the rate movement between the halves turned
+ * into money that was never owed. A dirham account settled in rupees (the
+ * ledger at exactly zero, the dashboard at zero) read as ₹1,63,116.75 owed.
+ *
+ * Null means "no rate yet" — not known, never zero.
+ * Twin of `PositionSplit.inBaseMinor` in app/lib/data/models.dart.
  */
-export function workspaceTotal(
-  rows: CurrencyHalfBreakdown[],
+export function positionInBase(
+  split: { position: number; position_base: number | null },
   ledgerCurrency: string,
   baseCurrency: string,
 ): number | null {
-  let total = 0;
-  for (const row of rows) {
-    if (row.currency === baseCurrency) {
-      total += row.net;
-      continue;
-    }
-    const equivalent = baseEquivalent({ ...row, base_currency: baseCurrency }, ledgerCurrency);
-    if (equivalent === null) {
-      if (row.net === 0 && row.net_ledger_minor == null) continue;
-      return null;
-    }
-    total += equivalent.minor;
-  }
-  return total;
+  if (ledgerCurrency === baseCurrency) return split.position;
+  return split.position_base;
 }
