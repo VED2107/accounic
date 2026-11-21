@@ -69,8 +69,8 @@ void main() {
       inr.regularByCurrency.fold<int>(0, (t, r) => t + r.netLedgerMinor!),
       inr.regular.positionMinor,
     );
-    final eq = dirhams.baseEquivalent('INR')!;
-    expect(eq.asBooked, isTrue);
+    final eq = dirhams.bookedEquivalent('INR')!;
+    expect(eq.currency, 'INR');
     expect(eq.minor, dirhams.netLedgerMinor);
   });
 
@@ -81,11 +81,16 @@ void main() {
     );
   });
 
-  test('a dirham row on a dirham account falls back to the dashboard figure', () {
+  test('a dirham row on a dirham account has no equivalent — it IS the ledger', () {
     final dirhams = aed.regularByCurrency.firstWhere((r) => r.currency == 'AED');
-    final eq = dirhams.baseEquivalent('AED')!;
-    expect(eq.asBooked, isFalse);
-    expect(eq.minor, dirhams.netBaseMinor);
+    expect(dirhams.bookedEquivalent('AED'), isNull);
+  });
+
+  test('a rupee row on a dirham account is the dirhams it was booked at, never today', () {
+    final rupees = aed.regularByCurrency.firstWhere((r) => r.currency == 'INR');
+    final eq = rupees.bookedEquivalent('AED')!;
+    expect(eq.currency, 'AED');
+    expect(eq.minor, rupees.netLedgerMinor);
   });
 
   test('unknown, not zero, when there is no rate', () {

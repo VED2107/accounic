@@ -1463,22 +1463,28 @@ class CurrencyHalfBreakdown {
             json['people_count'] == null ? null : _int(json['people_count']),
       );
 
-  /// What this row is worth in [baseCurrency] on an account kept in
-  /// [ledgerCurrency], and whether that figure is the one the ledger BOOKED.
+  /// What this row is worth on an account kept in [ledgerCurrency]: the
+  /// figure the ledger BOOKED for it, in the account's own currency. Never a
+  /// rate applied today.
   ///
-  /// * A row already in the workspace currency has no equivalent — it is one.
-  /// * On an account kept in the workspace currency, the ledger froze every
-  ///   foreign entry at the rate it was entered at; [netLedgerMinor] is that
-  ///   frozen figure, and it is used as booked. Never re-priced.
-  /// * Otherwise no workspace-currency figure was ever recorded, and the only
-  ///   one there is is the dashboard's [netBaseMinor], at today's rate.
-  ({int minor, bool asBooked})? baseEquivalent(String ledgerCurrency) {
-    if (currency == baseCurrency) return null;
-    if (ledgerCurrency == baseCurrency && netLedgerMinor != null) {
-      return (minor: netLedgerMinor!, asBooked: true);
-    }
-    if (netBaseMinor == null) return null;
-    return (minor: netBaseMinor!, asBooked: false);
+  /// Every entry was converted into the account's currency once, when it was
+  /// entered, at the rate saved with it (or the manual figure typed). That
+  /// frozen amount is [netLedgerMinor] (db/migrations/0033); summed over the
+  /// rows it IS the account's position, so the rows and the headline always
+  /// reconcile.
+  ///
+  /// * A row already in the account's currency has no equivalent — it is one.
+  /// * No other figure is offered. [netBaseMinor] re-converts the row's net at
+  ///   TODAY's rate, which re-prices history: 1,000 AED booked at ₹23 would
+  ///   read ₹24,500 the day the rate reached ₹24.50, and a dirham account
+  ///   squared off in rupees read lakhs of rupees open.
+  /// * Null on a database older than 0033 — say nothing rather than re-price.
+  ///
+  /// Twin of `bookedEquivalent` in web/src/lib/currency-breakdown.ts.
+  ({int minor, String currency})? bookedEquivalent(String ledgerCurrency) {
+    if (currency == ledgerCurrency) return null;
+    if (netLedgerMinor == null) return null;
+    return (minor: netLedgerMinor!, currency: ledgerCurrency);
   }
 
   /// Base currency first, then alphabetical; currencies with no data dropped.

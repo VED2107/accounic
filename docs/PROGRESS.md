@@ -1234,3 +1234,32 @@ No client can do either, and the Flutter build carries the publishable key alone
 * `ui/screens/demo_screen.dart` — demo against full, side by side.
 * `.github/workflows/demo.yml` — the Android and Windows demo builds.
 * `ui/screens/upgraded_screen.dart` — the way out, for a converted account.
+
+## 17. History as booked (v1.17.0)
+
+Person Details showed historical rows at today's rate and printed gross open amounts on
+accounts that were settled. Reasoning: `docs/decisions.md`, "History is never re-priced".
+
+### 17.1 What changed
+
+* `db/migrations/0034_history_as_booked.sql` — `activity_entries.amount_base_booked_minor`;
+  `person_page`, `activity_page`, `export_entries` and `dashboard().recent_activity` hand it
+  out as `amount_base_minor`. Additive; no stored amount or rate rewritten. Applied live.
+* Web: `bookedEquivalent` and `outstandingOf` in `web/src/lib/currency-breakdown.ts`
+  (replace `baseEquivalent`); used by the person Overview, the by-currency blocks
+  (`components/money.tsx`), the person statement and the workspace report.
+* Flutter twins: `CurrencyHalfBreakdown.bookedEquivalent` (`data/models.dart`),
+  `outstandingOf` (`core/money.dart`); used by `person_screen.dart`, `widgets/common.dart`,
+  `data/statement_pdf.dart`, `core/export_report.dart`.
+* Statements: the per-currency column is "Booked in <account currency>", not "In INR".
+
+### 17.2 Verification
+
+* SQL: `db/tests/16_history_as_booked.sql` (20 assertions) — the brief's 1,000 AED at ₹23
+  stays ₹23,000 after the cached rate moves to ₹24.50 on every row list; rupee entries on a
+  dirham account at face; dirham-on-dirham rows null; settlements, opening activity, and an
+  edit re-booking only its own row. Whole suite 534 assertions.
+* Snapshot before/after 0034: counts, sums and every net balance unchanged.
+* `smoke-person-parity.mjs --fixtures` 19/19, fixtures regenerated.
+* Web `history-as-booked.test.ts` (14) fails against the pre-0034 fixtures and passes now;
+  Flutter `history_as_booked_test.dart` mirrors it.

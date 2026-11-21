@@ -249,6 +249,21 @@ BalanceTone balanceTone(int netMinor) {
   return BalanceTone.settled;
 }
 
+/// What is outstanding on one half of an account, from its signed position —
+/// the dashboard's rule (`owner_summary` splits each account's NET position
+/// into receivable or payable, never its gross open rows).
+///
+/// The engine's receivable / payable are gross: every credit still open and
+/// every debit still open. On an account squared off by entries the other way
+/// rather than by settlements both stay open while the position is zero, and
+/// "You will receive" printed the whole gross side of a settled account.
+///
+/// Twin of `outstandingOf` in web/src/lib/currency-breakdown.ts.
+({int receivable, int payable}) outstandingOf(int positionMinor) => (
+      receivable: positionMinor > 0 ? positionMinor : 0,
+      payable: positionMinor < 0 ? -positionMinor : 0,
+    );
+
 String balanceLabel(int netMinor) => switch (balanceTone(netMinor)) {
       BalanceTone.receivable => 'You will receive',
       BalanceTone.payable => 'You will pay',

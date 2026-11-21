@@ -1,6 +1,6 @@
 import { balanceTone, formatApprox, formatMoney } from '@/lib/money';
 import { cn } from '@/components/ui/primitives';
-import { baseEquivalent, orderCurrencyRows } from '@/lib/currency-breakdown';
+import { bookedEquivalent, orderCurrencyRows } from '@/lib/currency-breakdown';
 import type { CurrencyHalfBreakdown } from '@/lib/types';
 
 /**
@@ -247,7 +247,7 @@ export function CurrencyBreakdown({
   /**
    * Set on the person page: the account's own currency. With it, each block's
    * equivalent is the figure the ledger BOOKED where one exists
-   * (`baseEquivalent`) and says which it is. Without it — the dashboard,
+   * (`bookedEquivalent`), in the account's own currency. Without it — the dashboard,
    * summing many accounts — the line is the dashboard's own figure, unchanged.
    */
   ledgerCurrency?: string;
@@ -273,17 +273,14 @@ export function CurrencyBreakdown({
   );
 }
 
-/** The person page's equivalent line — see `baseEquivalent`. */
-function personEquivalent(
-  row: CurrencyHalfBreakdown,
-  ledgerCurrency: string,
-  baseCurrency: string,
-): string {
-  const it = baseEquivalent({ ...row, base_currency: baseCurrency }, ledgerCurrency);
-  if (it === null) return `no ${row.currency} → ${baseCurrency} rate yet`;
-  return it.asBooked
-    ? `${formatMoney(Math.abs(it.minor), baseCurrency)} as booked`
-    : `${formatApprox(Math.abs(it.minor), baseCurrency)} at today’s rate`;
+/**
+ * The person page's equivalent line — see `bookedEquivalent`. Null when there
+ * is nothing booked to state; never a figure at today's rate.
+ */
+function personEquivalent(row: CurrencyHalfBreakdown, ledgerCurrency: string): string | null {
+  const it = bookedEquivalent(row, ledgerCurrency);
+  if (it === null) return null;
+  return `${formatMoney(Math.abs(it.minor), it.currency)} as booked`;
 }
 
 function CurrencyBlock({
@@ -298,7 +295,11 @@ function CurrencyBlock({
   kind: 'cash' | 'opening';
 }) {
   const tone = balanceTone(row.net);
-  const showApprox = row.currency !== baseCurrency;
+  // On the person page the line is the booked figure in the account's own
+  // currency; on the dashboard (many accounts, no one ledger) it is the
+  // dashboard's own workspace-currency figure, as before.
+  const personLine = ledgerCurrency !== undefined ? personEquivalent(row, ledgerCurrency) : null;
+  const showApprox = ledgerCurrency !== undefined ? personLine !== null : row.currency !== baseCurrency;
 
   return (
     <div className="px-4 py-4 sm:px-5">
@@ -326,7 +327,7 @@ function CurrencyBlock({
               {/* formatApprox already carries the ≈; prepending another one
                   printed "≈ ≈ ₹6,515.99" on the dashboard. */}
               {ledgerCurrency !== undefined
-                ? personEquivalent(row, ledgerCurrency, baseCurrency)
+                ? personLine
                 : row.net_base_minor === null
                   ? `no ${row.currency} → ${baseCurrency} rate yet`
                   : formatApprox(Math.abs(row.net_base_minor), baseCurrency)}

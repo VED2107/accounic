@@ -1,6 +1,7 @@
 import { entryLabel } from '@/lib/direction';
 import { transferLabel } from '@/lib/transfers';
 import { statementDate } from '@/lib/dates';
+import { outstandingOf } from '@/lib/currency-breakdown';
 
 import type { ExportBundle, ExportEntry, ExportPerson } from '@/lib/export/types';
 
@@ -159,8 +160,10 @@ function personLine(person: ExportPerson, format: ReportFormatter): ReportPerson
   return {
     name: person.name,
     currency,
-    receivable: format.money(num(balance['outstanding_receivable']), currency),
-    payable: format.money(num(balance['outstanding_payable']), currency),
+    // The account's NET position split the dashboard's way, never its gross
+    // open rows (see outstandingOf).
+    receivable: format.money(outstandingOf(net).receivable, currency),
+    payable: format.money(outstandingOf(net).payable, currency),
     net: format.money(Math.abs(net), currency),
     netReceivable: net >= 0,
     opening: opening === 0 ? null : format.money(Math.abs(opening), currency),

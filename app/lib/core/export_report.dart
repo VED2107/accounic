@@ -1,5 +1,6 @@
 import '../data/export_models.dart';
 import 'dates.dart';
+import 'money.dart' show outstandingOf;
 import 'direction.dart';
 import 'statement.dart';
 import 'transfers.dart';
@@ -221,11 +222,10 @@ ReportPersonLine _personLine(Map<String, dynamic> person, StatementFormatter for
   return ReportPersonLine(
     name: (person['name'] as String?) ?? '—',
     currency: currency,
-    receivable: format.money(
-      _num(balance['outstanding_receivable']),
-      currency: currency,
-    ),
-    payable: format.money(_num(balance['outstanding_payable']), currency: currency),
+    // The account's NET position split the dashboard's way, never its gross
+    // open rows (see outstandingOf).
+    receivable: format.money(outstandingOf(net).receivable, currency: currency),
+    payable: format.money(outstandingOf(net).payable, currency: currency),
     net: format.money(net.abs(), currency: currency),
     netReceivable: net >= 0,
     opening: opening == 0 ? null : format.money(opening.abs(), currency: currency),

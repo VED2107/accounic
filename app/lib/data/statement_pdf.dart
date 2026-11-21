@@ -483,7 +483,7 @@ class PersonStatement {
             cell('PAYABLE', style: head),
             cell('SETTLED', style: head),
             cell('NET', style: head),
-            cell('IN $base', style: head),
+            cell('BOOKED IN $currency', style: head),
           ]),
           for (final row in rows)
             pw.TableRow(children: [
@@ -503,12 +503,13 @@ class PersonStatement {
                 ),
               ),
               cell(
-                switch (row.baseEquivalent(currency)) {
-                  _ when row.currency == base => '—',
-                  null => 'no rate yet',
-                  final it when it.asBooked =>
-                    '${_money(it.minor.abs(), base, compactDecimals: false)} booked',
-                  final it => '${pdfFormat.approx(it.minor.abs(), currency: base)} today',
+                // What the ledger booked for this row, in the account's own
+                // currency — never re-priced at today's rate.
+                switch (row.bookedEquivalent(currency)) {
+                  _ when row.currency == currency =>
+                    _money(row.net.abs(), currency, compactDecimals: false),
+                  null => '—',
+                  final it => _money(it.minor.abs(), it.currency, compactDecimals: false),
                 },
                 style: _muted(8),
               ),

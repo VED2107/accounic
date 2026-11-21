@@ -14,7 +14,7 @@ import {
   SEGMENT_GROUP,
 } from '@/components/ui/primitives';
 import { CurrencyBreakdown, Money } from '@/components/money';
-import { positionInBase } from '@/lib/currency-breakdown';
+import { outstandingOf, positionInBase } from '@/lib/currency-breakdown';
 import { CountUp } from '@/components/motion/count-up';
 import { SparklineFigure } from '@/components/charts/sparkline';
 import { Reveal } from '@/components/motion/reveal';
@@ -318,7 +318,11 @@ export default async function PersonPage({
               <p className="mt-1.5 text-[0.8125rem] text-ink-faint">
                 {regularInBase === null
                   ? `No ${currency} → ${baseCurrency} rate yet`
-                  : `${formatApprox(Math.abs(regularInBase), baseCurrency)} in ${baseCurrency}`}
+                  : // The one figure here that is a valuation, not history: no
+                    // rupee value is stored for a dirham entered on a dirham
+                    // account, so it is said to be today's (docs/decisions.md,
+                    // "History is never re-priced").
+                    `${formatApprox(Math.abs(regularInBase), baseCurrency)} in ${baseCurrency} at today’s rate`}
               </p>
             ) : null}
 
@@ -564,7 +568,7 @@ function Overview({
 }: {
   currency: string;
   baseCurrency: string;
-  regular: { credit: number; debit: number; settled: number; receivable: number; payable: number };
+  regular: { position: number; credit: number; debit: number; settled: number; receivable: number; payable: number };
   tone: 'receivable' | 'payable' | 'settled';
   series: number[] | null;
   windowSize: number;
@@ -608,7 +612,9 @@ function Overview({
             <Figure label="Settled" minor={regular.settled} currency={currency} tone="neutral" />
             <Figure
               label={tone === 'payable' ? 'You will pay' : 'You will receive'}
-              minor={tone === 'payable' ? regular.payable : regular.receivable}
+              // Net, as the dashboard counts it — never the gross open side,
+              // which stays open on an account squared off by opposite entries.
+              minor={tone === 'payable' ? outstandingOf(regular.position).payable : outstandingOf(regular.position).receivable}
               currency={currency}
               tone={tone === 'payable' ? 'payable' : tone === 'settled' ? 'neutral' : 'receivable'}
             />

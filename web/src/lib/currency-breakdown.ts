@@ -47,28 +47,47 @@ export function orderCurrencyRows(
 }
 
 /**
- * What `row` is worth in the workspace currency on an account kept in
- * `ledgerCurrency`, and whether that figure is the one the ledger BOOKED.
+ * What `row` is worth on an account kept in `ledgerCurrency`: the figure the
+ * ledger BOOKED for it, in the account's own currency. Never a rate applied
+ * today.
  *
- * - A row already in the workspace currency has no equivalent — it is one.
- * - On an account kept in the workspace currency, the ledger froze every
- *   foreign entry at the rate it was entered at; `net_ledger_minor` is that
- *   frozen figure (db/migrations/0033), used as booked and never re-priced.
- * - Otherwise no workspace-currency figure was ever recorded, and the only one
- *   there is is the dashboard's `net_base_minor`, at today's rate.
+ * Every entry was converted into the account's currency once, when it was
+ * entered, at the rate saved with it (or the manual figure typed). That frozen
+ * amount is `net_ledger_minor` (db/migrations/0033); summed over the rows it
+ * IS the account's position, so the rows and the headline always reconcile.
  *
- * Twin of `CurrencyHalfBreakdown.baseEquivalent` in app/lib/data/models.dart.
+ * - A row already in the account's currency has no equivalent — it is one.
+ * - No other figure is offered. `net_base_minor` (the row's net re-converted
+ *   into the workspace currency at TODAY's rate) re-prices history: a 1,000 AED
+ *   entry booked at ₹23 would read ₹24,500 the day the rate reached ₹24.50,
+ *   and a dirham account squared off in rupees read lakhs of rupees open.
+ * - Null when the database predates 0033 — say nothing rather than re-price.
+ *
+ * Twin of `CurrencyHalfBreakdown.bookedEquivalent` in app/lib/data/models.dart.
  */
-export function baseEquivalent(
-  row: CurrencyHalfBreakdown,
+export function bookedEquivalent(
+  row: Pick<CurrencyHalfBreakdown, 'currency' | 'net_ledger_minor'>,
   ledgerCurrency: string,
-): { minor: number; asBooked: boolean } | null {
-  if (row.currency === row.base_currency) return null;
-  if (ledgerCurrency === row.base_currency && row.net_ledger_minor != null) {
-    return { minor: row.net_ledger_minor, asBooked: true };
-  }
-  if (row.net_base_minor == null) return null;
-  return { minor: row.net_base_minor, asBooked: false };
+): { minor: number; currency: string } | null {
+  if (row.currency === ledgerCurrency) return null;
+  if (row.net_ledger_minor == null) return null;
+  return { minor: row.net_ledger_minor, currency: ledgerCurrency };
+}
+
+/**
+ * What is outstanding on one half of an account, from its signed position —
+ * the dashboard's rule (`owner_summary` splits each account's NET position into
+ * receivable or payable, never its gross open rows).
+ *
+ * The engine's `receivable` / `payable` are gross: every credit still open and
+ * every debit still open. On an account squared off by entries the other way
+ * rather than by settlements, both stay open while the position is zero, and
+ * "You will receive" printed the whole gross side of a settled account.
+ *
+ * Twin of `outstandingOf` in app/lib/core/money.dart.
+ */
+export function outstandingOf(position: number): { receivable: number; payable: number } {
+  return { receivable: Math.max(position, 0), payable: Math.max(-position, 0) };
 }
 
 /**

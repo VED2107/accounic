@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { buildPersonStatement } from '@/lib/pdf/statement';
-import { baseEquivalent, orderCurrencyRows, positionInBase } from '@/lib/currency-breakdown';
+import { bookedEquivalent, orderCurrencyRows, positionInBase } from '@/lib/currency-breakdown';
 import type { PersonPage } from '@/lib/types';
 
 import aedLedger from '../../../../shared/fixtures/person-page-aed-ledger.json';
@@ -70,7 +70,7 @@ describe('person workspace figure = the dashboard’s', () => {
     expect(positionInBase(inr.regular, 'INR', 'INR')).toBe(inr.regular.position);
     const booked = inr.regular_by_currency.reduce((t, r) => t + r.net_ledger_minor!, 0);
     expect(booked).toBe(inr.regular.position);
-    expect(baseEquivalent(dirhams, 'INR')).toEqual({ minor: dirhams.net_ledger_minor, asBooked: true });
+    expect(bookedEquivalent(dirhams, 'INR')).toEqual({ minor: dirhams.net_ledger_minor, currency: 'INR' });
   });
 
   it('a dirham account’s position is the sum of what each entry booked', () => {

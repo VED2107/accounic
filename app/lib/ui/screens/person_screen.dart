@@ -756,7 +756,10 @@ class _PositionCard extends StatelessWidget {
               child: Text(
                 page.regularInBase == null
                     ? 'No ${page.currency} \u2192 ${page.baseCurrency} rate yet'
-                    : '${formatApprox(page.regularInBase!.abs(), currency: page.baseCurrency)} in ${page.baseCurrency}',
+                    // The one figure here that is a valuation, not history: no
+                    // rupee value is stored for a dirham entered on a dirham
+                    // account, so it is said to be today's.
+                    : '${formatApprox(page.regularInBase!.abs(), currency: page.baseCurrency)} in ${page.baseCurrency} at today’s rate',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 12.5, color: palette.inkMuted),
               ),
@@ -2076,9 +2079,11 @@ class _Figures extends StatelessWidget {
               cell(
                 tone == BalanceTone.payable ? 'You will pay' : 'You will receive',
                 AppIcons.net,
+                // Net, as the dashboard counts it — never the gross open side,
+                // which stays open on an account squared off by opposite entries.
                 tone == BalanceTone.payable
-                    ? regular.payableMinor
-                    : regular.receivableMinor,
+                    ? outstandingOf(regular.positionMinor).payable
+                    : outstandingOf(regular.positionMinor).receivable,
                 switch (tone) {
                   BalanceTone.payable => MoneyTone.payable,
                   BalanceTone.receivable => MoneyTone.receivable,

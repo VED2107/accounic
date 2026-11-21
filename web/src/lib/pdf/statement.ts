@@ -12,7 +12,7 @@ import {
   type StatementRow,
 } from '@/lib/pdf/rows';
 import { balanceTone } from '@/lib/money';
-import { baseEquivalent, orderCurrencyRows, positionInBase } from '@/lib/currency-breakdown';
+import { bookedEquivalent, orderCurrencyRows, positionInBase } from '@/lib/currency-breakdown';
 import { currencyLabel } from '@/lib/currencies';
 import { statementDate, timeOfDay } from '@/lib/dates';
 import type { CurrencyHalfBreakdown, Me, PersonPage } from '@/lib/types';
@@ -647,7 +647,7 @@ function drawByCurrency(
     { label: 'Payable', x: MARGIN + 215, right: true },
     { label: 'Settled', x: MARGIN + 285, right: true },
     { label: 'Net', x: MARGIN + 360, right: true },
-    { label: `In ${baseCurrency}`, x: PAGE_WIDTH - MARGIN, right: true },
+    { label: `Booked in ${currency}`, x: PAGE_WIDTH - MARGIN, right: true },
   ];
   for (const col of cols) {
     if (col.right) drawRight(ctx, col.label, col.x, ctx.y, ctx.bold, 7, INK_FAINT);
@@ -658,15 +658,15 @@ function drawByCurrency(
   for (const row of rows) {
     const money = (minor: number) =>
       pdfMoney(Math.abs(minor), row.currency, { compactDecimals: false });
-    const it = baseEquivalent({ ...row, base_currency: baseCurrency }, currency);
+    // What the ledger booked for this row, in the account's own currency —
+    // never re-priced at today's rate (see bookedEquivalent).
+    const it = bookedEquivalent(row, currency);
     const equivalent =
-      row.currency === baseCurrency
-        ? '—'
+      row.currency === currency
+        ? pdfMoney(Math.abs(row.net), currency, { compactDecimals: false })
         : it === null
-          ? 'no rate yet'
-          : it.asBooked
-            ? `${pdfMoney(Math.abs(it.minor), baseCurrency, { compactDecimals: false })} booked`
-            : `${pdfApprox(Math.abs(it.minor), baseCurrency)} today`;
+          ? '—'
+          : pdfMoney(Math.abs(it.minor), it.currency, { compactDecimals: false });
     drawLeft(ctx, row.currency, cols[0]!.x, ctx.y, ctx.bold, 9);
     drawRight(ctx, money(row.receivable), cols[1]!.x, ctx.y, ctx.regular, 9, RECEIVABLE);
     drawRight(ctx, money(row.payable), cols[2]!.x, ctx.y, ctx.regular, 9, PAYABLE);

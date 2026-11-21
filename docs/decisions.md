@@ -1010,3 +1010,44 @@ anyone sum the column.
 the dashboard, `db/tools/smoke-person-parity.mjs` builds the shapes that break a re-sum
 (including an AED account repaid in rupees), and `db/tools/verify-statement-pdfs.mjs`
 reads the figures back out of both clients' statements.
+
+## History is never re-priced: every row keeps the figure it was booked at (v1.17.0)
+
+Three things on the person page still moved with today's exchange rate, or contradicted
+the dashboard, after v1.16.2:
+
+1. **Row equivalents.** `activity_entries.amount_base_minor` is the row's ledger amount
+   converted into the workspace currency at the rate cached *today*. Every row list —
+   person timeline, settlement and opening activity, Activity, exports, the dashboard's
+   recent activity — handed it out as the row's rupee figure. A dirham entry on a dirham
+   account, booked months ago, read whatever today's rate made of it.
+2. **Per-currency blocks.** On an account kept in a foreign currency, the "by currency"
+   block showed each row's net at today's rate (`net_base_minor`). On a dirham account
+   squared off in rupees (`dipak aed`: ledger 0, dashboard 0) it printed
+   "AED 1,27,430 ≈ ₹33,59,839 at today's rate" beside "₹35,23,100": lakhs of rupees on an
+   account that owes nothing.
+3. **"You will receive / You will pay"** printed the engine's *gross* open side
+   (`regular_receivable` / `regular_payable`: every credit still open, every debit still
+   open). An account squared off by entries in the other direction rather than by
+   settlements keeps both open while its position is zero, so a settled account read
+   "You will receive AED 2,43,850". The dashboard never did this: `owner_summary` splits
+   each account's NET position.
+
+**The rule now.** A historical figure is one of three things, all stored when the entry
+was made: the ledger amount (`amount_minor`, converted once at the saved or manual rate),
+the amount entered (`entered_amount_minor` at face), or nothing. Migration
+`0034_history_as_booked.sql` adds `activity_entries.amount_base_booked_minor`
+(ledger amount when the account is in the workspace currency; the typed amount when it
+was entered in the workspace currency; otherwise NULL) and the four row-list RPCs hand it
+out under the old `amount_base_minor` key. The per-currency blocks state each row's
+`net_ledger_minor` in the account's own currency (`bookedEquivalent`); summed, those are
+the headline. "You will receive / pay" is `outstandingOf(position)`, the dashboard's
+split.
+
+**What deliberately still converts at today's rate.** One figure: the balance of an
+account kept in a non-workspace currency, shown in the workspace currency
+(`person_balances.cash_in_hand_base`). That is the dashboard's own figure, the user has
+said the dashboard is right, and no historical rupee value exists for a dirham entered on
+a dirham account — the schema stores one rate per row, entry → ledger, never ledger →
+workspace. Inventing one from today's rate is exactly what this release removes from
+history. `dashboard()`'s totals and `amount_base_minor` on the view are untouched.

@@ -1036,8 +1036,8 @@ class CurrencyHalfBlock extends StatelessWidget {
   final bool opening;
 
   /// Set on the person screen: the account's own currency. With it, the
-  /// equivalent line is the figure the ledger BOOKED where one exists
-  /// ([CurrencyHalfBreakdown.baseEquivalent]) and says which it is. Without
+  /// equivalent line is the figure the ledger BOOKED, in the account's own
+  /// currency ([CurrencyHalfBreakdown.bookedEquivalent]). Without
   /// it — the dashboard, summing many accounts — the line is the dashboard's
   /// own figure, unchanged.
   final String? ledgerCurrency;
@@ -1132,18 +1132,10 @@ class CurrencyHalfBlock extends StatelessWidget {
             ),
           ),
           if (ledgerCurrency != null) ...[
-            if (row.baseEquivalent(ledgerCurrency!) case final it?) ...[
+            if (row.bookedEquivalent(ledgerCurrency!) case final it?) ...[
               const SizedBox(height: 2),
               Text(
-                it.asBooked
-                    ? '${formatMoney(it.minor.abs(), currency: baseCurrency)} as booked'
-                    : '${formatApprox(it.minor.abs(), currency: baseCurrency)} at today’s rate',
-                style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
-              ),
-            ] else if (row.currency != baseCurrency) ...[
-              const SizedBox(height: 2),
-              Text(
-                'no ${row.currency} → $baseCurrency rate yet',
+                '${formatMoney(it.minor.abs(), currency: it.currency)} as booked',
                 style: TextStyle(fontSize: 12.5, color: palette.inkFaint),
               ),
             ],
