@@ -1,10 +1,11 @@
 library;
 
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'models.dart';
 import 'statement_pdf.dart';
@@ -20,9 +21,16 @@ sealed class StatementSaveResult {
 
 /// Saved. [path] is the file the user can now open.
 class StatementSaved extends StatementSaveResult {
-  const StatementSaved(this.path, {required this.chosen});
+  const StatementSaved(this.path, {required this.chosen, this.uri, this.mimeType});
 
+  /// Where the file is, in words the user can follow in a file manager.
+  /// On Android this is `Download/Accounic/<name>`.
   final String path;
+
+  /// On Android, the MediaStore `content://` URI another app can open.
+  final String? uri;
+
+  final String? mimeType;
 
   /// True when the user picked the location, false when it went to the
   /// platform's downloads folder because there was no dialog to show.
@@ -49,10 +57,10 @@ class StatementSaveFailed extends StatementSaveResult {
 ///     the Downloads folder with a sensible filename. Cancelling it is a
 ///     first-class outcome, not an error.
 ///   * **Android** has no save dialog worth showing for this, so the file goes
-///     to the app's external files directory — reachable from a file manager,
-///     needing no storage permission on any supported Android version — and
-///     falls back to the app documents directory when there is no external
-///     storage at all.
+///     into the public Downloads folder, under `Download/Accounic`, through
+///     MediaStore (see MainActivity.kt). It used to go to the app's external
+///     files directory, `Android/data/com.accounic.app/files`, which Android
+///     11+ hides from the Files app — so saved statements looked lost.
 ///
 /// Every failure below is caught and turned into a sentence: an unwritable
 /// directory, a file locked by another program, a disk that is full. None of
@@ -97,6 +105,7 @@ class StatementDownloader {
       try {
         location = await getSaveLocation(
           suggestedName: name,
+          initialDirectory: await _downloadsPath(),
           acceptedTypeGroups: const [
             XTypeGroup(label: 'PDF', extensions: ['pdf'], mimeTypes: ['application/pdf']),
           ],
@@ -104,14 +113,14 @@ class StatementDownloader {
       } catch (_) {
         // No dialog available — fall through to the downloads folder rather
         // than telling the user their statement cannot be saved at all.
-        return _writeToDownloads(bytes, name);
+        return _writeToDownloads(bytes, name, 'application/pdf');
       }
 
       if (location == null) return const StatementSaveCancelled();
       return _write(bytes, _withPdfExtension(location.path), chosen: true);
     }
 
-    return _writeToDownloads(bytes, name);
+    return _writeToDownloads(bytes, name, 'application/pdf');
   }
 
   /// Puts any already-built export where the user can reach it.
@@ -136,6 +145,7 @@ class StatementDownloader {
       try {
         location = await getSaveLocation(
           suggestedName: filename,
+          initialDirectory: await _downloadsPath(),
           acceptedTypeGroups: [
             XTypeGroup(
               label: typeLabel,
@@ -145,7 +155,7 @@ class StatementDownloader {
           ],
         );
       } catch (_) {
-        return _writeToDownloads(bytes, filename);
+        return _writeToDownloads(bytes, filename, mimeType);
       }
 
       if (location == null) return const StatementSaveCancelled();
@@ -155,17 +165,31 @@ class StatementDownloader {
       return _write(bytes, path, chosen: true);
     }
 
-    return _writeToDownloads(bytes, filename);
+    return _writeToDownloads(bytes, filename, mimeType);
   }
 
-  Future<StatementSaveResult> _writeToDownloads(Uint8List bytes, String name) async {
+  static const _android = MethodChannel('com.accounic.app/downloads');
+
+  /// The user's Downloads folder on desktop, so the save dialog opens there
+  /// rather than wherever Windows last left it.
+  static Future<String?> _downloadsPath() async {
+    try {
+      return (await getDownloadsDirectory())?.path;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<StatementSaveResult> _writeToDownloads(
+    Uint8List bytes,
+    String name,
+    String mimeType,
+  ) async {
+    if (Platform.isAndroid) return _writeToAndroidDownloads(bytes, name, mimeType);
+
     Directory? directory;
     try {
-      directory = Platform.isAndroid
-          ? (await getExternalStorageDirectory() ??
-              await getApplicationDocumentsDirectory())
-          : (await getDownloadsDirectory() ??
-              await getApplicationDocumentsDirectory());
+      directory = await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
     } catch (_) {
       return const StatementSaveFailed(
         'There is nowhere to save the statement on this device.',
@@ -173,6 +197,73 @@ class StatementDownloader {
     }
 
     return _write(bytes, '${directory.path}${Platform.pathSeparator}$name', chosen: false);
+  }
+
+  /// Public Downloads on Android, through MediaStore — visible in Files, the
+  /// Downloads app and every PDF reader's picker.
+  Future<StatementSaveResult> _writeToAndroidDownloads(
+    Uint8List bytes,
+    String name,
+    String mimeType,
+  ) async {
+    try {
+      final saved = await _android.invokeMapMethod<String, String>('save', {
+        'name': name,
+        'mime': mimeType,
+        'bytes': bytes,
+      });
+      final path = saved?['path'];
+      if (path == null) {
+        return const StatementSaveFailed('The file could not be saved to Downloads.');
+      }
+      return StatementSaved(path, chosen: false, uri: saved?['uri'], mimeType: mimeType);
+    } on PlatformException catch (error) {
+      if (error.code == 'permission') {
+        return const StatementSaveFailed(
+          'Storage access was denied, so the file could not be saved to Downloads.',
+        );
+      }
+      final detail = error.message?.trim();
+      return StatementSaveFailed(
+        detail == null || detail.isEmpty
+            ? 'The file could not be saved to Downloads.'
+            : 'The file could not be saved: $detail',
+      );
+    } catch (_) {
+      return const StatementSaveFailed('The file could not be saved to Downloads.');
+    }
+  }
+
+  /// Opens a saved file in the user's default app for it. False when there is
+  /// no app to open it with — the file is still saved either way.
+  static Future<bool> open(StatementSaved saved) async {
+    try {
+      if (Platform.isAndroid) {
+        return await _android.invokeMethod<bool>('open', {
+              'uri': saved.uri,
+              'mime': saved.mimeType ?? 'application/pdf',
+            }) ??
+            false;
+      }
+      return await launchUrl(Uri.file(saved.path));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Desktop only: shows the saved file selected in its folder.
+  static bool get canRevealInFolder => Platform.isWindows || Platform.isMacOS;
+
+  static Future<void> revealInFolder(StatementSaved saved) async {
+    try {
+      if (Platform.isWindows) {
+        await Process.start('explorer.exe', ['/select,', saved.path]);
+      } else if (Platform.isMacOS) {
+        await Process.start('open', ['-R', saved.path]);
+      }
+    } catch (_) {
+      // Nothing to do: the path is already on screen for the user to follow.
+    }
   }
 
   Future<StatementSaveResult> _write(

@@ -12,6 +12,15 @@
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
+    <!--
+      Only for Android 9 and older, where saving an export into the public
+      Downloads folder needs it. Android 10+ saves through MediaStore with no
+      permission at all, so maxSdkVersion keeps newer phones from ever asking.
+    -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28"/>
+
     <application
         android:label="@string/app_name"
         android:name="${applicationName}"

@@ -138,6 +138,7 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
   int _total = 0;
   String? _error;
   String? _done;
+  StatementSaved? _saved;
 
   @override
   void initState() {
@@ -226,7 +227,7 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
           ? null
           : (_done != null ? () => Navigator.of(context).pop() : _run),
       children: _done != null
-          ? [_Done(message: _done!)]
+          ? [_Done(message: _done!, saved: _saved)]
           : _isActivity
           ? _activityBody(preview, palette)
           : _workspaceBody(preview, palette),
@@ -673,9 +674,8 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
           Haptics.success();
           setState(() {
             _busy = false;
-            _done = chosen
-                ? 'Saved to $path'
-                : 'Saved to your device: $path';
+            _saved = result;
+            _done = chosen ? 'Saved to $path' : 'Saved to Downloads: $path';
           });
         case StatementSaveCancelled():
           // Not an error. The filters are still here and the sheet stays open.
@@ -811,9 +811,10 @@ class _FormatCard extends StatelessWidget {
 }
 
 class _Done extends StatelessWidget {
-  const _Done({required this.message});
+  const _Done({required this.message, this.saved});
 
   final String message;
+  final StatementSaved? saved;
 
   @override
   Widget build(BuildContext context) {
@@ -838,6 +839,24 @@ class _Done extends StatelessWidget {
         const SizedBox(height: AppSpacing.lg),
         Row(
           children: [
+            if (saved != null) ...[
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => StatementDownloader.open(saved!),
+                  child: const Text('Open'),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+            ],
+            if (saved != null && StatementDownloader.canRevealInFolder) ...[
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => StatementDownloader.revealInFolder(saved!),
+                  child: const Text('Show in folder'),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+            ],
             Expanded(
               child: OutlinedButton(
                 onPressed: () => Clipboard.setData(ClipboardData(text: message)),

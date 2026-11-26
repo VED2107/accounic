@@ -892,7 +892,13 @@ class PageBody extends StatelessWidget {
   }
 }
 
-void showMessage(BuildContext context, String message, {bool error = false}) {
+void showMessage(
+  BuildContext context,
+  String message, {
+  bool error = false,
+  String? actionLabel,
+  VoidCallback? onAction,
+}) {
   final palette = context.money;
   ScaffoldMessenger.of(context)
     ..clearSnackBars()
@@ -909,7 +915,10 @@ void showMessage(BuildContext context, String message, {bool error = false}) {
             Expanded(child: Text(message)),
           ],
         ),
-        duration: Duration(seconds: error ? 5 : 3),
+        duration: Duration(seconds: error || onAction != null ? 5 : 3),
+        action: actionLabel != null && onAction != null
+            ? SnackBarAction(label: actionLabel, onPressed: onAction)
+            : null,
       ),
     );
 }

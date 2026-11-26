@@ -1050,11 +1050,13 @@ class _StatementButtonState extends ConsumerState<StatementButton> {
 
       if (!mounted) return;
       switch (result) {
-        case StatementSaved(:final path, :final chosen):
+        case StatementSaved(:final path):
           Haptics.success();
           showMessage(
             context,
-            chosen ? 'Statement saved to $path' : 'Statement saved to $path',
+            'Statement saved to $path',
+            actionLabel: 'Open',
+            onAction: () => StatementDownloader.open(result),
           );
         case StatementSaveCancelled():
           // The user closed the dialog. Nothing to report and nothing wrong.
